@@ -134,10 +134,18 @@
   - **Residual, and not fixable here:** a toggle whose frame is *also* not its control, inside a view the cheap backend cannot see, is unreachable by name. That needs `backend` on `AccessibilityActionRequest` upstream — the same shape as #42's missing `filter`, and the second candidate if patches are ever sent.
   - Covered by TESTING_TOOLS.md **#47**, with a fixture switch in the toolbar for it.
 
-- [ ] **#67 The AXBridge tree reports `enabled: true` for a control that is disabled.** Found running Part 2 against the fixture's new `Disabled Button`: `ui_find` answers `enabled: false` (the AX marker path) while `ui_describe_all` answers `true` for the same element, and every element in that tree says `true`. So the field looks trustworthy and is not.
-  - **Impact is narrow but real.** `ui_tap`'s disabled check (#64d) reads whatever `findByLabel` returned, and the AX marker is tried first — so for anything that backend can see, the value is right and the check fires. It is elements only AXBridge can see, in system chrome, where the check silently cannot fire. Those are also the ones activation cannot reach (#66), so they are already the awkward corner.
-  - **Pre-existing, not a regression** — the field has always come from whichever backend answered. It only became visible when the fixture gained a control that is actually disabled.
-  - Not fixed because the honest options are both unattractive: drop `enabled` from the tree, losing it for the many elements where it is correct, or verify it with a second read on a path that is meant to be cheap. Worth deciding before anyone relies on `enabled` from `ui_describe_all`.
+- [x] **#67 WONTFIX — the AXBridge tree reports `enabled: true` for a control that is disabled, and that is upstream's, not ours.** Found running Part 2 against the fixture's `Disabled Button`: `ui_find` answers `enabled: false` while `ui_describe_all` answers `true` for the same element.
+  - **Attributed properly before writing it off**, by reading both backends straight from the companion with no pruning, canonicalise or reconciliation in the way:
+
+    | backend | the disabled button | elements reported disabled anywhere |
+    |---|---|---|
+    | default (AX) — what `ui_find` uses | `enabled=false` | 1 of 22 |
+    | AXBRIDGE — what `ui_describe_all` uses | `enabled=true` | **0 of 76** |
+
+    The second row is the finding: AXBridge does not get this control wrong, it never reports *anything* disabled. The field is uniformly `true` and carries no information. Nothing of ours touches it.
+  - **Not fixed, deliberately.** Dropping `enabled` from the tree loses a field that is right for every enabled control; re-reading each element through the other backend puts a second round trip on the path whose whole purpose is to be cheap. Both cost more than the fault, which errs only towards optimism.
+  - **Barely reachable in practice:** `ui_tap {label}` resolves through the AX backend first, so it sees the true value and refuses a disabled control (#64d). The gap is elements only AXBridge can see — system chrome, which is already the awkward corner for #66.
+  - Documented for users in [TROUBLESHOOTING.md](TROUBLESHOOTING.md) under "`ui_describe_all` says a greyed-out control is enabled", with the table above and the instruction to trust `ui_find`.
 
 - [x] **#65 DONE. The behaviours we assume of `idb_companion` are now checked, because they are somebody else's and nobody upstream has promised to keep them.** `scripts/check-companion-contract.mjs`, run with `npm run check:companion -- <udid>` against the fixture. Prompted by how much of this session's work rests on undocumented behaviour of a binary under active development.
   - **What it checks, and why each is load-bearing:** a marker match is a substring (every partial name an agent uses); it resolves to the **first** hit server-side (why ambiguity is undetectable on the fast path, hence #64b/#64c); it returns one element rather than a list (`findByLabel` would mis-parse a list rather than reject it); the default backend cannot see toolbar contents while AXBridge can (the whole reason for the ~300ms fallback); a point read hit-tests in under 100ms (or #64a's verification stops being affordable); `accessibility_action` activates without a touch (#63 has no mechanism at all without it). Plus, under `--remote`, that a hosted view still restarts its coordinate space at a node of type `"83"` (#60).

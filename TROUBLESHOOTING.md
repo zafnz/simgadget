@@ -104,6 +104,39 @@ uname -m          # expect arm64
 - Quit and relaunch Xcode if needed.
 - Prompt AI to check dimensions of the simulator screen and adjust coordinates to it. Screenshots have 3x resolution and this may result in incorrect position of screen presses.
 
+### `ui_describe_all` says a greyed-out control is enabled
+
+**Symptom:** a control is visibly disabled, and `ui_describe_all` reports
+`"enabled": true` for it. `ui_find` reports `"enabled": false` for the same
+element, so the two tools disagree.
+
+**Trust `ui_find`.** This is a limitation of the accessibility backend that
+serves the whole-screen tree, not of the control or of this server. Measured on
+a fixture with one deliberately disabled button:
+
+| backend | that button | elements reported disabled anywhere |
+|---|---|---|
+| the one `ui_find` uses | `enabled: false` ✅ | 1 of 22 |
+| the one `ui_describe_all` uses | `enabled: true` ❌ | **0 of 76** |
+
+It is not that the backend gets a particular control wrong — it never reports
+anything as disabled, so the field is uniformly `true` and cannot be relied on
+from a tree read. This is upstream in `idb_companion`, ahead of anything this
+server does: the values above were read straight from the companion, before any
+pruning or normalising of ours.
+
+**Won't be fixed here.** Dropping `enabled` from the tree would remove a field
+that is correct for every *enabled* control, and re-reading each element through
+the other backend would put a second round trip on the path that exists to be
+cheap. Neither is worth it for a field that is wrong only in the direction of
+optimism.
+
+**In practice this rarely bites**, because `ui_tap {label}` resolves through
+`ui_find`'s backend first and so does see the real value — it refuses to tap a
+disabled control and tells you so. The gap is only for controls that backend
+cannot see at all, which are the same ones in system chrome that have other
+limits anyway.
+
 ### Empty accessibility tree
 
 **Symptom:** `ui_describe_all` and `ui_view` fail, or return a single empty
