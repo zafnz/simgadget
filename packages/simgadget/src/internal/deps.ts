@@ -29,8 +29,8 @@
 
 import { ChildProcess, execFile, spawn } from "child_process";
 import { promisify } from "util";
-import { IdbClient } from "../idb/client";
-import { companions, WithClientOptions } from "../idb/companionManager";
+import { IdbClient } from "../idb/client.ts";
+import { companions, type WithClientOptions } from "../idb/companionManager.ts";
 
 const execFileAsync = promisify(execFile);
 

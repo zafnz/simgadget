@@ -47,7 +47,7 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "test": "node --test \"test/*.test.mts\"",
+    "test": "node --experimental-transform-types --test \"test/*.test.mts\"",
     "test:e2e": "node --test \"test/e2e/*.e2e.mts\""
   },
   "dependencies": {

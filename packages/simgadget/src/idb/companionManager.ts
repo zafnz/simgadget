@@ -16,8 +16,9 @@ import { ChildProcess, spawn } from "child_process";
 import * as grpc from "@grpc/grpc-js";
 import fs from "fs";
 import path from "path";
-import { IdbClient, IdbError } from "./client";
-import { resolveCompanion } from "./companionBinary";
+import { IdbClient, IdbError } from "./client.ts";
+import { resolveCompanion } from "./companionBinary.ts";
+import { CompanionStartError } from "../errors.ts";
 
 /** Companions take ~0.5s to bind; a cold simulator can take considerably longer. */
 const READY_TIMEOUT_MS = 30_000;
@@ -40,7 +41,7 @@ const IDLE_SHUTDOWN_SECONDS = 3600;
  * in stdio mode, so this must never write there.
  */
 function log(message: string): void {
-  process.stderr.write(`[ios-simulator-mcp] ${message}\n`);
+  process.stderr.write(`[simgadget] ${message}\n`);
 }
 
 /**
@@ -51,7 +52,7 @@ function log(message: string): void {
  * cache dir because a cache path plus a 36-char udid overruns sun_path.
  */
 function socketDir(): string {
-  const dir = `/tmp/imsm-${process.getuid?.() ?? 0}`;
+  const dir = `/tmp/simgadget-${process.getuid?.() ?? 0}`;
   fs.mkdirSync(dir, { mode: 0o700, recursive: true });
 
   const st = fs.lstatSync(dir);
@@ -63,6 +64,25 @@ function socketDir(): string {
   }
   if (st.mode & 0o077) fs.chmodSync(dir, 0o700);
   return dir;
+}
+
+/**
+ * The socket path for one companion instance.
+ *
+ * The pid separates two of our own processes; the generation separates one
+ * spawn from the next. Without the generation every respawn reuses one path,
+ * and a companion that is still dying unlinks the socket its replacement has
+ * just bound. Exported so a test can assert a worst-case udid+pid+generation
+ * stays under `sockaddr_un.sun_path`'s 104-byte limit without touching the
+ * filesystem via `socketDir()`.
+ */
+export function buildSocketPath(
+  dir: string,
+  udid: string,
+  pid: number,
+  generation: number
+): string {
+  return path.join(dir, `${udid}.${pid}.${generation}.sock`);
 }
 
 type Companion = {
@@ -204,14 +224,7 @@ export class CompanionManager {
     const generation = this.nextGeneration++;
 
     const dir = socketDir();
-    // The pid separates two of our own processes; the generation separates one
-    // spawn from the next. Without the generation every respawn reuses one
-    // path, and a companion that is still dying unlinks the socket its
-    // replacement has just bound.
-    const socketPath = path.join(
-      dir,
-      `${udid}.${process.pid}.${generation}.sock`
-    );
+    const socketPath = buildSocketPath(dir, udid, process.pid, generation);
     if (Buffer.byteLength(socketPath) >= SUN_PATH_MAX) {
       throw new IdbError(
         `Socket path is ${Buffer.byteLength(socketPath)} bytes, over the ${SUN_PATH_MAX}-byte limit: ${socketPath}`
@@ -298,7 +311,14 @@ export class CompanionManager {
       // (it has not exited), and nothing would ever kill it.
       companion.client.close();
       child.kill("SIGKILL");
-      throw error;
+      // The socket was reported bound, but the gRPC channel it fronts never
+      // came up -- still "spawned but never became ready", so it carries the
+      // same stderrTail and the same typed error as awaitReadiness below.
+      throw new CompanionStartError(
+        stderrTail,
+        `idb_companion for simulator ${udid} bound its socket but its gRPC ` +
+          `channel never became ready: ${(error as Error).message}`
+      );
     }
 
     this.companions.set(udid, companion);
@@ -340,7 +360,8 @@ export class CompanionManager {
                 .join("\n  ")}`
             : "";
           reject(
-            new IdbError(
+            new CompanionStartError(
+              stderrTail,
               `Could not start ${binary} for simulator ${udid}: ${reason}${detail}`
             )
           );
@@ -378,7 +399,7 @@ export class CompanionManager {
           error.message.includes("ENOENT")
             ? `${binary} could not be executed. If it was removed from the cache, ` +
               `deleting the cache directory forces a fresh download; otherwise ` +
-              `point IOS_SIMULATOR_MCP_COMPANION_PATH at a companion binary.`
+              `point SIMGADGET_COMPANION_PATH at a companion binary.`
             : error.message
         )
       );
@@ -472,12 +493,19 @@ export class CompanionManager {
   /**
    * Last-resort reaping if the process goes down without `shutdownAll`.
    *
-   * Only the 'exit' hook, deliberately. It is tempting to also catch SIGINT and
-   * SIGTERM here, but the server installs its own async handlers for those to
-   * delete the simulators it created; a second handler calling process.exit()
-   * would run while that one was suspended at its first await and kill it
-   * mid-flight, leaking every simulator instead. 'exit' fires after those
-   * handlers complete, and covers the paths that never reach them.
+   * It reaps *companions*, never simulators: a script's simulator keeps
+   * running, state intact, after the script exits. `releaseCompanion()` is
+   * the tidy path for a host that wants it; this hook is the backstop for
+   * everything that never calls it.
+   *
+   * Only the 'exit' hook, deliberately. It is tempting to also catch SIGINT
+   * and SIGTERM here, but a host with its own cleanup — e.g. one deleting the
+   * simulators it created — installs its own async handlers for those; a
+   * second handler calling process.exit() would run while that one was
+   * suspended at its first await and kill it mid-flight, leaking every
+   * simulator instead. 'exit' fires after those handlers complete, and covers
+   * the paths that never reach them. It never fires on an unhandled fatal
+   * signal, which is why 'exit' is a backstop and not a guarantee.
    *
    * Synchronous, because an 'exit' handler cannot await.
    */

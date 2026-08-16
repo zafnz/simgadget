@@ -244,6 +244,162 @@ await companions.withClient(udid, async (client) => {
     );
   }
 
+  // --- 7. An absent marker fails with "found no element". -------------------
+  // `findByLabel`/`findByIdentifier` (index.ts) match this wording to tell an
+  // empty result from a real failure, and turn it into a `null` — which
+  // `tap({label})` turns into `ElementNotFoundError`. If the wording changes,
+  // absence becomes a thrown gRPC error and every lookup in the library breaks.
+  {
+    let message = null;
+    try {
+      await marker(client, "Definitely Not On Screen — Contract Check 7");
+    } catch (e) {
+      message = e.message;
+    }
+    record(
+      message !== null && /found no element/i.test(message),
+      'an absent marker fails with "found no element"',
+      message ? `-> ${JSON.stringify(message)}` : "no error was thrown"
+    );
+  }
+
+  // --- 8. A point read with nothing there fails with "no translation object" —
+  // the *same* text a wedged bridge produces (BOOT_BUG.md). This is the whole
+  // reason `describePoint` (index.ts ~330-345) disambiguates by asking for the
+  // screen before treating a failure as a wedge: an ordinary caller tapping an
+  // empty patch of screen would otherwise have the simulator's bridge restarted
+  // underneath them.
+  //
+  // The point is the gap the stack view's spacing leaves between two known
+  // controls — chosen from the layout, not from the outcome, so this cannot
+  // quietly start passing by finding some other empty spot.
+  //
+  // **Only this half of the belief is checkable, and deliberately so.** The
+  // symmetric half — that a wedged bridge produces the same text — cannot be
+  // manufactured on demand, because the only recipe available is
+  // `simctl spawn <udid> launchctl stop com.apple.CoreSimulator.bridge`, and
+  // that is the *cure*, not the disease: launchd answers it by bringing a fresh
+  // bridge straight up. Measured three ways on iOS 26.5 with the pinned
+  // companion, 2026-08-16 — 250ms polling over 15s, 98 sequential reads over
+  // 8s, and 300 concurrent reads staggered across the stop — all with zero
+  // failures, while `launchctl list` confirmed the bridge pid really did change.
+  // There is no observable window to sample. The wedge in BOOT_BUG.md is a
+  // bridge that never recovers on its own, which no deliberate stop reproduces.
+  //
+  // That costs nothing here, because this half is the load-bearing one: it
+  // establishes that `isWedgeError` alone *cannot* tell the two apart, which is
+  // exactly what makes the disambiguation necessary. See TODO #69.
+  let emptyPointMessage = null;
+  {
+    const btn1 = labelled("Plain Button").find((e) => e.frame?.width);
+    const btn2 = labelled("Disabled Button").find((e) => e.frame?.width);
+    let detail;
+    if (btn1?.frame && btn2?.frame) {
+      const gapX = Math.round(btn1.frame.x + btn1.frame.width / 2);
+      const gapTop = btn1.frame.y + btn1.frame.height;
+      const gapBottom = btn2.frame.y;
+      const gapY = Math.round(gapTop + (gapBottom - gapTop) / 2);
+      try {
+        const hit = await client.accessibilityInfo({
+          point: { x: gapX, y: gapY },
+          format: Format.LEGACY,
+        });
+        detail = `point (${gapX}, ${gapY}), the gap between Plain Button and Disabled ` +
+          `Button, unexpectedly hit ${JSON.stringify(hit?.AXLabel ?? hit)}`;
+      } catch (e) {
+        emptyPointMessage = e.message;
+        detail = `point (${gapX}, ${gapY}), the gap between Plain Button and Disabled ` +
+          `Button -> ${JSON.stringify(emptyPointMessage)}`;
+      }
+    } else {
+      detail = "could not locate Plain Button / Disabled Button frames to compute an empty gap";
+    }
+    record(
+      emptyPointMessage !== null && /no translation object/i.test(emptyPointMessage),
+      'a point read with nothing there fails with "no translation object"',
+      detail
+    );
+  }
+
+
+  // --- 9. `describe` returns screen dimensions in both pixels and points. ---
+  // The coordinate contract's cached portrait point dimensions (spec decision
+  // 6, DECISIONS.md) come from here rather than from an accessibility read, so
+  // they are available before the bridge is driveable. Assert both units are
+  // present and non-zero.
+  {
+    const description = await client.describe();
+    const dims = description.screenDimensions;
+    const ok =
+      !!dims &&
+      dims.width > 0 &&
+      dims.height > 0 &&
+      dims.widthPoints > 0 &&
+      dims.heightPoints > 0;
+    record(
+      ok,
+      "describe() returns screen dimensions in both pixels and points",
+      dims
+        ? `width=${dims.width} height=${dims.height} widthPoints=${dims.widthPoints} ` +
+          `heightPoints=${dims.heightPoints} density=${dims.density}`
+        : "screenDimensions missing from describe() response"
+    );
+  }
+
+  // --- 10. A marker query at depth 0 searches only the root. ----------------
+  // This is why `MARKER_DEFAULT_DEPTH` exists (src/idb/client.ts ~150-157): a
+  // silent change here makes every deep control "not found". `IdbClient`
+  // deliberately rewrites a falsy `depth` on a marker query to
+  // `MARKER_DEFAULT_DEPTH`, so this has to bypass that and go to the raw gRPC
+  // client to actually send depth 0 — going through the wrapper would silently
+  // prove nothing.
+  {
+    const target = "Settings Switch"; // nested: scroll -> stack -> settingsRow -> switch
+    const rawMarker = (depth) =>
+      new Promise((resolve, reject) => {
+        client.client.accessibilityInfo(
+          idb.AccessibilityInfoRequest.fromPartial({
+            format: Format.NESTED,
+            marker: target,
+            matchKey: Key.LABEL,
+            depth,
+          }),
+          (err, res) => (err ? reject(err) : resolve(res))
+        );
+      });
+
+    let foundAtDepth0 = false;
+    let depth0Detail;
+    try {
+      const res = await rawMarker(0);
+      const parsed = res?.json ? JSON.parse(res.json) : null;
+      foundAtDepth0 = !!parsed?.elements;
+      depth0Detail = foundAtDepth0 ? "found (unexpected)" : "absent, no error";
+    } catch (e) {
+      depth0Detail = `error: ${e.message.slice(0, 80)}`;
+    }
+
+    // Through the normal wrapped call — this is what `findByLabel` actually
+    // issues, and it is what proves MARKER_DEFAULT_DEPTH is doing its job.
+    let foundAtDefault = false;
+    let defaultDetail;
+    try {
+      const hit = await marker(client, target);
+      foundAtDefault = !!hit?.elements;
+      defaultDetail = foundAtDefault
+        ? JSON.stringify(hit.elements.AXLabel)
+        : "absent (unexpected)";
+    } catch (e) {
+      defaultDetail = `error: ${e.message.slice(0, 80)}`;
+    }
+
+    record(
+      !foundAtDepth0 && foundAtDefault,
+      "a marker query at depth 0 searches only the root; the default depth reaches a deep control",
+      `"${target}" at depth 0 -> ${depth0Detail}; at default depth -> ${defaultDetail}`
+    );
+  }
+
   console.log(
     `\nThe remote-hosted-view assumption is not checked here — it needs a sheet on\n` +
       `screen. Open the picker (Show Picker) and re-run with --remote.`

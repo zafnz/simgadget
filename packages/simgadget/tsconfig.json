@@ -6,6 +6,16 @@
     "outDir": "./build",
     "rootDir": "./src",
     "declaration": true,
+    // Relative imports in `src/` carry a `.ts` extension and this rewrites them
+    // to `.js` on the way out. That is what lets `node --test` run the sources
+    // directly with nothing built first: a `src/` file with ESM syntax is
+    // loaded as ESM, and ESM resolution never guesses an extension, so
+    // `from "./client"` simply does not resolve there. The alternative was a
+    // bespoke module-resolution hook in `test/`; this is the same outcome from
+    // a compiler flag. Tests still need `--experimental-transform-types`, for
+    // the enums in the generated proto code and the parameter property in
+    // `idb/client.ts`, neither of which Node's strip-only mode can handle.
+    "rewriteRelativeImportExtensions": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

@@ -12,6 +12,50 @@
   read and the flip — decide whether that race is acceptable and how the
   result reports it before freezing a signature.
 
+- [ ] **#69 The bridge wedge can no longer be manufactured on demand, so
+  nothing about it is regression-testable.** Found 2026-08-16 while adding
+  contract check 8, which was specified to compare an empty point read's error
+  text against a wedged bridge's.
+
+  **The measurement.** `xcrun simctl spawn <udid> launchctl stop
+  com.apple.CoreSimulator.bridge` — the exact recipe `restartSimulatorBridge`
+  uses — produces **no observable read failure at all** on iOS 26.5 with the
+  pinned companion. Three independent ways, on a throwaway iPhone 16 Pro:
+
+  | probe | result |
+  |---|---|
+  | 250ms polling across the stop, 15s | 0 failures |
+  | tight sequential loop, 8s | 98/98 OK |
+  | 300 concurrent reads staggered over 3s spanning the stop | 0/300 failed |
+
+  `launchctl list` confirmed the bridge pid genuinely changed (98313 → 98517),
+  so the stop-and-respawn really happened — there is simply no window to sample.
+
+  **What it does not mean.** It is not evidence the wedge is gone, and not a
+  reason to touch the recovery machinery. Stopping the bridge is the *cure*;
+  the wedge in BOOT_BUG.md is a bridge that never comes back on its own, and
+  running the cure on a healthy simulator was never the same thing as
+  reproducing the disease. `isWedgeError` matching `no translation object`
+  still rests on field evidence, and check 8's empty-point half — which does
+  pass — is the load-bearing half anyway: it establishes that the same message
+  means both things, which is what makes `describePoint`'s disambiguation
+  necessary in the first place.
+
+  **What it does mean, and is worth someone's judgement.**
+  - The wedge half of check 8 was dropped rather than shipped red; the evidence
+    above lives in the comment above that check so nobody re-adds it.
+  - **Two comments in the recovery code now assert a measurement that no longer
+    reproduces**: `RECOVERY_PROBE_TIMEOUT_MS`'s "took ~5s to return, and the
+    device answered ~11s after the restart was ordered", and
+    `RECOVERY_TAIL_MS`'s "a recovered simulator answered within ~5s in
+    testing". Deliberately left alone for now — they are the argument for
+    numbers that are merely generous rather than wrong, and rewriting them
+    from one machine's reading would trade recorded evidence for a fresh guess.
+    Worth revisiting the next time a real wedge is caught in the wild.
+  - There is no way to prove the recovery path works end to end short of
+    catching a wedge in the wild. That is the honest state of it, and it should
+    be said out loud rather than implied by a green suite.
+
 # TODO — Production bug, reported 2026-08-15
 
 - [x] **#60 FIXED 2026-08-15. The offset was in the tree all along, and we were throwing it away.**

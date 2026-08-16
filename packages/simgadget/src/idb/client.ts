@@ -21,8 +21,8 @@ import {
   HIDEvent_HIDDirection,
   HIDEvent_HIDOrientationType,
   TargetDescription,
-} from "./generated/idb";
-import { HID_KEY_SHIFT, KEY_MAP, unmappedCharacters } from "./keymap";
+} from "./generated/idb.ts";
+import { HID_KEY_SHIFT, KEY_MAP, unmappedCharacters } from "./keymap.ts";
 
 export {
   AccessibilityInfoRequest_Backend as Backend,

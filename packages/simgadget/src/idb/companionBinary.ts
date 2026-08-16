@@ -22,7 +22,9 @@ import http from "http";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
-import { IdbError } from "./client";
+import { IdbError } from "./client.ts";
+import { assertIdbPathUnset, readEnv } from "../env.ts";
+import { CompanionDownloadError, UnsupportedArchitectureError } from "../errors.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,14 +59,32 @@ function isAppleSilicon(): boolean {
   return probe.status === 0 && probe.stdout.trim() === "1";
 }
 
+/**
+ * The pure decision behind the arch gate: Apple Silicon only, checked at
+ * resolve time so the failure is an explicit error naming the arch rather
+ * than a gRPC timeout thirty seconds later once a companion never starts.
+ * `platform`/`arm64` are passed in — not read from `process` here — so a
+ * test can drive every combination without touching `sysctl`; the impure
+ * probe (`isAppleSilicon`, see its comment for why `process.arch` alone
+ * cannot be trusted) stays at the call site.
+ */
+export function assertSupportedArchitecture(input: {
+  platform: NodeJS.Platform;
+  arch: string;
+  arm64: boolean;
+}): void {
+  if (input.platform === "darwin" && input.arm64) return;
+  throw new UnsupportedArchitectureError(input.arch);
+}
+
 /** Where downloaded companions live. Ours alone; never `/usr/local/bin`. */
 export function cacheRoot(): string {
-  const override = process.env.IOS_SIMULATOR_MCP_COMPANION_CACHE;
+  const override = readEnv("COMPANION_CACHE");
   if (override) return expandTilde(override);
   if (process.env.XDG_CACHE_HOME) {
-    return path.join(process.env.XDG_CACHE_HOME, "ios-multi-simulator-mcp");
+    return path.join(process.env.XDG_CACHE_HOME, "simgadget");
   }
-  return path.join(os.homedir(), "Library", "Caches", "ios-multi-simulator-mcp");
+  return path.join(os.homedir(), "Library", "Caches", "simgadget");
 }
 
 function expandTilde(p: string): string {
@@ -77,6 +97,29 @@ function packageRoot(): string {
 }
 
 /**
+ * Walks up from `start` looking for `vendor/idb/Build/Distribution/idb_companion`,
+ * stopping at the filesystem root. `packageRoot()` is `packages/simgadget`
+ * (still right for `companion.lock.json`, which ships alongside it), but the
+ * vendored submodule lives two levels further up at the repo root — and an
+ * installed package has no vendor directory at any level, so the walk must
+ * give up rather than loop forever. `exists` is injected so a test can drive
+ * the walk without touching the filesystem.
+ */
+export function findVendorCompanion(
+  start: string,
+  exists: (candidate: string) => boolean = fs.existsSync
+): string | undefined {
+  let dir = start;
+  for (;;) {
+    const candidate = path.join(dir, "vendor", "idb", "Build", "Distribution", "idb_companion");
+    if (exists(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
  * A companion built from the vendored submodule, if there is one.
  *
  * This is the developer path: `cd vendor/idb && ./build.sh build` leaves its
@@ -85,15 +128,8 @@ function packageRoot(): string {
  * which has no vendor directory.
  */
 function locallyBuiltCompanion(): string | undefined {
-  const built = path.join(
-    packageRoot(),
-    "vendor",
-    "idb",
-    "Build",
-    "Distribution",
-    "idb_companion"
-  );
-  return isUsable(built) ? built : undefined;
+  const found = findVendorCompanion(packageRoot());
+  return found && isUsable(found) ? found : undefined;
 }
 
 /** Reads the lock file shipped alongside the compiled server. */
@@ -102,7 +138,7 @@ export function readLock(): CompanionLock {
   if (!fs.existsSync(lockPath)) {
     throw new IdbError(
       `No companion.lock.json found at ${lockPath}, so there is no pinned ` +
-        `idb_companion to download. Point IOS_SIMULATOR_MCP_COMPANION_PATH at ` +
+        `idb_companion to download. Point SIMGADGET_COMPANION_PATH at ` +
         `an idb_companion binary, or build one with the build-companion workflow.`
     );
   }
@@ -148,24 +184,28 @@ export function resolveCompanion(
 }
 
 async function resolveOnce(log: (message: string) => void): Promise<string> {
-  const override = process.env.IOS_SIMULATOR_MCP_COMPANION_PATH;
+  // Called here, at the top of resolution, rather than at import time: a
+  // library that throws on import merely for a stray environment variable is
+  // hostile to anyone who imports it for an unrelated reason. This is the one
+  // place the variable would actually matter.
+  assertIdbPathUnset();
+
+  const override = readEnv("COMPANION_PATH");
   if (override) {
     const expanded = expandTilde(override);
     if (!fs.existsSync(expanded)) {
       throw new IdbError(
-        `IOS_SIMULATOR_MCP_COMPANION_PATH points at a file that does not exist: ${expanded}`
+        `SIMGADGET_COMPANION_PATH points at a file that does not exist: ${expanded}`
       );
     }
     return expanded;
   }
 
-  if (!isAppleSilicon()) {
-    throw new IdbError(
-      `The bundled idb_companion is built for Apple Silicon (arm64) only, and ` +
-        `this machine is not. Intel Macs are not supported: build idb_companion ` +
-        `yourself and point IOS_SIMULATOR_MCP_COMPANION_PATH at it.`
-    );
-  }
+  assertSupportedArchitecture({
+    platform: process.platform,
+    arch: process.arch,
+    arm64: isAppleSilicon(),
+  });
 
   // Prefer a companion built from the pinned submodule over downloading one.
   // It is the same sha, so this is not a compatibility compromise -- it just
@@ -188,8 +228,8 @@ async function resolveOnce(log: (message: string) => void): Promise<string> {
   await download(lock, installDir, log);
 
   if (!isUsable(binary)) {
-    throw new IdbError(
-      `Downloaded companion is missing or not executable at ${binary}.`
+    throw new CompanionDownloadError(
+      `downloaded companion is missing or not executable at ${binary}`
     );
   }
   return binary;
@@ -223,7 +263,8 @@ async function download(
   try {
     const actualSha = await fetchToFile(lock.url, tarball);
     if (actualSha !== lock.sha256) {
-      throw new IdbError(
+      throw new CompanionDownloadError(
+        `checksum mismatch for ${lock.url}`,
         `Checksum mismatch for ${lock.url}\n` +
           `  expected ${lock.sha256}\n` +
           `  actual   ${actualSha}\n` +
@@ -234,13 +275,19 @@ async function download(
 
     const extracted = path.join(scratch, "tree");
     fs.mkdirSync(extracted, { recursive: true });
-    await execFileAsync("tar", ["xzf", tarball, "-C", extracted]);
+    try {
+      await execFileAsync("tar", ["xzf", tarball, "-C", extracted]);
+    } catch (error) {
+      throw new CompanionDownloadError(
+        `could not extract archive from ${lock.url}: ${(error as Error).message}`
+      );
+    }
     fs.unlinkSync(tarball);
 
     const binary = path.join(extracted, "idb_companion");
     if (!fs.existsSync(binary)) {
-      throw new IdbError(
-        `The archive at ${lock.url} does not contain idb_companion at its root.`
+      throw new CompanionDownloadError(
+        `the archive at ${lock.url} does not contain idb_companion at its root`
       );
     }
     fs.chmodSync(binary, 0o755);
@@ -274,7 +321,8 @@ async function smokeTest(binary: string): Promise<void> {
     await execFileAsync(binary, ["--version"], { timeout: 30_000 });
   } catch (error) {
     const detail = (error as Error).message;
-    throw new IdbError(
+    throw new CompanionDownloadError(
+      `downloaded companion could not run: ${detail}`,
       `The downloaded idb_companion could not run: ${detail}\n` +
         `If macOS blocked it, check for a quarantine attribute with ` +
         `\`xattr -l ${binary}\`; \`xattr -dr com.apple.quarantine ${binary}\` clears it.`
@@ -293,7 +341,11 @@ function fetchToFile(url: string, destination: string): Promise<string> {
       if (settled) return;
       settled = true;
       file.destroy();
-      reject(error instanceof IdbError ? error : new IdbError(error.message));
+      reject(
+        error instanceof CompanionDownloadError
+          ? error
+          : new CompanionDownloadError(error.message)
+      );
     };
 
     const get = (target: string, redirectsLeft: number) => {
@@ -304,13 +356,13 @@ function fetchToFile(url: string, destination: string): Promise<string> {
       try {
         parsed = new URL(target);
       } catch {
-        fail(new IdbError(`Not a valid URL: ${target}`));
+        fail(new CompanionDownloadError(`not a valid URL: ${target}`));
         return;
       }
       if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
         fail(
-          new IdbError(
-            `Refusing to fetch ${target}: only http and https are supported.`
+          new CompanionDownloadError(
+            `refusing to fetch ${target}: only http and https are supported`
           )
         );
         return;
@@ -319,14 +371,14 @@ function fetchToFile(url: string, destination: string): Promise<string> {
       const client = parsed.protocol === "http:" ? http : https;
       const request = client.get(
         target,
-        { headers: { "user-agent": "ios-multi-simulator-mcp" } },
+        { headers: { "user-agent": "simgadget" } },
         (response) => {
           const status = response.statusCode ?? 0;
 
           if (status >= 300 && status < 400 && response.headers.location) {
             response.resume();
             if (redirectsLeft === 0) {
-              fail(new IdbError(`Too many redirects fetching ${url}`));
+              fail(new CompanionDownloadError(`too many redirects fetching ${url}`));
               return;
             }
             let next: string;
@@ -334,8 +386,8 @@ function fetchToFile(url: string, destination: string): Promise<string> {
               next = new URL(response.headers.location, target).toString();
             } catch {
               fail(
-                new IdbError(
-                  `Server redirected ${target} to an unusable location: ${response.headers.location}`
+                new CompanionDownloadError(
+                  `server redirected ${target} to an unusable location: ${response.headers.location}`
                 )
               );
               return;
@@ -347,7 +399,8 @@ function fetchToFile(url: string, destination: string): Promise<string> {
           if (status !== 200) {
             response.resume();
             fail(
-              new IdbError(
+              new CompanionDownloadError(
+                `HTTP ${status} downloading ${url}`,
                 `Downloading ${url} failed with HTTP ${status}. The release asset ` +
                   `named in companion.lock.json may have been moved or deleted.`
               )
@@ -369,7 +422,7 @@ function fetchToFile(url: string, destination: string): Promise<string> {
 
       request.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
         request.destroy();
-        fail(new IdbError(`Timed out downloading ${url}`));
+        fail(new CompanionDownloadError(`timed out downloading ${url}`));
       });
       request.on("error", fail);
     };

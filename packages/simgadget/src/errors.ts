@@ -32,7 +32,7 @@
  * the field here in the meantime would just be a second, drifting copy.
  */
 
-import type { AXElement } from "./ax/tree";
+import type { AXElement } from "./ax/tree.ts";
 
 export type ErrorCode =
   // environment / companion
