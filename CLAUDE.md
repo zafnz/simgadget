@@ -160,6 +160,28 @@ scripts/imsmd.sh restart          # after every build, or you are testing the ol
 scripts/imsmd.sh status
 ```
 
+**A restart destroys every simulator the server created.** That is deliberate —
+daemon exit is what stops a day's work leaking simulators — but combined with
+"restart after every build" it means each code change costs a 40s boot, a
+reinstall, and re-navigating to whatever screen you were testing. It is a silent
+cost: the simulator is simply gone next time you look.
+
+To keep them across a restart while iterating (verified, not merely plausible):
+
+```bash
+scripts/imsmd.sh restart IOS_SIMULATOR_MCP_CLEANUP_ON_EXIT=false
+```
+
+The simulator survives still booted, with the app installed and the screen where
+you left it. The session registry does *not* survive, so re-adopt it with
+`attach_simulator {id, udid}` — keep the UDID, `start_simulator` printed it.
+
+The catch, and why this is not the default: an attached session is `owned:
+false`, so `destroy_simulator` only detaches. The simulator is then yours to
+`xcrun simctl delete`, and orphans accumulate silently until you do. Fine for a
+development loop where you know what you created. See TODO #61 for why the
+proper fix — a persisted, re-adopted registry — was judged not worth its cost.
+
 It manages exactly one server, on port 8008 (`IOS_SIMULATOR_MCP_HTTP_PORT`),
 recorded in a pidfile, logging to `/tmp/imsm-daemon.log`.
 
