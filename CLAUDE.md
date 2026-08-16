@@ -33,6 +33,15 @@ npm start
 
 ## Architecture
 
+> **On the `simgadget-impl` branch, [SIMGADGET.md](SIMGADGET.md) is
+> authoritative and overrides this section**, including the "no architecture
+> changes" rule below. That branch splits the code into `packages/simgadget`
+> (the library) and `packages/simgadget-mcp` (the server); the order of work is
+> [SIMGADGET_PLAN.md](SIMGADGET_PLAN.md). The description below remains true of
+> `main` and of the still-building server at `src/index.ts`, which the branch
+> leaves untouched until the port. This section is rewritten properly at step 5
+> of the spec.
+
 The MCP surface — every tool, all validation, all session state — lives in
 `src/index.ts`, deliberately as one file. There are exactly two module splits,
 each for a reason that does not generalise.
@@ -208,7 +217,8 @@ other ports, from this same checkout**, and they are production. So:
 - **Real use cases only**: Don't add hypothetical features
 - **Security first**: Always use `--` separator for user inputs, validate with Zod
 - **No architecture changes** without discussion — tools and server logic stay in
-  the single `src/index.ts`. There are two deliberate exceptions, both narrow:
+  the single `src/index.ts`. (Superseded on `simgadget-impl` by SIMGADGET.md,
+  which *is* that discussion.) There are two deliberate exceptions, both narrow:
   `src/idb/`, added when the Python `idb` CLI was replaced by a direct gRPC
   client, and `src/ax/`, added so the pure logic could be unit tested. Neither is
   a licence to keep splitting: the 16 tool registrations in particular stay

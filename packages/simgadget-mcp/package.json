@@ -1,0 +1,21 @@
+{
+  "name": "simgadget-mcp",
+  "version": "0.0.1",
+  "private": true,
+  "description": "MCP server for session-based iOS simulator lifecycle management, enabling multi-agent parallel control. Built on the simgadget library.",
+  "license": "MIT",
+  "author": {
+    "name": "Nick Clifford",
+    "url": "https://nickclifford.com/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zafnz/ios-multi-simulator-mcp.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin"
+  ]
+}

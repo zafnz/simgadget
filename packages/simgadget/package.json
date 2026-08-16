@@ -1,0 +1,57 @@
+{
+  "name": "simgadget",
+  "version": "0.0.1",
+  "description": "Drive iOS simulators from JavaScript: accessibility reads, taps that verify they landed, coordinates that survive rotation — with a current idb_companion resolved for you.",
+  "license": "MIT",
+  "author": {
+    "name": "Nick Clifford",
+    "url": "https://nickclifford.com/"
+  },
+  "contributors": [
+    {
+      "name": "Joshua Yoes",
+      "url": "https://joshuayoes.com"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zafnz/ios-multi-simulator-mcp.git"
+  },
+  "keywords": [
+    "ios",
+    "simulator",
+    "idb",
+    "accessibility",
+    "automation",
+    "xcode"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin"
+  ],
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "default": "./build/index.js"
+    }
+  },
+  "files": [
+    "build",
+    "companion.lock.json"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "node --test \"test/*.test.mts\"",
+    "test:e2e": "node --test \"test/e2e/*.e2e.mts\""
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.13.0",
+    "@grpc/grpc-js": "^1.14.4"
+  }
+}
