@@ -1,3 +1,17 @@
+# TODO — SimGadget library, 2026-08-16
+
+- [ ] **#68 Implement a toggle set-to-state call in the JS library.** Cut from
+  the v1 API in SIMGADGET.md as its one speculative addition (no MCP consumer;
+  `tap({label})` already flips a toggle and reads the state back). Open
+  question before designing it: **unclear whether a toggle can be forced to a
+  value at all, or only flipped.** The mechanism we have is `AXPress` via
+  `accessibility_action`, which is a flip — idb's wire has no set-value for
+  toggles (#63 noted sliders would need `setValue`, which likewise is not on
+  the gRPC surface). If flip is all there is, set-to-state has to be
+  read-then-flip-if-needed, which is racy if the screen changes between the
+  read and the flip — decide whether that race is acceptable and how the
+  result reports it before freezing a signature.
+
 # TODO — Production bug, reported 2026-08-15
 
 - [x] **#60 FIXED 2026-08-15. The offset was in the tree all along, and we were throwing it away.**
