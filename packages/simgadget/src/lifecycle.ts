@@ -33,8 +33,8 @@ import {
   SimulatorNotFoundError,
 } from "./errors.ts";
 import { realDeps, type SimulatorDeps } from "./internal/deps.ts";
+import { recoveryRegistry } from "./internal/registry.ts";
 import { Format } from "./idb/client.ts";
-import { companions } from "./idb/companionManager.ts";
 import { Simulator } from "./simulator.ts";
 
 // ---- Shared types (spec "Shared types" / the Simulator handle) -----------
@@ -197,6 +197,41 @@ export function deriveDeviceName(keyword: string, name?: string): string {
   return `simgadget-${keyword.toLowerCase().replace(/\s+/g, "-")}`;
 }
 
+// ---- simctl failure shapes --------------------------------------------------
+//
+// Recognisers for `simctl`'s own failure text, kept pure and next to the
+// other output-shape parsers above rather than inline at each `simulator.ts`
+// call site. DECISIONS.md #13 / SIMGADGET.md's Decisions register: an
+// externally-deleted simulator must surface as `SimulatorNotFoundError`, "a
+// clear error, never a gRPC timeout" — never a raw stderr string either.
+
+/**
+ * Recognises simctl's "this udid doesn't exist" failure, so `simulator.ts`
+ * can map it to `SimulatorNotFoundError` at the deps boundary instead of
+ * letting the raw stderr text — or, downstream, a companion gRPC call that
+ * times out resolving a vanished target — reach a caller. Observed verbatim
+ * from a live `simctl`: `shutdown`/`delete`/`install`/`launch`/`spawn` say
+ * "Invalid device: <udid>"; `boot` says "Invalid device or device pair:
+ * <udid>". Anchored past "Invalid device" so "Invalid device type …" — a bad
+ * `simctl create` devicetype keyword, an unrelated failure this library
+ * never lets reach `simctl` anyway because `pickDeviceType` validates first —
+ * does not match.
+ */
+export function isInvalidDeviceError(message: string): boolean {
+  return /Invalid device(:| or device pair:)/.test(message);
+}
+
+/**
+ * Recognises simctl's failure for booting an already-booted device: "Unable
+ * to boot device in current state: Booted". `Simulator.boot()` swallows only
+ * this one shape and still performs the wait — the spec's "no-op boot still
+ * performs the wait" — while any other `simctl boot` failure (a genuinely
+ * bad udid, a corrupted device) must not be swallowed alongside it.
+ */
+export function isAlreadyBootedError(message: string): boolean {
+  return /Unable to boot device in current state:\s*Booted/i.test(message);
+}
+
 /**
  * Whether a failed-to-become-driveable boot has earned a bridge restart yet.
  *
@@ -292,8 +327,13 @@ const BOOT_POLL_INTERVAL_MS = 2_000;
  * service up. Ports index.ts:813; see that comment for how this was verified
  * against a wedged simulator (bridge pid changed, reads worked immediately
  * after, device and apps untouched).
+ *
+ * Exported: `waitUntilDriveable`'s own call below is best-effort (swallowed
+ * on failure, since the poll loop is the real readiness test), but
+ * `Simulator.restartBridge()` (step 2b) is a public verb over the same
+ * command and needs the real failure, mapped like every other simctl call.
  */
-async function restartSimulatorBridge(deps: SimulatorDeps, udid: string): Promise<void> {
+export async function restartSimulatorBridge(deps: SimulatorDeps, udid: string): Promise<void> {
   await deps.run("xcrun", ["simctl", "spawn", udid, "launchctl", "stop", BRIDGE_SERVICE]);
 }
 
@@ -373,6 +413,14 @@ export async function waitUntilDriveable(
         return root?.frame ?? null;
       });
       if (frame && frame.width && frame.height) {
+        // A real frame is proof the bridge worked, which makes a later
+        // failure a regression rather than a wait — the distinction
+        // `shouldRecover` (step 3) gates on. `waitUntilDriveable`'s original
+        // (index.ts:1137) recorded this; the port dropped it because this
+        // registry did not exist yet (DECISIONS.md #18). Restored here now
+        // that it does — this is a write of a plain fact, not the cooldown
+        // or cure-ladder logic step 3 owns.
+        recoveryRegistry.markAnswered(udid);
         return {
           ready: true,
           waitedMs: deps.now() - started,
@@ -460,13 +508,20 @@ export const defaultHandleFactory: HandleFactory = (udid, name, deps) =>
 /**
  * `createSimulator`, parameterised over `deps` and the handle factory for the
  * fake-client layer. Ports the `start_simulator` tool body's create sequence
- * (index.ts:1248-1288): devicetype → runtime → `simctl create` → (if booting)
- * `simctl boot` → `open -a Simulator.app` → `companions.reopen` → wait until
- * driveable.
+ * (index.ts:1248-1288): devicetype → runtime → `simctl create` → reopen a
+ * companion block a previous `delete()` may have left → (if booting)
+ * `handle.boot()`.
+ *
+ * `boot()` — not a duplicate `simctl boot` / `open` / `waitUntilDriveable`
+ * sequence here — owns the whole boot ladder as of step 2b (DECISIONS.md
+ * #20): it is public API in its own right, and having `createSimulatorWith`
+ * run its own copy would mean two places to keep in sync with BOOT_BUG.md's
+ * findings instead of one.
  *
  * Does **not** throw on a boot that timed out (DECISIONS.md #1 / SIMGADGET.md
  * "boot()/waitReady() do not throw on timeout"): the simulator exists either
- * way, and throwing would discard the handle and the udid with it. The
+ * way, and throwing would discard the handle and the udid with it. `boot()`
+ * carries that same guarantee, so nothing here needs to catch it. The
  * outcome lands in the returned handle's `lastBoot` instead.
  */
 export async function createSimulatorWith(
@@ -501,29 +556,21 @@ export async function createSimulatorWith(
     runtimeIdentifier,
   ]);
 
+  // A previous delete() (or today's destroy_simulator) may have blocked this
+  // udid from getting a new companion; a freshly created one is fair game
+  // again. Must run before `handle.boot()` below: its wait is a real
+  // accessibility read and needs a companion to reach the device with.
+  deps.reopenCompanion(udid);
+
+  const handle = makeHandle(udid, deviceName, deps);
+
   // `boot: true` (the default) both boots the device and opens Simulator.app
   // — DECISIONS.md #1, settled with the owner: `simctl boot` alone leaves no
   // window, and the MCP server may only use the public API, so if the library
   // does not do this nobody can. `boot: false` does neither, and does not
   // wait below either — CreateOptions has no separate "open the window" knob.
   if (boot) {
-    await deps.run("xcrun", ["simctl", "boot", udid]);
-    await deps.run("open", ["-a", "Simulator.app"]);
-  }
-
-  // A previous delete() (or today's destroy_simulator) may have blocked this
-  // udid from getting a new companion; a freshly created one is fair game
-  // again. This is a synchronous, in-memory operation on the process-level
-  // companion registry (Set.delete), not I/O, which is why it is reached
-  // directly rather than through SimulatorDeps — see the report for why this
-  // step did not add it to the frozen `internal/deps.ts` instead.
-  companions.reopen(udid);
-
-  const handle = makeHandle(udid, deviceName, deps);
-
-  if (boot) {
-    const ready = await waitUntilDriveable(deps, udid, budgetMs);
-    handle._recordBoot(ready);
+    await handle.boot({ budgetMs });
   }
 
   return handle;
@@ -539,9 +586,8 @@ export function createSimulator(opts?: CreateOptions): Promise<Simulator> {
  *
  * Verifies the udid exists and nothing more: no probe, no boot, no claim
  * about orientation. Callers who need it driveable call `sim.waitReady()`
- * next (a later step). Still calls `companions.reopen(udid)` — today's
- * `attach_simulator` does, to clear a block a previous detach left behind —
- * for the same reason and through the same direct call as `createSimulatorWith`.
+ * next (step 2b). Still calls `deps.reopenCompanion(udid)` — today's
+ * `attach_simulator` does, to clear a block a previous detach left behind.
  */
 export async function attachSimulatorWith(
   udid: string,
@@ -553,7 +599,7 @@ export async function attachSimulatorWith(
     throw new SimulatorNotFoundError(udid);
   }
 
-  companions.reopen(udid);
+  deps.reopenCompanion(udid);
 
   return makeHandle(udid, device.name, deps);
 }

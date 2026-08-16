@@ -4,7 +4,13 @@
  * step extends rather than building a second one: script `run()` results per
  * command, script `withClient()`'s answers (accessibility reads, failures),
  * and drive time through `clock` instead of waiting out a real rotation
- * settle or recovery cooldown.
+ * settle or recovery cooldown. `closeCompanion`/`reopenCompanion`/
+ * `shutdownCompanion` just record that they were called (DECISIONS.md #19 —
+ * they exist on the seam so a test can observe the call, not because the
+ * fake needs to model `CompanionManager`'s actual blocking behaviour).
+ * `calls.order` logs every call across every kind, in the order it happened,
+ * for a test that needs to assert ordering rather than just occurrence —
+ * e.g. `Simulator.delete()` closing the companion before any simctl call.
  *
  * The tether rule (SIMGADGET_PLAN.md) binds what a fake *`IdbClient`* may
  * claim a real companion does. This file does not implement one — tests
@@ -85,6 +91,19 @@ export interface FakeDepsCalls {
   spawn: RunCall[];
   sleep: number[];
   withClient: string[];
+  closeCompanion: string[];
+  reopenCompanion: string[];
+  shutdownCompanion: string[];
+  /**
+   * Every logged call, in the order it actually happened, as
+   * `"<kind>:<detail>"` — e.g. `"closeCompanion:UDID"`,
+   * `"run:xcrun simctl shutdown UDID"`. The per-kind arrays above are for
+   * filtering by call type; this is for a test that needs to assert
+   * *ordering* across kinds, such as `delete()`'s "close the companion
+   * before any simctl call" contract, which no per-kind array alone can
+   * prove.
+   */
+  order: string[];
 }
 
 export interface FakeDepsOptions {
@@ -115,7 +134,16 @@ export interface FakeDeps extends SimulatorDeps {
 
 export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
   const clock = options.clock ?? new FakeClock();
-  const calls: FakeDepsCalls = { run: [], spawn: [], sleep: [], withClient: [] };
+  const calls: FakeDepsCalls = {
+    run: [],
+    spawn: [],
+    sleep: [],
+    withClient: [],
+    closeCompanion: [],
+    reopenCompanion: [],
+    shutdownCompanion: [],
+    order: [],
+  };
 
   const runHandler: RunHandler = options.run ?? (() => ({ stdout: "", stderr: "" }));
   const client = options.client ?? {
@@ -127,23 +155,39 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
     clock,
     async run(cmd, args) {
       calls.run.push({ cmd, args });
+      calls.order.push(`run:${commandKey(cmd, args)}`);
       return runHandler(cmd, args);
     },
     spawn(cmd, args) {
       calls.spawn.push({ cmd, args });
+      calls.order.push(`spawn:${commandKey(cmd, args)}`);
       const child = options.spawn?.(cmd, args) ?? new FakeChildProcess();
       return child as unknown as ChildProcess;
     },
     async withClient(udid, fn) {
       calls.withClient.push(udid);
+      calls.order.push(`withClient:${udid}`);
       return fn(client as unknown as Parameters<typeof fn>[0]);
     },
     async sleep(ms) {
       calls.sleep.push(ms);
+      calls.order.push(`sleep:${ms}`);
       await clock.sleep(ms);
     },
     now() {
       return clock.now();
+    },
+    async closeCompanion(udid) {
+      calls.closeCompanion.push(udid);
+      calls.order.push(`closeCompanion:${udid}`);
+    },
+    reopenCompanion(udid) {
+      calls.reopenCompanion.push(udid);
+      calls.order.push(`reopenCompanion:${udid}`);
+    },
+    async shutdownCompanion(udid) {
+      calls.shutdownCompanion.push(udid);
+      calls.order.push(`shutdownCompanion:${udid}`);
     },
   };
 }

@@ -10,6 +10,8 @@ import {
   createSimulatorWith,
   deriveDeviceName,
   findDevice,
+  isAlreadyBootedError,
+  isInvalidDeviceError,
   listSimulatorsWith,
   parseDevices,
   pickDeviceType,
@@ -162,6 +164,73 @@ test("deriveDeviceName", async (t) => {
 
   await t.test("multi-word keywords become dash-separated", () => {
     assert.equal(deriveDeviceName("iPhone 16 Pro"), "simgadget-iphone-16-pro");
+  });
+});
+
+test("isInvalidDeviceError", async (t) => {
+  await t.test("matches shutdown/delete/install/launch/spawn's wording", () => {
+    assert.equal(isInvalidDeviceError("Invalid device: 00000000-0000-0000-0000-000000000000"), true);
+  });
+
+  await t.test("matches boot's differently-worded shape", () => {
+    assert.equal(
+      isInvalidDeviceError("Invalid device or device pair: 00000000-0000-0000-0000-000000000000"),
+      true
+    );
+  });
+
+  await t.test("matches wrapped in execFile's 'Command failed' prefix", () => {
+    assert.equal(
+      isInvalidDeviceError(
+        "Command failed: xcrun simctl shutdown 00000000-0000-0000-0000-000000000000\n" +
+          "Invalid device: 00000000-0000-0000-0000-000000000000\n"
+      ),
+      true
+    );
+  });
+
+  await t.test("does not match near-misses", () => {
+    for (const message of [
+      // A bad `simctl create` devicetype keyword -- a real simctl failure,
+      // but a different one; this library never even reaches it, since
+      // pickDeviceType validates first, but the recogniser must not blur
+      // the two anyway.
+      'Invalid device type "Apple Watch"',
+      "Invalid devicetype identifier",
+      "invalid device: lowercase does not occur in real simctl output",
+      "Device invalid: 00000000-0000-0000-0000-000000000000",
+      "No devices are booted.",
+      "",
+    ]) {
+      assert.equal(isInvalidDeviceError(message), false, `should not match: ${message}`);
+    }
+  });
+});
+
+test("isAlreadyBootedError", async (t) => {
+  await t.test("matches the real message", () => {
+    assert.equal(
+      isAlreadyBootedError(
+        "An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, " +
+          "code=164): Unable to boot device in current state: Booted"
+      ),
+      true
+    );
+  });
+
+  await t.test("is case-insensitive", () => {
+    assert.equal(isAlreadyBootedError("unable to boot device in current state: booted"), true);
+  });
+
+  await t.test("does not match a different current state, or an unrelated failure", () => {
+    for (const message of [
+      "Unable to boot device in current state: Booting",
+      "Unable to boot device in current state: Shutting Down",
+      "Invalid device or device pair: 00000000-0000-0000-0000-000000000000",
+      "",
+    ]) {
+      assert.equal(isAlreadyBootedError(message), false, `should not match: ${message}`);
+    }
   });
 });
 
@@ -432,13 +501,13 @@ test("createSimulatorWith", async (t) => {
   });
 
   await t.test("clears a previous close() block on the fresh udid", async () => {
-    // companions.reopen(udid) is a real (harmless, in-memory) call on the
-    // process-level singleton -- see lifecycle.ts's comment on why it is not
-    // reached through SimulatorDeps. Exercised here for coverage; there is no
-    // observable effect to assert beyond "this does not throw".
+    // DECISIONS.md #19: reopenCompanion is reached through the deps seam
+    // (not called on the process-level singleton directly), which is what
+    // makes it observable here.
     const order: string[] = [];
     const deps = createFakeCreateDeps(order);
-    await assert.doesNotReject(createSimulatorWith(undefined, deps));
+    const sim = await createSimulatorWith(undefined, deps);
+    assert.deepEqual(deps.calls.reopenCompanion, [sim.udid]);
   });
 });
 
@@ -475,5 +544,8 @@ test("attachSimulatorWith", async (t) => {
     assert.equal(sim.lastBoot, undefined);
     assert.equal(deps.calls.withClient.length, 0);
     assert.equal(deps.calls.sleep.length, 0);
+    // Clears a block a previous detach left behind, via the deps seam
+    // (DECISIONS.md #19).
+    assert.deepEqual(deps.calls.reopenCompanion, ["UDID-1"]);
   });
 });

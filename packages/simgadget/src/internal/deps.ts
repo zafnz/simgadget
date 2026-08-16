@@ -67,6 +67,23 @@ export interface SimulatorDeps {
    * in tests, so the recovery cooldown and the rotation settle can be
    * measured without waiting them out. */
   now(): number;
+  /**
+   * Stops `udid`'s companion and refuses to start another until
+   * `reopenCompanion`. Delegates to `CompanionManager.close`; see that
+   * method's comment for why `Simulator.delete()` needs the block held
+   * across its `simctl shutdown`/`delete` calls rather than just stopping
+   * the companion. On the deps seam (DECISIONS.md #19) rather than reached
+   * directly, so a test can assert `delete()` calls this *before* any simctl
+   * call — the whole reason the fake keeps an ordered call log.
+   */
+  closeCompanion(udid: string): Promise<void>;
+  /** Allows companions for `udid` again after `closeCompanion`. Delegates to
+   * `CompanionManager.reopen`. */
+  reopenCompanion(udid: string): void;
+  /** Stops whatever companion is currently running for `udid`, if any.
+   * Delegates to `CompanionManager.shutdown`. This is `releaseCompanion()`'s
+   * tidy path. */
+  shutdownCompanion(udid: string): Promise<void>;
 }
 
 export const realDeps: SimulatorDeps = {
@@ -80,4 +97,7 @@ export const realDeps: SimulatorDeps = {
   spawn: (cmd, args) => spawn(cmd, args),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => Date.now(),
+  closeCompanion: (udid) => companions.close(udid),
+  reopenCompanion: (udid) => companions.reopen(udid),
+  shutdownCompanion: (udid) => companions.shutdown(udid),
 };
