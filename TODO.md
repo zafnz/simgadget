@@ -56,6 +56,48 @@
     catching a wedge in the wild. That is the honest state of it, and it should
     be said out loud rather than implied by a green suite.
 
+- [ ] **#72 The e2e suite has no counterpart to TESTING_TOOLS.md Part 3 —
+  remote-hosted views.** Noted 2026-08-17 while checking the new
+  `test:e2e` journey against the manual plan it is the library-level analogue
+  of. Parts 1, 2 and 4 map across closely; Part 5 is
+  `check-companion-contract.mjs`; Part 6 measures MCP round trips and does not
+  apply. Part 3 has nothing.
+
+  **Why this is the gap worth naming.** It is the machinery behind #60, the one
+  bug on this list that reached production. iOS draws the "Use Strong
+  Password?" sheet, the photo and document pickers and share sheets from a
+  *separate process*, hosted inside the app's window, so their elements arrive
+  in one tree with the app's own while their frames are measured from the
+  hosting window rather than the screen. Untranslated, `tap({label})` resolved
+  the label, tapped its centre, reported success, and landed 476 points away —
+  in the fixture, "Fill Strong Password" tapped "Login Submit". **Every frame
+  involved was correct in its own space**, so nothing in the tree could
+  contradict it, which is what makes this failure mode a confident false
+  success rather than an error.
+
+  **What is covered, so the gap is precise.** `translateRemoteSubtrees`,
+  `isRemotelyHosted` and `locateInTree` are all ported and unit-tested against
+  captured tree shapes, including the picker case where the hosting window sits
+  at the screen origin and the offset is legitimately zero — the case that kills
+  "sheets are wrong, shift them". `check-companion-contract.mjs --remote`
+  checks that the companion still emits the type-83 boundary node. **What
+  nothing checks is our translation of it against a real hosted view.**
+
+  **What an implementation would need.** The sheet has to be raised by
+  interaction (the fixture's login screen, `ShowLoginButton`, then the password
+  field), and it does not appear reliably on demand — which is the reason the
+  manual plan has it as its own part rather than a step in Part 1. The picker
+  (`ShowPickerButton`) is the more reproducible half and is also the
+  zero-offset case, so it proves the guard rather than the shift. Assert a
+  frame inside the hosted view is in screen space, and that a tap by name
+  actually lands, which is the assertion #60 would have failed.
+
+  **Smaller omissions found in the same pass**, none of them load-bearing:
+  TESTING_TOOLS #45 (tapping a toggle by *coordinate* — the e2e taps by
+  coordinate only in landscape), #46 (a name that resolves to something that is
+  not a control), and #19 (activity while a recording runs). `ui_view` has no
+  library equivalent by design — it is an MCP wire shape.
+
 - [ ] **#70 A script needs to be able to read, and to assert where it is.** The
   motivating shape: `tap the button, then make sure we are on the XYZ screen`.
   Requested 2026-08-17. A v1-API addition, so it needs a SIMGADGET.md amendment

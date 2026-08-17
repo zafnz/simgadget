@@ -212,6 +212,25 @@ a finding that lives only in a commit message is a finding that gets rediscovere
    effect; the suite therefore asserts that the launch *worked* (by reading the
    app off the screen) and says nothing about the pid.
 
+## What it deliberately does not cover
+
+This suite is the library-level analogue of TESTING_TOOLS.md, and it follows
+that plan's Part 1 (portrait), Part 2 (coordinates after rotation) and Part 4
+(toggles, disabled and covered controls) closely. Part 5 is
+`check-companion-contract.mjs` rather than anything here, and Part 6 measures
+MCP round trips, which a library has none of.
+
+**Part 3 — remote-hosted views — has no counterpart here, and that is the one
+worth knowing about.** It is the machinery behind TODO #60: a sheet or picker
+drawn by another process, hosted inside the app's window, whose elements arrive
+with frames measured from that window rather than the screen. Untranslated, a
+tap by name lands hundreds of points away and reports success, with every frame
+involved correct in its own space. `translateRemoteSubtrees`, `isRemotelyHosted`
+and `locateInTree` are unit-tested against captured tree shapes, and the
+contract check's `--remote` mode confirms the companion still marks the
+boundary — but nothing exercises our translation of it against a real hosted
+view. See TODO #72, which records what an implementation would need.
+
 ## Adding to it
 
 The regression rule (SIMGADGET.md) says a newly discovered bug lands three
