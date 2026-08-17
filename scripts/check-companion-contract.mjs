@@ -20,7 +20,8 @@
  *
  * It spawns its own companion for that udid, which is fine alongside the
  * server's — that is how every probe in this project has been run — and it only
- * reads, apart from one switch it toggles and toggles back.
+ * reads, apart from one switch it toggles and toggles back, and one button
+ * whose whole effect is a line of text in the fixture's own status label.
  */
 import { createRequire } from "module";
 import path from "path";
@@ -397,6 +398,94 @@ await companions.withClient(udid, async (client) => {
       !foundAtDepth0 && foundAtDefault,
       "a marker query at depth 0 searches only the root; the default depth reaches a deep control",
       `"${target}" at depth 0 -> ${depth0Detail}; at default depth -> ${defaultDetail}`
+    );
+  }
+
+  // --- 11. A UNIQUE_ID marker matches a substring, exactly as a label does. -
+  // Measured, not assumed, and the measurement contradicts the code:
+  // `findByIdentifier` (index.ts ~172) is written as "exact, where a label is a
+  // substring that can drift onto something else". It is not exact. The
+  // companion's own refusal reads `found no element whose AXUniqueId contains
+  // "..."`, and a marker of "lainSwitch" — not even a prefix — resolves to
+  // `PlainSwitch`.
+  //
+  // Two call sites ride on this. `findByLabel` falls back to an identifier
+  // lookup when the label misses (index.ts ~274), so a caller's partial name
+  // can silently resolve an identifier it never spelled out; and `tap`'s toggle
+  // read-back re-reads by identifier, which lands on the first element whose
+  // identifier *contains* the one asked for rather than necessarily the one
+  // tapped. Both resolve first-hit-in-tree-order (check 2), so neither can
+  // report the ambiguity. If upstream ever makes UNIQUE_ID exact this goes red;
+  // that would be a safer world, but the fake and those two sites have to be
+  // told about it rather than find out in production.
+  //
+  // The control case is what stops this proving nothing: an exact identifier
+  // must resolve too, or a substring miss would look the same as a broken query.
+  {
+    const probe = async (value) => {
+      try {
+        const hit = await marker(client, value, Key.UNIQUE_ID);
+        return { label: hit?.elements?.AXLabel ?? null };
+      } catch (e) {
+        return { error: e.message.slice(0, 120) };
+      }
+    };
+    // A strict substring: no prefix or suffix match can explain a hit on this.
+    const partial = await probe("lainSwitch");
+    const exact = await probe("PlainButton");
+    record(
+      partial.label === "Plain Switch" && exact.label === "Plain Button",
+      "a UNIQUE_ID marker matches a substring, not just an exact identifier",
+      `"lainSwitch" (strictly inside PlainSwitch) -> ${JSON.stringify(partial.label ?? partial.error)}; ` +
+        `exact "PlainButton" -> ${JSON.stringify(exact.label ?? exact.error)}`
+    );
+  }
+
+  // --- 12. The action API reports an unreachable element with "found no
+  // element" too — the same wording a read uses (check 7). ------------------
+  // `AccessibilityActionRequest` has no `backend` field, so an action always
+  // runs on the default backend: the one blind to toolbar and nav-bar contents
+  // (check 4). A toolbar switch is therefore findable through AXBridge and not
+  // activatable, and `ui_tap {label}` depends on recognising exactly this to
+  // fall back to a real touch. If the wording drifts, an unreachable element
+  // becomes an opaque gRPC failure and a toolbar switch stops being tappable by
+  // name — the failure mode check 7 guards against on the read path.
+  //
+  // The reachable half is what separates "unreachable" from "broken": Plain
+  // Button is activated the same way, and its only effect is the fixture's own
+  // status label.
+  {
+    const act = (value) =>
+      new Promise((resolve, reject) => {
+        client.client.accessibilityAction(
+          idb.AccessibilityActionRequest.fromPartial({
+            marker: value,
+            matchKey: Key.LABEL,
+            depth: 50,
+            tap: {},
+          }),
+          (err, res) => (err ? reject(err) : resolve(res))
+        );
+      });
+
+    let unreachable = null;
+    try {
+      await act("Toolbar Switch");
+    } catch (e) {
+      unreachable = e.message;
+    }
+    let reachable = null;
+    let reachableError = null;
+    try {
+      reachable = await act("Plain Button");
+    } catch (e) {
+      reachableError = e.message.slice(0, 120);
+    }
+    record(
+      unreachable !== null && /found no element/i.test(unreachable) && !reachableError,
+      'an action on an element the default backend cannot reach fails with "found no element"',
+      `"Toolbar Switch" -> ${JSON.stringify(unreachable ?? "no error was thrown")}; ` +
+        `"Plain Button" (reachable) -> ${reachableError ? `error: ${reachableError}` : JSON.stringify(reachable ?? null)}`
     );
   }
 
