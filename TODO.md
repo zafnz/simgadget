@@ -56,6 +56,94 @@
     catching a wedge in the wild. That is the honest state of it, and it should
     be said out loud rather than implied by a green suite.
 
+- [ ] **#70 A script needs to be able to read, and to assert where it is.** The
+  motivating shape: `tap the button, then make sure we are on the XYZ screen`.
+  Requested 2026-08-17. A v1-API addition, so it needs a SIMGADGET.md amendment
+  before it is written, not a note afterwards.
+
+  **What already exists, so this is not built from nothing.** `findByLabel`
+  matches against an element's label, its visible text (`AXValue`) *and* its
+  identifier, and returns the element or `null` — so "is XYZ on screen" is
+  already answerable, and a text field's contents already come back in
+  `AXValue`. `describeScreen()` returns the whole pruned tree. The gap is
+  ergonomics and, more importantly, **timing and identity**:
+
+  - **Reading text by name has no first-class verb.** `findByLabel("Total")`
+    then `?.AXValue` is the whole implementation, but every caller writing it
+    themselves will get the `null` case wrong. A `readText(name)` returning
+    `string | null` is a two-line method and a real improvement in what scripts
+    look like.
+  - **The race is the hard part, not the read.** A tap is followed by an
+    animation, and reading immediately is measurably wrong: #53 found dismiss
+    taps fired straight after a presentation failed in 2 of 3 rounds, and 4 of 4
+    with a 1s settle. So the useful primitive is not `read` but **`waitFor`** —
+    a predicate with a budget, polling a cheap read. Without it every script
+    grows its own `sleep(1000)`, which is the thing this library exists to stop.
+    Open: what the predicate takes (a label? an element test?), what it returns
+    on timeout (throw, or a `false` a caller must check — design rule 3 says
+    absent is an answer, but a timed-out *wait* is arguably different), and
+    whether it shares the ~13ms cheap read or needs the ~350ms AXBridge one.
+  - **"What screen am I on" has no answer in the accessibility tree, and that is
+    the genuinely open question.** iOS publishes no screen identity. Candidates,
+    in rough order of promise:
+      - **`pid`.** The companion returns it per element and `DESCRIBE_KEYS`
+        deliberately drops it (`ax/tree.ts:59`) as near-constant. It is not
+        constant across a *process* boundary, which is exactly the case that
+        matters: #37 records that a system alert replaces the app in the tree
+        entirely, and the whole remote-hosted-view mechanism (#60) is about
+        subtrees drawn by another process. Cheapest lead, and it is being thrown
+        away today.
+      - **The navigation bar's title**, which is what a human means by "the XYZ
+        screen". Only AXBridge sees nav bar contents at all (contract check 4),
+        so this costs the expensive read.
+      - **The set of visible labels** as a fingerprint. Crude, and brittle
+        against any dynamic content.
+    Worth an investigation session against the fixture before designing an API:
+    the question "what can we actually know about where we are" has never been
+    asked directly, and the answer decides whether this is a `currentScreen()`
+    verb or just documentation telling scripts to assert on a landmark.
+
+  **What it must not become:** a general assertion framework. The library's job
+  is to answer accurately; `expect`/`should` belongs to whatever test runner the
+  caller already has.
+
+- [ ] **#71 Swipe to a label — scroll until XYZ is on screen, then tap it.**
+  Requested 2026-08-17. Also a v1-API addition needing a spec amendment first.
+
+  **The subtlety that makes this worth designing rather than scripting:** being
+  in the tree is not the same as being on screen. A scrolled-out control keeps
+  its place in the accessibility tree with a perfectly correct frame — that is
+  precisely why `tap({label})` hit-tests before touching and refuses with
+  `TapObstructedError` (#64a; the fixture's stepper under the toolbar tapped the
+  *search field* and reported success). So **the stopping predicate must be the
+  hit-test, not `findByLabel` returning non-null**, or this will confidently
+  stop scrolling while the target is still under a toolbar. The machinery to
+  decide it already exists inside `tap`; this needs it factored out rather than
+  reinvented.
+
+  Open questions, none of them settled:
+  - **Where to swipe.** A screen can hold several scrollable regions, and a
+    swipe in the wrong one does nothing at all — which is indistinguishable from
+    "not scrollable" and would burn the whole budget. Does the caller name a
+    container, do we swipe the largest scrollable frame, or the one containing a
+    landmark?
+  - **When to give up.** Two conditions, and both are needed: a step budget, and
+    *no progress* — the tree stopping changing means the end of the list, and
+    continuing past it is pure cost. Detecting "the tree did not change" cheaply
+    is its own small problem.
+  - **Direction.** Caller-specified, or inferred from where the element already
+    is in the tree when it is present but off screen? The second is much nicer
+    and only works when the target is in the tree at all.
+  - **Overshoot.** Fast scrolling can carry a target past the viewport between
+    reads; a smaller final step, or scrolling back, may be needed.
+  - **What it answers.** Per design rule 1, not a bare success: how far it
+    scrolled, how many steps, and the element it ended up with — so a caller
+    that then taps is not re-resolving from scratch.
+
+  **Relationship to #70:** these are the same primitive underneath — swipe,
+  re-read, test a predicate, repeat within a budget. Design them together or the
+  second will duplicate the first's polling loop.
+
 # TODO — Production bug, reported 2026-08-15
 
 - [x] **#60 FIXED 2026-08-15. The offset was in the tree all along, and we were throwing it away.**
