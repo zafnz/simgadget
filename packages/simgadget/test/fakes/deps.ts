@@ -118,10 +118,17 @@ export interface FakeDepsOptions {
    * about. */
   run?: RunHandler;
   /** Answers `withClient()`'s callback with this fake client — usually
-   * `createFakeIdbClient(...)` from `./idb.ts`. Defaults to one whose
+   * `createFakeIdbClient(...)` from `./idb.ts`. Anything shaped like the slice
+   * of `IdbClient` the code under test calls will do; only
+   * `accessibilityInfo` is required, because a test that never rotates has no
+   * reason to model `setOrientation`. Defaults to one whose
    * `accessibilityInfo()` always rejects, i.e. "never becomes driveable" — the
    * common case for a boot-ladder timeout test. */
-  client?: { accessibilityInfo: (query: unknown) => Promise<unknown> };
+  client?: {
+    accessibilityInfo(query: unknown): Promise<unknown>;
+    describe?(): Promise<unknown>;
+    setOrientation?(orientation: number): Promise<void>;
+  };
   /** A registry to share between two handles on one udid, for a test about
    * exactly that. Defaults to a fresh one, which is what every other test
    * wants. */
@@ -161,6 +168,32 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
     accessibilityInfo: () => Promise.reject(new Error("fake: simulator not answering yet")),
   };
 
+  /**
+   * The client, with every method call logged into `calls.order` as
+   * `client:<method>`.
+   *
+   * `withClient` alone cannot say *what* was asked of the companion — every
+   * call through it logs the same `withClient:<udid>` — so a test about
+   * ordering between a companion call and a dep call ("`rotate` settles after
+   * sending the orientation and before reading the tree") has nothing to assert
+   * on. The client's own logs (`FakeIdbClient.calls`) order companion calls
+   * against each other but cannot interleave with `sleep`. This is the one
+   * place both are visible in a single sequence.
+   *
+   * Bound to `target` rather than to the proxy so a fake client's own private
+   * state is reached directly, as it would be without the proxy in the way.
+   */
+  const loggedClient = new Proxy(client, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        calls.order.push(`client:${String(property)}`);
+        return value.apply(target, args);
+      };
+    },
+  });
+
   return {
     calls,
     clock,
@@ -179,7 +212,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
     async withClient(udid, fn) {
       calls.withClient.push(udid);
       calls.order.push(`withClient:${udid}`);
-      return fn(client as unknown as Parameters<typeof fn>[0]);
+      return fn(loggedClient as unknown as Parameters<typeof fn>[0]);
     },
     async sleep(ms) {
       calls.sleep.push(ms);

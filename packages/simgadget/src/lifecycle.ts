@@ -58,6 +58,27 @@ export type SimulatorState =
   | "Creating"
   | (string & {});
 
+/**
+ * Device-vocabulary orientation, as the Simulator's own Device > Orientation
+ * menu spells it: rotating the device left is `landscape_left`. UIKit's
+ * *interface* names are the mirror of these for the two landscapes; the
+ * crossing is handled once, in `simulator.ts`'s `HID_ORIENTATION`, and never
+ * escapes.
+ *
+ * Deliberately **not** `ax/orientation.ts`'s `Orientation`, which carries an
+ * extra `"auto"` (DECISIONS.md #3). That one is the handle's internal
+ * unset-hint state, resolved by `getEffectiveOrientation` at every boundary; it
+ * never crosses the API. Open per DECISIONS.md #2, for the same reason
+ * `SimulatorState` is — and because face-up and face-down may be worth
+ * supporting later.
+ */
+export type Orientation =
+  | "portrait"
+  | "upside_down"
+  | "landscape_left"
+  | "landscape_right"
+  | (string & {});
+
 export interface SimInfo {
   udid: string;
   name: string;

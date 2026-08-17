@@ -1,7 +1,7 @@
 /**
- * A scriptable stand-in for the slice of `IdbClient` the library's reads use —
- * `accessibilityInfo`, in its three shapes: a whole-screen tree, a server-side
- * marker query, and a point read.
+ * A scriptable stand-in for the slice of `IdbClient` the library uses:
+ * `accessibilityInfo`, in its three shapes (a whole-screen tree, a server-side
+ * marker query, a point read), plus `describe` and `setOrientation`.
  *
  * **The tether rule (SIMGADGET_PLAN.md) binds this file absolutely.** It
  * encodes our beliefs about somebody else's undocumented binary, and every one
@@ -23,7 +23,17 @@
  *    same wording a wedged bridge produces (check 8) — which is the entire
  *    reason `describePoint` disambiguates by asking for the screen;
  *  - a marker query at depth 0 searches only the root (check 10) — the library
- *    never sends one, so this fake never has to model it.
+ *    never sends one, so this fake never has to model it;
+ *  - `describe()` reports screen dimensions in **both pixels and points**
+ *    (check 9), which is where the coordinate contract's cached portrait point
+ *    dimensions come from.
+ *
+ * `setOrientation` claims nothing at all, and that is the tether rule being
+ * satisfied rather than dodged: whether the interface obeys a rotation is the
+ * app's decision and iOS's, which is precisely why `rotate()` reads the
+ * orientation back instead of trusting the request. A fake that made the screen
+ * turn would be asserting the one thing the real binary does not promise. Tests
+ * script what the screen looks like afterwards themselves.
  *
  * Reached by importing `../src/simulator.ts` directly, which is a privilege of
  * living inside the package: the `exports` map makes the seam unresolvable to
@@ -31,7 +41,7 @@
  */
 
 import type { AXElement } from "../../src/ax/tree.ts";
-import { Backend, Format, SearchableKey } from "../../src/idb/client.ts";
+import { Backend, Format, OrientationType, SearchableKey } from "../../src/idb/client.ts";
 
 /** One accessibility read, as the fake saw it. */
 export interface AccessibilityCall {
@@ -71,6 +81,43 @@ export interface FakeIdbOptions {
    * "no translation object" (check 8). Defaults to nothing there.
    */
   point?: (x: number, y: number) => AXElement | null;
+  /**
+   * Answers `describe()`. Defaults to a 390x844-point screen at 3x. Return
+   * `screenDimensions: undefined` to model a companion that answers without
+   * them — the one case the library has to tolerate without a typed error.
+   */
+  describe?: () => FakeTargetDescription;
+}
+
+/** The slice of `TargetDescription` the library reads. */
+export interface FakeTargetDescription {
+  screenDimensions?: {
+    width: number;
+    height: number;
+    density: number;
+    widthPoints: number;
+    heightPoints: number;
+  };
+}
+
+/**
+ * A `describe()` answer for a device of this many portrait points, reported in
+ * both units the way contract check 9 pins.
+ */
+export function targetDescription(
+  widthPoints: number,
+  heightPoints: number,
+  density = 3
+): FakeTargetDescription {
+  return {
+    screenDimensions: {
+      width: widthPoints * density,
+      height: heightPoints * density,
+      density,
+      widthPoints,
+      heightPoints,
+    },
+  };
 }
 
 /**
@@ -147,7 +194,24 @@ export class FakeIdbClient {
    * *across* kinds of dep call is `FakeDeps.calls.order`'s job. */
   readonly calls: AccessibilityCall[] = [];
 
+  /** Every `describe()`, so a test can prove the portrait point dimensions are
+   * fetched once and then cached forever. */
+  describes = 0;
+
+  /** Every orientation asked for, in order. What the *screen* then looks like
+   * is the test's to script — see this file's header. */
+  readonly orientations: OrientationType[] = [];
+
   constructor(private readonly options: FakeIdbOptions = {}) {}
+
+  async describe(): Promise<FakeTargetDescription> {
+    this.describes++;
+    return (this.options.describe ?? (() => targetDescription(390, 844)))();
+  }
+
+  async setOrientation(orientation: OrientationType): Promise<void> {
+    this.orientations.push(orientation);
+  }
 
   async accessibilityInfo(query: unknown): Promise<unknown> {
     const q = (query ?? {}) as {

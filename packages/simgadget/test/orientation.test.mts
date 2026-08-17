@@ -5,8 +5,19 @@ import type { Orientation } from "../src/ax/orientation.ts";
 import {
   candidateOrientations,
   getEffectiveOrientation,
+  reconcileHint,
   transformPointToPortrait,
 } from "../src/ax/orientation.ts";
+import { OrientationType } from "../src/idb/client.ts";
+import { HID_ORIENTATION } from "../src/simulator.ts";
+
+/** The four real orientations, in the vocabulary the library speaks. */
+const ALL = [
+  "portrait",
+  "upside_down",
+  "landscape_left",
+  "landscape_right",
+] as const;
 
 // An iPhone 17 Pro on its side, in logical coordinates: this is what
 // describe_all reports and what a caller's coordinates are in. Portrait space —
@@ -138,5 +149,189 @@ test("candidateOrientations", async (t) => {
       const fallback: Orientation = candidateOrientations(isLandscape)[0];
       assert.equal(fallback, getEffectiveOrientation("auto", w, h));
     }
+  });
+});
+
+// A rotation maps the screen onto the screen, so `transformPointToPortrait` has
+// to be invertible — but nothing in the library ever inverts it, which is
+// exactly why a mistake in one direction is invisible. The inverse is written
+// out here, from the geometry rather than from the implementation, and the
+// round trip is the property that catches a transposed term the corner and
+// centre cases above would both survive.
+function fromPortrait(
+  x: number,
+  y: number,
+  orientation: Orientation,
+  screenW: number,
+  screenH: number
+): { x: number; y: number } {
+  switch (orientation) {
+    case "portrait":
+    case "auto":
+      return { x, y };
+    case "landscape_right":
+      return { x: screenW - y, y: x };
+    case "landscape_left":
+      return { x: y, y: screenH - x };
+    case "upside_down":
+      return { x: screenW - x, y: screenH - y };
+  }
+}
+
+test("logical → portrait → logical is the identity", async (t) => {
+  const shapes = [
+    { name: "portrait-shaped screen", w: 402, h: 874 },
+    { name: "landscape-shaped screen", w: 874, h: 402 },
+  ];
+  // Corners, edges and a couple of interior points — the places a sign error
+  // hides.
+  const points = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 200, y: 300 },
+    { x: 137, y: 42 },
+  ];
+
+  for (const { name, w, h } of shapes) {
+    await t.test(name, () => {
+      for (const orientation of [...ALL, "auto"] as const) {
+        for (const point of [...points, { x: w, y: h }]) {
+          const portrait = transformPointToPortrait(point.x, point.y, orientation, w, h);
+          assert.deepEqual(
+            fromPortrait(portrait.x, portrait.y, orientation, w, h),
+            point,
+            `${orientation} did not round-trip (${point.x}, ${point.y}) on ${w}x${h}`
+          );
+        }
+      }
+    });
+  }
+});
+
+test("reconcileHint", async (t) => {
+  // The table is the whole rule: a describe sees the aspect and nothing else,
+  // so it may retire a hint it contradicts and must leave an agreeing one
+  // alone. Chirality costs a probe to learn; a read that cannot see it must not
+  // be allowed to throw it away.
+  const cases: {
+    hint: Orientation;
+    isLandscape: boolean;
+    expected: Orientation;
+    why: string;
+  }[] = [
+    {
+      hint: "auto",
+      isLandscape: false,
+      expected: "auto",
+      why: "there is nothing to retire",
+    },
+    {
+      hint: "auto",
+      isLandscape: true,
+      expected: "auto",
+      why: "a shape is not a chirality, so auto stays auto",
+    },
+    {
+      hint: "portrait",
+      isLandscape: false,
+      expected: "portrait",
+      why: "agrees, and portrait is not upside_down",
+    },
+    {
+      hint: "upside_down",
+      isLandscape: false,
+      expected: "upside_down",
+      why: "agrees; the describe cannot tell it from portrait either way",
+    },
+    {
+      hint: "landscape_left",
+      isLandscape: true,
+      expected: "landscape_left",
+      why: "agrees, and the chirality a probe paid for survives",
+    },
+    {
+      hint: "landscape_right",
+      isLandscape: true,
+      expected: "landscape_right",
+      why: "agrees",
+    },
+    {
+      hint: "portrait",
+      isLandscape: true,
+      expected: "auto",
+      why: "something rotated the device behind our back",
+    },
+    {
+      hint: "upside_down",
+      isLandscape: true,
+      expected: "auto",
+      why: "contradicted",
+    },
+    {
+      hint: "landscape_left",
+      isLandscape: false,
+      expected: "auto",
+      why: "contradicted",
+    },
+    {
+      hint: "landscape_right",
+      isLandscape: false,
+      expected: "auto",
+      why: "contradicted",
+    },
+  ];
+
+  for (const { hint, isLandscape, expected, why } of cases) {
+    await t.test(`${hint} + ${isLandscape ? "landscape" : "portrait"} frame → ${expected}`, () => {
+      assert.equal(reconcileHint(hint, isLandscape), expected, why);
+    });
+  }
+
+  // The consequence that matters, spelled out: a retired hint is not a lost
+  // one, because "auto" re-derives the aspect from the shape. What is lost is
+  // only the half a describe could never have known.
+  await t.test("a retired hint still yields the observed aspect", () => {
+    const retired = reconcileHint("portrait", true);
+    assert.equal(getEffectiveOrientation(retired, 874, 402), "landscape_right");
+  });
+});
+
+test("HID_ORIENTATION", async (t) => {
+  // **The landscapes are crossed on purpose.** Both enums spell the same four
+  // words: ours names the *device*, as the Simulator's Device > Orientation
+  // menu does, and idb's uses UIKit's *interface* vocabulary, where
+  // `UIInterfaceOrientationLandscapeLeft` is `UIDeviceOrientationLandscapeRight`.
+  // A name-for-name map was written first and the fixture caught it
+  // immediately. This table exists so nobody "fixes" it back.
+  const expected: Record<(typeof ALL)[number], OrientationType> = {
+    portrait: OrientationType.PORTRAIT,
+    upside_down: OrientationType.PORTRAIT_UPSIDE_DOWN,
+    landscape_left: OrientationType.LANDSCAPE_RIGHT,
+    landscape_right: OrientationType.LANDSCAPE_LEFT,
+  };
+
+  for (const orientation of ALL) {
+    await t.test(`${orientation} sends ${OrientationType[expected[orientation]]}`, () => {
+      assert.equal(HID_ORIENTATION[orientation], expected[orientation]);
+    });
+  }
+
+  await t.test("the two landscapes are crossed, not name-for-name", () => {
+    assert.notEqual(HID_ORIENTATION.landscape_left, OrientationType.LANDSCAPE_LEFT);
+    assert.notEqual(HID_ORIENTATION.landscape_right, OrientationType.LANDSCAPE_RIGHT);
+    assert.equal(HID_ORIENTATION.landscape_left, OrientationType.LANDSCAPE_RIGHT);
+    assert.equal(HID_ORIENTATION.landscape_right, OrientationType.LANDSCAPE_LEFT);
+  });
+
+  await t.test("the two portraits are not, which is what makes the crossing a decision", () => {
+    assert.equal(HID_ORIENTATION.portrait, OrientationType.PORTRAIT);
+    assert.equal(HID_ORIENTATION.upside_down, OrientationType.PORTRAIT_UPSIDE_DOWN);
+  });
+
+  await t.test("every orientation maps somewhere, and no two share a value", () => {
+    const values = ALL.map((o) => HID_ORIENTATION[o]);
+    assert.equal(values.length, ALL.length);
+    assert.equal(new Set(values).size, ALL.length);
   });
 });

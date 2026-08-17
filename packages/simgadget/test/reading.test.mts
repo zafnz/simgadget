@@ -18,6 +18,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { Simulator } from "../src/simulator.ts";
+import type { AXElement } from "../src/ax/tree.ts";
 import {
   AccessibilityUnreadableError,
   SimulatorNotAnsweringError,
@@ -505,8 +506,14 @@ test("describePoint", async (t) => {
       type: "Button",
       frame: { x: 20, y: 24, width: 200, height: 44 },
     };
+    // The first screen read is the coordinate transform's, asking for the
+    // logical dimensions; it is the *correction* read that has to fail here, so
+    // let the first one answer and break every one after it.
     const { sim } = harness(
-      { point: () => ({ ...hosted }), screen: () => { throw new Error("boom"); } },
+      {
+        point: () => ({ ...hosted }),
+        screen: inOrder<AXElement[]>(screenTree(390, 844), new Error("boom")),
+      },
       true
     );
 

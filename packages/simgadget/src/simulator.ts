@@ -6,9 +6,10 @@
  * `launchApp`, `restartBridge()`, `releaseCompanion()`. Step 3 adds the
  * reading half — `describeScreen()`, `screenSize()`, `findByLabel()`,
  * `findByIdentifier()`, `describePoint()` — and the wedge-recovery machinery
- * underneath all of them. Orientation, acting and capture arrive in steps 4
- * through 6; do not add methods here for those, extend this class in the step
- * that owns them instead.
+ * underneath all of them. Step 4 adds orientation: `rotate()`,
+ * `detectOrientation()`, and the coordinate contract's three lifetimes of
+ * state. Acting and capture arrive in steps 5 and 6; do not add methods here
+ * for those, extend this class in the step that owns them instead.
  *
  * Every impure call goes through `this.deps` (`./internal/deps.ts`), never
  * `child_process` or a companion singleton directly — the fake-client test
@@ -22,6 +23,7 @@ import {
   isInvalidDeviceError,
   restartSimulatorBridge,
   waitUntilDriveable,
+  type Orientation,
   type ReadyResult,
   type SimulatorState,
 } from "./lifecycle.ts";
@@ -39,6 +41,8 @@ import {
   DESCRIBE_KEYS,
   POINT_KEYS,
   canonicalise,
+  centreOf,
+  collectProbeCandidates,
   isDegenerateTree,
   isRemotelyHosted,
   locateInTree,
@@ -46,11 +50,23 @@ import {
   pruneTree,
   reconcileType,
   translateRemoteSubtrees,
+  uniquelyLabelled,
   type AXElement,
   type Frame,
 } from "./ax/tree.ts";
 import { isNoElementError, isWedgeError, shouldRecover } from "./ax/recovery.ts";
-import { Backend, Format, SearchableKey } from "./idb/client.ts";
+// `ax/orientation.ts`'s own `Orientation` is the *hint* vocabulary — the four
+// device orientations plus `"auto"` — and is deliberately a different type from
+// the public one (DECISIONS.md #3). Aliased at the use site, as that decision
+// asks, rather than renamed at the source.
+import {
+  candidateOrientations,
+  getEffectiveOrientation,
+  reconcileHint,
+  transformPointToPortrait,
+  type Orientation as OrientationHint,
+} from "./ax/orientation.ts";
+import { Backend, Format, OrientationType, SearchableKey } from "./idb/client.ts";
 import { existsSync } from "fs";
 import path from "path";
 
@@ -61,6 +77,53 @@ export interface ScreenRead {
    * `elements`, and every coordinate handed back in, lives in. */
   screen: { width: number; height: number };
 }
+
+export interface RotateResult {
+  requested: Orientation;
+  /** Detected by probing, not assumed — apps decline orientations (no Face ID
+   * iPhone ever adopts upside_down). Coordinates now follow this. */
+  adopted: Orientation;
+}
+
+/**
+ * Our orientation names to idb's `HIDOrientationType`.
+ *
+ * **The landscapes are crossed on purpose, and this is the whole subtlety of
+ * rotation.** Both enums spell the same four words, but they mean different
+ * things by them: ours names the *device*, as the Simulator's own menus do,
+ * while idb's turns out to use UIKit's *interface* vocabulary — and UIKit
+ * defines `UIInterfaceOrientationLandscapeLeft` as
+ * `UIDeviceOrientationLandscapeRight` (see `./ax/orientation.ts`).
+ *
+ * Measured, not assumed. A name-for-name map was written first and the fixture
+ * caught it immediately: asking for `landscape_left` produced an app reporting
+ * `device=landscapeRight interface=landscapeLeft`, i.e. the mirror image, and
+ * `rotate` duly answered "you asked for landscape_left, the interface is
+ * landscape_right". Reading the orientation back rather than trusting the
+ * request is what turned a silently inverted coordinate space into a visible
+ * disagreement, and is worth keeping for that reason alone.
+ *
+ * @internal Exported for the table-driven test that stops a future reader
+ * "fixing" the crossing back to name-for-name. Not part of the public surface.
+ */
+export const HID_ORIENTATION: Record<
+  "portrait" | "upside_down" | "landscape_left" | "landscape_right",
+  OrientationType
+> = {
+  portrait: OrientationType.PORTRAIT,
+  upside_down: OrientationType.PORTRAIT_UPSIDE_DOWN,
+  landscape_left: OrientationType.LANDSCAPE_RIGHT,
+  landscape_right: OrientationType.LANDSCAPE_LEFT,
+};
+
+/**
+ * How long to let a rotation animate before reading the tree.
+ *
+ * The accessibility tree reports the old geometry until the rotation finishes,
+ * so reading too early returns the orientation we were in rather than the one
+ * we asked for.
+ */
+const ROTATION_SETTLE_MS = 1_500;
 
 // ---- Recovery constants ----------------------------------------------------
 //
@@ -161,6 +224,31 @@ export class Simulator {
    * behalf of the steps that extend it.
    */
   protected screenDims: { width: number; height: number } | null = null;
+
+  /**
+   * The *portrait* point dimensions — the second of the coordinate contract's
+   * three lifetimes, and the only one **cached forever**. A udid's device type
+   * is fixed at creation, so these are a property of the model rather than of
+   * anything on screen: nothing a caller can do changes them, so nothing has to
+   * invalidate them (DECISIONS.md #6).
+   */
+  private portraitPoints: { width: number; height: number } | null = null;
+
+  /**
+   * The third lifetime: which orientation this handle believes the interface
+   * is in, in the *hint* vocabulary, so `"auto"` can mean "nobody has told me,
+   * derive it from the shape of the screen".
+   *
+   * Per handle, not per udid, and the spec says so: two handles on one
+   * simulator each carry their own, and an external rotation between the two
+   * landscapes is invisible to both until someone calls `detectOrientation()`.
+   * That is the documented hazard in the coordinate contract, not an oversight.
+   *
+   * Written authoritatively by `rotate()` and `detectOrientation()`, and
+   * retired to `"auto"` by `noteRootFrame` when a describe contradicts its
+   * aspect.
+   */
+  protected orientationHint: OrientationHint = "auto";
 
   /** How the last boot/waitReady went; set by `createSimulator` (through
    * `boot()`), `boot()` and `waitReady()`. Undefined on a fresh attach. A
@@ -369,32 +457,104 @@ export class Simulator {
 
   /**
    * Logical → portrait coordinates, the space the companion's point reads and
-   * touches accept.
+   * touches accept. Every coordinate this library sends to a companion crosses
+   * the gap here and nowhere else.
    *
-   * **The identity, deliberately, until step 4** (DECISIONS.md #22): the
-   * transform needs the orientation hint, which step 4 owns. That is correct
-   * rather than merely incomplete for a portrait device — which is every
-   * simulator until something rotates it — and it keeps step 4's job to one
-   * call site instead of five.
+   * Async because the transform needs the logical screen rectangle, and a
+   * handle that has not read the screen yet does not have one — today's
+   * `getScreenDimensions` (index.ts:603) has the same shape for the same
+   * reason. With no dimensions available at all the point is passed through
+   * untouched, which is what the tool bodies this ports (index.ts:1878,
+   * index.ts:2111) did: a portrait device is the overwhelmingly common case and
+   * the identity is right for it.
    */
-  private toPortrait(x: number, y: number): { x: number; y: number } {
-    return { x, y };
+  private async toPortrait(x: number, y: number): Promise<{ x: number; y: number }> {
+    const dims = await this.logicalDimensions();
+    if (!dims) return { x, y };
+    const orientation = getEffectiveOrientation(
+      this.orientationHint,
+      dims.width,
+      dims.height
+    );
+    return transformPointToPortrait(x, y, orientation, dims.width, dims.height);
   }
 
   /**
-   * The one place a describe's root frame is recorded. Step 3 caches the
-   * logical screen dimensions here; step 4 additionally reconciles the
-   * orientation hint against the frame's aspect (DECISIONS.md #8 and #22), so
-   * every describe that yields a root frame already goes through this single
-   * call site rather than needing five of them found later.
+   * The logical screen rectangle, from the cache when there is one and from a
+   * fresh cheap read when there is not. Ports `getScreenDimensions`
+   * (index.ts:603); the caching half of it is `noteRootFrame`'s business now.
+   *
+   * `null` rather than a throw when the read yields no usable frame: this is
+   * called on the way to doing something else, and a caller who asked to tap
+   * is better served by the tap's own failure than by an error about a
+   * measurement they never requested.
+   */
+  private async logicalDimensions(): Promise<{ width: number; height: number } | null> {
+    if (this.screenDims) return this.screenDims;
+
+    const frame = (await this.describeAll())[0]?.frame;
+    if (!frame || !frame.width || !frame.height) return null;
+    this.noteRootFrame(frame);
+    return this.screenDims;
+  }
+
+  /**
+   * The portrait point dimensions, fetched once and kept.
+   *
+   * The one deliberate piece of new code in this phase rather than a port: they
+   * come from the companion's `describe` (contract check 9 pins that it reports
+   * both pixels and points), where today they are inferred from an
+   * accessibility root frame. `describe` answers from target metadata, so it
+   * works while the bridge is still silent — dimensions are available before
+   * the simulator is driveable, which the accessibility-read source never was.
+   *
+   * `null` when the companion answers without them. There is no `ErrorCode` for
+   * "a field was missing from a describe", and inventing one to cover a case
+   * contract check 9 exists to catch would be worse than letting the one caller
+   * that needs them — step 6's `screenshot({resizeTo: "points"})` — decide what
+   * to do without.
+   */
+  protected async portraitPointDimensions(): Promise<{
+    width: number;
+    height: number;
+  } | null> {
+    if (this.portraitPoints) return this.portraitPoints;
+
+    const dimensions = (
+      await this.deps.withClient(this.udid, (client) => client.describe())
+    ).screenDimensions;
+    if (!dimensions?.widthPoints || !dimensions.heightPoints) return null;
+
+    this.portraitPoints = {
+      width: dimensions.widthPoints,
+      height: dimensions.heightPoints,
+    };
+    return this.portraitPoints;
+  }
+
+  /**
+   * The one place a describe's root frame is recorded, and the first two of the
+   * coordinate contract's three lifetimes meeting.
+   *
+   * The logical dimensions are simply the frame. The orientation *aspect* is
+   * free here too — a root wider than it is tall is a device on its side — and
+   * `reconcileHint` is where that fact is allowed to argue with the hint: it
+   * retires a hint the frame contradicts and leaves an agreeing one alone,
+   * because chirality is not visible in any frame and must survive every read
+   * that does not disprove it (DECISIONS.md #8).
    *
    * A zero-sized frame is not recorded: a booting simulator answers with one,
    * and caching it would hand every later coordinate transform a screen with
-   * no size.
+   * no size — and let a 0x0 root, which is no shape at all, retire a hint that
+   * a probe paid for.
    */
   private noteRootFrame(frame: Frame): void {
     if (frame.width && frame.height) {
       this.screenDims = { width: frame.width, height: frame.height };
+      this.orientationHint = reconcileHint(
+        this.orientationHint,
+        frame.width > frame.height
+      );
     }
   }
 
@@ -895,7 +1055,7 @@ export class Simulator {
   async describePoint(x: number, y: number): Promise<AXElement | null> {
     this.assertNotDeleted();
 
-    const portrait = this.toPortrait(x, y);
+    const portrait = await this.toPortrait(x, y);
     let element = await this.readPoint(portrait.x, portrait.y);
     if (!element) return null;
 
@@ -969,6 +1129,143 @@ export class Simulator {
         throw error;
       }
     });
+  }
+
+  // ---- orientation --------------------------------------------------------
+
+  /**
+   * Rotates the device, waits out the animation, then **detects** what the
+   * interface adopted and reports both. Ports the `rotate` tool body
+   * (index.ts:1454).
+   *
+   * Detected, not assumed. An app is free to decline an orientation — and one
+   * always does: no Face ID iPhone will adopt upside-down portrait, whatever
+   * its Info.plist says. Reporting the request back as though it had been
+   * obeyed would leave every later coordinate wrong, silently, which is exactly
+   * the failure the returned `adopted` exists to make visible.
+   */
+  async rotate(to: Orientation): Promise<RotateResult> {
+    this.assertNotDeleted();
+
+    const hid = HID_ORIENTATION[to as keyof typeof HID_ORIENTATION];
+    if (hid === undefined) {
+      // `Orientation` is an open union (DECISIONS.md #2), so a name no
+      // companion has a HID event for reaches this far. A TypeError, because
+      // it is a bad argument rather than anything about the simulator: there is
+      // no state a host could inspect or retry, so there is nothing for a
+      // typed `ErrorCode` to carry.
+      throw new TypeError(
+        `Unknown orientation "${to}". Expected one of: ${Object.keys(
+          HID_ORIENTATION
+        ).join(", ")}.`
+      );
+    }
+
+    await this.deps.withClient(this.udid, (client) => client.setOrientation(hid));
+
+    // Rotation is animated, and the accessibility tree reports the old geometry
+    // until it finishes. Through `deps.sleep`, so no unit test waits it out.
+    await this.deps.sleep(ROTATION_SETTLE_MS);
+
+    return { requested: to, adopted: await this.detectOrientation() };
+  }
+
+  /**
+   * Probes the current orientation and refreshes this handle's hint. Ports the
+   * `detect_rotation` tool body (index.ts:1516).
+   *
+   * The cached logical dimensions go first: a rotation swaps them, and a probe
+   * that read the stale pair would compute every candidate position in the
+   * space the screen just left.
+   */
+  async detectOrientation(): Promise<Orientation> {
+    this.assertNotDeleted();
+
+    this.screenDims = null;
+    const detected = await this.probeOrientation();
+    this.orientationHint = detected;
+    return detected;
+  }
+
+  /**
+   * Works out the exact orientation by cross-referencing a whole-screen read
+   * (which reports frames in rotated logical space) against point reads (which
+   * take input in portrait space). Ports `detectOrientation` (index.ts:542).
+   *
+   * The screen's shape narrows it to two, and no amount of reading narrows it
+   * further: the two members of a pair are geometrically identical. So take
+   * elements whose label appears exactly once, work out where each would be in
+   * portrait space under both candidates, and ask what is actually at those two
+   * points. An element that answers at exactly one of them has settled it; one
+   * that answers at both, or neither, has proved nothing and the next element
+   * is tried.
+   *
+   * Best-effort throughout — every failure degrades to the shape of the screen
+   * rather than propagating, because a caller who asked to rotate is better
+   * served by a good guess than by an error about a probe they never asked for.
+   */
+  private async probeOrientation(): Promise<OrientationHint> {
+    try {
+      const elements = await this.describeAll();
+      const rootFrame = elements[0]?.frame;
+      if (!rootFrame || !rootFrame.width || !rootFrame.height) {
+        return "portrait"; // still booting or degenerate frame
+      }
+
+      const screenW = rootFrame.width;
+      const screenH = rootFrame.height;
+      // Typed in the hint vocabulary because that is what the transform takes,
+      // and returned as the public one, which it is assignable to:
+      // `candidateOrientations` answers with two of the four real orientations
+      // and never with "auto", so nothing has to resolve anything here.
+      const candidates = candidateOrientations(screenW > screenH);
+
+      const probes = uniquelyLabelled(
+        collectProbeCandidates(elements, screenW, screenH)
+      );
+
+      for (const probe of probes) {
+        const centre = centreOf({ frame: probe.frame });
+        if (!centre) continue;
+
+        const matches: OrientationHint[] = [];
+        for (const orientation of candidates) {
+          // Where this element would be in the portrait space a point read
+          // accepts, if the screen were in this orientation. Deliberately the
+          // same transform tap and swipe use, so detection cannot drift from
+          // the behaviour it is detecting for.
+          const point = transformPointToPortrait(
+            centre.x,
+            centre.y,
+            orientation,
+            screenW,
+            screenH
+          );
+          try {
+            // `readPoint`, not `describePoint`: the probe has already done the
+            // transform itself, and asking the public verb would transform it a
+            // second time under the very hint being questioned.
+            const pointElement = await this.readPoint(point.x, point.y);
+            // Null is an empty point (DECISIONS.md #23), which is a perfectly
+            // good "not here" — and the only answer this loop wants from a
+            // candidate that is wrong.
+            if (pointElement?.AXLabel === probe.label) matches.push(orientation);
+          } catch {
+            // probe failed, skip this position
+          }
+        }
+
+        // Exactly one match = definitive answer
+        if (matches.length === 1) return matches[0];
+        // Both or neither matched — ambiguous, try next element
+      }
+
+      // No element settled it, so the shape of the screen is all we know.
+      return candidates[0];
+    } catch {
+      // Detection is best-effort; degrade gracefully
+      return "portrait";
+    }
   }
 
   // ---- low level — you should never need these ---------------------------

@@ -59,6 +59,35 @@ export function transformPointToPortrait(
 }
 
 /**
+ * What a describe's root frame is allowed to say about the hint.
+ *
+ * The coordinate contract (SIMGADGET.md) splits an orientation into two facts
+ * that keep different company. The *aspect* — portrait-family or
+ * landscape-family — is visible in every root frame, so it comes free with any
+ * read and there is no excuse for the hint to contradict it. The *chirality* —
+ * which landscape, portrait or upside-down — is invisible to a describe,
+ * because the two members of a pair produce byte-identical geometry; only a
+ * probe (`detectOrientation`) or a rotation we ordered ourselves can settle it,
+ * and the probe costs too much to run inside every tap.
+ *
+ * So: a frame that agrees with the hint's aspect tells us nothing new and must
+ * leave the hint alone, or every describe would throw away the chirality that
+ * cost a probe to learn. A frame that disagrees proves the hint is stale —
+ * something rotated the device behind our back — and retiring it to "auto"
+ * hands `getEffectiveOrientation` back the job of reading the shape, which is
+ * the best answer available until someone probes again.
+ */
+export function reconcileHint(
+  hint: Orientation,
+  isLandscape: boolean
+): Orientation {
+  if (hint === "auto") return hint;
+  const hintIsLandscape =
+    hint === "landscape_left" || hint === "landscape_right";
+  return hintIsLandscape === isLandscape ? hint : "auto";
+}
+
+/**
  * The two orientations a screen of this shape could be in.
  *
  * A root frame wider than it is tall settles that the device is on its side,

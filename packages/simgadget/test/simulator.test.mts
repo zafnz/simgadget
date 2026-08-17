@@ -258,6 +258,8 @@ test("every method throws SimulatorNotFoundError after delete(), touching nothin
     ["findByLabel", (sim) => sim.findByLabel("Plain Button")],
     ["findByIdentifier", (sim) => sim.findByIdentifier("PlainButton")],
     ["describePoint", (sim) => sim.describePoint(10, 10)],
+    ["rotate", (sim) => sim.rotate("landscape_left")],
+    ["detectOrientation", (sim) => sim.detectOrientation()],
     ["restartBridge", (sim) => sim.restartBridge()],
     ["releaseCompanion", (sim) => sim.releaseCompanion()],
   ];
