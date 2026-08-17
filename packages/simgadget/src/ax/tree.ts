@@ -19,10 +19,10 @@
  */
 
 /** An accessibility element as the companion reports it. */
-export type AXElement = {
+export type RawAXElement = {
   frame?: { x: number; y: number; width: number; height: number };
   AXLabel?: string | null;
-  children?: AXElement[];
+  children?: RawAXElement[];
   [key: string]: unknown;
 };
 
@@ -35,10 +35,37 @@ export interface Frame {
 }
 
 /**
+ * An element as this library hands one out — what `canonicalise` produces, and
+ * the type `index.ts` publishes as `RawAXElement`.
+ *
+ * Closed on purpose, where the type above is open: no index signature, so a
+ * caller reaching for `element.role` is told so by the compiler instead of
+ * reading `undefined` off a field the companion stopped sending. The keys are
+ * `DESCRIBE_KEYS` plus `children`, and the two must be changed together —
+ * `canonicalise` copies exactly the first list, and `pruneTree` adds the second.
+ *
+ * Deliberately a type alias and not an interface. TypeScript gives an object
+ * *alias* an implicit index signature and an interface none, so this spelling
+ * is what keeps a canonical element assignable back to the open type — every
+ * pure helper in this file takes that one, and a canonical element has to go on
+ * being a legal argument to all of them.
+ */
+export type AXElement = {
+  AXLabel?: string;
+  AXValue?: string | number;
+  AXUniqueId?: string;
+  /** Normalised role vocabulary: "Button", "Switch", "SearchField", ... */
+  type?: string;
+  enabled?: boolean;
+  frame?: Frame;
+  children?: AXElement[];
+};
+
+/**
  * True when the read carried no usable tree: either a 0x0 root, or no document
  * at all (the companion serializes an empty read as JSON `null`).
  */
-export function isDegenerateTree(elements: AXElement[]): boolean {
+export function isDegenerateTree(elements: RawAXElement[]): boolean {
   const root = elements[0];
   if (!root) return true;
   const frame = root.frame;
@@ -138,14 +165,39 @@ export function reconcileType(
  *
  * Null and empty values are dropped: a screen's worth of `"AXValue": null` is
  * noise, and their absence is as informative as their emptiness.
+ *
+ * This is also the one place the open tree becomes the closed
+ * `AXElement` the library publishes, which is why each key is copied
+ * by name with its type checked rather than by a loop over `DESCRIBE_KEYS`: the
+ * companion's JSON is `unknown` at this boundary, and a value that does not fit
+ * the published type would make that type a lie. A field of an unexpected type
+ * is therefore dropped, exactly as a null is. The assignments stay in
+ * `DESCRIBE_KEYS` order because that is the order the keys are serialized in,
+ * and hosts hand this straight to callers.
  */
-export function canonicalise(element: AXElement): AXElement {
+export function canonicalise(element: RawAXElement): AXElement {
   const out: AXElement = {};
-  for (const key of DESCRIBE_KEYS) {
-    const value = element[key];
-    if (value === null || value === undefined || value === "") continue;
-    out[key] = value;
+
+  const label = element.AXLabel;
+  if (typeof label === "string" && label !== "") out.AXLabel = label;
+
+  if (element.frame) out.frame = element.frame;
+
+  // The two things a companion ever reports a value as. `0` is kept, being a
+  // perfectly good switch state; `""` is not, being an absence.
+  const value = element.AXValue;
+  if (typeof value === "number" || (typeof value === "string" && value !== "")) {
+    out.AXValue = value;
   }
+
+  const id = element.AXUniqueId;
+  if (typeof id === "string" && id !== "") out.AXUniqueId = id;
+
+  const type = element.type;
+  if (typeof type === "string" && type !== "") out.type = type;
+
+  if (typeof element.enabled === "boolean") out.enabled = element.enabled;
+
   return out;
 }
 
@@ -176,7 +228,7 @@ const ACTIONABLE_TYPES = new Set([
 const CONTAINER_TYPES = new Set(["Any", "Group", "Other", "Unknown"]);
 
 /** An element a caller could plausibly act on or reason about. */
-export function isInteresting(element: AXElement): boolean {
+export function isInteresting(element: RawAXElement): boolean {
   const label = element.AXLabel;
   if (typeof label === "string" && label.trim()) return true;
   const value = element.AXValue;
@@ -243,7 +295,7 @@ const REMOTE_HOST_TYPE = "83";
  * containers and hoists their children, which discards the very parent whose
  * origin this reads.
  */
-export function translateRemoteSubtrees(elements: AXElement[]): AXElement[] {
+export function translateRemoteSubtrees(elements: RawAXElement[]): RawAXElement[] {
   const shift = (frame: Frame, dx: number, dy: number): Frame => ({
     ...frame,
     x: frame.x + dx,
@@ -257,11 +309,11 @@ export function translateRemoteSubtrees(elements: AXElement[]): AXElement[] {
     Math.abs(a.width - b.width) < 1 && Math.abs(a.height - b.height) < 1;
 
   const visit = (
-    element: AXElement,
+    element: RawAXElement,
     dx: number,
     dy: number,
     parent: Frame | null
-  ): AXElement => {
+  ): RawAXElement => {
     const frame = element.frame;
 
     // A new local space starts here, so the inherited offset is replaced rather
@@ -279,7 +331,7 @@ export function translateRemoteSubtrees(elements: AXElement[]): AXElement[] {
     }
 
     const moved = frame ? shift(frame, dx, dy) : undefined;
-    const out: AXElement = moved ? { ...element, frame: moved } : { ...element };
+    const out: RawAXElement = moved ? { ...element, frame: moved } : { ...element };
     if (element.children?.length) {
       out.children = element.children.map((child) =>
         visit(child, dx, dy, moved ?? parent)
@@ -305,7 +357,7 @@ export function translateRemoteSubtrees(elements: AXElement[]): AXElement[] {
  * the tree says `Switch`, a point read says `CheckBox` (see `reconcileType`) —
  * and a caller can hand us either.
  */
-export function isToggle(element: AXElement): boolean {
+export function isToggle(element: RawAXElement): boolean {
   const type = typeof element.type === "string" ? element.type : "";
   if (type !== "Switch" && type !== "CheckBox" && type !== "Toggle") {
     return false;
@@ -394,8 +446,8 @@ export function isRemotelyHosted(frame: Frame, x: number, y: number): boolean {
  * as the point read described it.
  */
 export function locateInTree(
-  elements: AXElement[],
-  element: AXElement,
+  elements: RawAXElement[],
+  element: RawAXElement,
   x: number,
   y: number
 ): Frame | null {
@@ -404,13 +456,13 @@ export function locateInTree(
 
   const id = element.AXUniqueId;
   const label = element.AXLabel;
-  const identifies = (candidate: AXElement): boolean =>
+  const identifies = (candidate: RawAXElement): boolean =>
     id != null && id !== ""
       ? candidate.AXUniqueId === id
       : label != null && label !== "" && candidate.AXLabel === label;
 
   let found: Frame | null = null;
-  const visit = (candidate: AXElement): void => {
+  const visit = (candidate: RawAXElement): void => {
     if (found) return;
     const frame = candidate.frame;
     if (
@@ -444,8 +496,8 @@ export function locateInTree(
  *
  * Each kept node is reduced to the shape every tool returns; see `canonicalise`.
  */
-export function pruneTree(elements: AXElement[]): AXElement[] {
-  const visit = (element: AXElement): AXElement[] => {
+export function pruneTree(elements: RawAXElement[]): AXElement[] {
+  const visit = (element: RawAXElement): AXElement[] => {
     const kept = (element.children ?? []).flatMap(visit);
 
     if (!isInteresting(element)) return kept;
@@ -497,15 +549,15 @@ export function normaliseForMatch(text: string): string {
  * order wins.
  */
 export function matchInTree(
-  elements: AXElement[],
+  elements: RawAXElement[],
   label: string
 ): AXElement | null {
   const needle = normaliseForMatch(label);
-  const labelHits: AXElement[] = [];
-  const valueHits: AXElement[] = [];
-  const idHits: AXElement[] = [];
+  const labelHits: RawAXElement[] = [];
+  const valueHits: RawAXElement[] = [];
+  const idHits: RawAXElement[] = [];
 
-  const visit = (element: AXElement) => {
+  const visit = (element: RawAXElement) => {
     const [elementLabel, elementValue] = [
       element.AXLabel,
       element.AXValue,
@@ -548,10 +600,10 @@ export function matchInTree(
  * `elements.first`, server-side, and returns one element with no sign that
  * others matched — so on the fast path there is nothing here to choose between.
  */
-function best(candidates: AXElement[], needle: string): AXElement | undefined {
+function best(candidates: RawAXElement[], needle: string): RawAXElement | undefined {
   if (candidates.length < 2) return candidates[0];
 
-  const score = (element: AXElement): number => {
+  const score = (element: RawAXElement): number => {
     const text = [element.AXLabel, element.AXValue]
       .map((v) => (typeof v === "string" ? normaliseForMatch(v) : ""))
       .find((t) => t.includes(needle));
@@ -579,7 +631,7 @@ function best(candidates: AXElement[], needle: string): AXElement | undefined {
  * is real but sits under a toolbar or below the fold, where the centre belongs
  * to something else entirely and the tap silently operates that instead.
  */
-export function sameElement(a: AXElement, b: AXElement): boolean {
+export function sameElement(a: RawAXElement, b: RawAXElement): boolean {
   const idA = a.AXUniqueId;
   const idB = b.AXUniqueId;
   if (typeof idA === "string" && idA && typeof idB === "string" && idB) {
@@ -603,7 +655,7 @@ export function sameElement(a: AXElement, b: AXElement): boolean {
 
 /** The centre of an element's frame, in the tree's logical coordinate space. */
 export function centreOf(
-  element: AXElement
+  element: RawAXElement
 ): { x: number; y: number } | null {
   const frame = element.frame;
   if (!frame || (!frame.width && !frame.height)) return null;
@@ -617,7 +669,7 @@ export function centreOf(
  * Collects all labeled, non-full-screen elements from the accessibility tree.
  */
 export function collectProbeCandidates(
-  els: AXElement[],
+  els: RawAXElement[],
   screenW: number,
   screenH: number
 ): { frame: Frame; label: string }[] {

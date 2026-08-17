@@ -17,7 +17,9 @@ import {
   UntypeableTextError,
   type ErrorCode,
 } from "../src/errors.ts";
-import type { AXElement } from "../src/ax/tree.ts";
+// The closed type, because that is what the error payloads carry: every
+// element that reaches one has come through `canonicalise`.
+import type { AXElement as AXElement } from "../src/ax/tree.ts";
 
 const button: AXElement = { AXLabel: "Continue", type: "Button", enabled: false };
 const otherButton: AXElement = { AXLabel: "Cancel", type: "Button" };

@@ -25,11 +25,11 @@
  * the default when it has something more specific to say — but the default
  * must always stand on its own, because most callers will not bother.
  *
- * `AXElement` is imported from `./ax/tree.ts` rather than declared here. That
- * module's type is the internal, open one (`[key: string]: unknown`); the
- * closed public `AXElement` from the spec's "Shared types" section lands in
- * step 8, when `canonicalise` becomes the conversion point into it. Re-typing
- * the field here in the meantime would just be a second, drifting copy.
+ * `AXElement` is imported from `./ax/tree.ts` rather than declared here: it is
+ * the closed type from the spec's "Shared types", the one callers see, and not
+ * `RawAXElement`, the open shape the companion speaks. Every element that
+ * reaches an error has come through `canonicalise`, so a payload carries the
+ * same shape a read hands back.
  */
 
 import type { AXElement } from "./ax/tree.ts";

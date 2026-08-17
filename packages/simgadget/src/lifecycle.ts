@@ -22,11 +22,11 @@
  * (SIMGADGET_PLAN.md, "The tether rule").
  */
 
-// `ax/tree.ts`'s `AXElement` is the internal, open type ([key: string]:
+// `ax/tree.ts`'s `RawAXElement` is the internal, open type ([key: string]:
 // unknown); the closed public one lands in plan step 8, when `canonicalise`
 // becomes the conversion point (DECISIONS.md #4). Used here only for the
 // `.frame` read on a root element, which exists on both shapes.
-import type { AXElement } from "./ax/tree.ts";
+import type { RawAXElement } from "./ax/tree.ts";
 import {
   DeviceTypeNotFoundError,
   SimGadgetError,
@@ -40,7 +40,7 @@ import { Simulator } from "./simulator.ts";
 //
 // These are declared here, ahead of `index.ts`'s public surface (plan step
 // 8), because `lifecycle.ts` needs them now. `errors.ts` already set this
-// precedent for `AXElement`. `index.ts` re-exports them; it does not redefine
+// precedent for `RawAXElement`. `index.ts` re-exports them; it does not redefine
 // them.
 
 /**
@@ -427,7 +427,7 @@ export async function waitUntilDriveable(
       const frame = await deps.withClient(udid, async (client) => {
         const info = (await client.accessibilityInfo({
           format: Format.NESTED,
-        })) as AXElement[] | AXElement | null;
+        })) as RawAXElement[] | RawAXElement | null;
         if (info == null) return null;
         const root = Array.isArray(info) ? info[0] : info;
         return root?.frame ?? null;

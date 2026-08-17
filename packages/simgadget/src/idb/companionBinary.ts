@@ -151,43 +151,18 @@ export function readLock(): CompanionLock {
   }
 }
 
-/** In-flight resolution, so concurrent callers share one download. */
-let pending: Promise<string> | undefined;
-
 /**
- * Absolute path to a usable `idb_companion`, downloading it if necessary.
+ * A companion this machine already has: the `SIMGADGET_COMPANION_PATH`
+ * override, or a build from the pinned submodule. `undefined` when one has to
+ * be downloaded — and a throw when the machine cannot run one at all, because
+ * the arch gate belongs between those two: an override is honoured on any
+ * machine (that is what it is for), and everything below it is an arm64 binary.
  *
- * Call this lazily, on the first request that actually needs a companion —
- * never at startup — so listing tools or driving simctl never pays for a
- * download.
+ * Checked at resolve time rather than at import: a library that throws on
+ * import merely for a stray environment variable is hostile to anyone who
+ * imported it for an unrelated reason.
  */
-export function resolveCompanion(
-  log: (message: string) => void = () => {}
-): Promise<string> {
-  if (!pending) {
-    pending = resolveOnce(log).catch((error) => {
-      // Don't cache a failure: a transient network error should not poison the
-      // process for its whole life.
-      pending = undefined;
-      throw error;
-    });
-  }
-  // Nor should a success outlive the file it points at. Clearing the cache is
-  // advice we give in an error message, so a long-running server must notice
-  // the binary has gone and fetch it again rather than handing out a path that
-  // no longer exists until it is restarted.
-  return pending.then((binary) => {
-    if (isUsable(binary)) return binary;
-    pending = undefined;
-    return resolveCompanion(log);
-  });
-}
-
-async function resolveOnce(log: (message: string) => void): Promise<string> {
-  // Called here, at the top of resolution, rather than at import time: a
-  // library that throws on import merely for a stray environment variable is
-  // hostile to anyone who imports it for an unrelated reason. This is the one
-  // place the variable would actually matter.
+function localCompanion(log: (message: string) => void): string | undefined {
   assertIdbPathUnset();
 
   const override = readEnv("COMPANION_PATH");
@@ -216,7 +191,114 @@ async function resolveOnce(log: (message: string) => void): Promise<string> {
     return local;
   }
 
-  const lock = readLock();
+  return undefined;
+}
+
+/**
+ * The impure edges of resolution, injected so the download ladder can be driven
+ * without a network.
+ *
+ * All three, not just the fetch: a test that faked only the network would still
+ * be answered by whatever the machine running it happens to have — a vendored
+ * build short-circuits the download entirely, and the real lock file names a
+ * URL on the internet. Faking the edges is what makes these tests say the same
+ * thing on every machine.
+ *
+ * @internal Not part of the published surface; `index.ts` exports neither this
+ * nor the resolver factory below.
+ */
+export interface CompanionSource {
+  /** A companion this machine already has; see `localCompanion`. */
+  local: (log: (message: string) => void) => string | undefined;
+  /** The pinned artifact to fetch when it does not. */
+  readLock: () => CompanionLock;
+  /** Streams `url` to `destination`, returning its sha256. */
+  fetch: (url: string, destination: string) => Promise<string>;
+}
+
+const realSource: CompanionSource = {
+  local: localCompanion,
+  readLock,
+  fetch: fetchToFile,
+};
+
+/**
+ * A resolver, with its own in-flight dedup.
+ *
+ * One per process in production — `resolveCompanion` below — because sharing
+ * the in-flight promise is the whole point of it: several simulators starting
+ * at once must wait on one download, not four. It is a factory rather than
+ * module-level state so that a test gets a resolver of its own, where a
+ * previous case's cached result cannot decide the next case's outcome.
+ *
+ * @internal
+ */
+export function createCompanionResolver(
+  source: CompanionSource = realSource
+): (log?: (message: string) => void) => Promise<string> {
+  let pending: Promise<string> | undefined;
+
+  const resolve = (log: (message: string) => void = () => {}): Promise<string> => {
+    if (!pending) {
+      pending = resolveOnce(source, log).catch((error) => {
+        // Don't cache a failure: a transient network error should not poison
+        // the process for its whole life.
+        pending = undefined;
+        throw error;
+      });
+    }
+    // Nor should a success outlive the file it points at. Clearing the cache is
+    // advice we give in an error message, so a long-running server must notice
+    // the binary has gone and fetch it again rather than handing out a path
+    // that no longer exists until it is restarted.
+    return pending.then((binary) => {
+      if (isUsable(binary)) return binary;
+      pending = undefined;
+      return resolve(log);
+    });
+  };
+
+  return resolve;
+}
+
+/**
+ * Absolute path to a usable `idb_companion`, downloading it if necessary.
+ *
+ * Call this lazily, on the first request that actually needs a companion —
+ * never at startup — so listing tools or driving simctl never pays for a
+ * download.
+ */
+export const resolveCompanion = createCompanionResolver();
+
+/**
+ * Resolves the pinned `idb_companion`, downloading it if it is not already
+ * cached, and answers with its absolute path.
+ *
+ * The public name for what every other call does lazily on its way to a
+ * simulator. It exists so a CI image or a provisioning script can front-run the
+ * ~19 MB first-call download, at a moment when a slow step is expected, rather
+ * than have it land inside the first test that touches a device. Also reachable
+ * as `npx simgadget prefetch` (`../cli.ts`).
+ *
+ * `onProgress` is called with the same lines the resolution would otherwise log
+ * to nobody: which artifact is being fetched, and where it ended up. Safe to
+ * call repeatedly and from several places at once — concurrent callers share
+ * one download, and a cached companion is a couple of `stat` calls.
+ */
+export function prefetchCompanion(
+  onProgress?: (message: string) => void
+): Promise<string> {
+  return resolveCompanion(onProgress);
+}
+
+async function resolveOnce(
+  source: CompanionSource,
+  log: (message: string) => void
+): Promise<string> {
+  const local = source.local(log);
+  if (local) return local;
+
+  const lock = source.readLock();
   // Keyed by content hash, not version, so a changed lock is simply a different
   // directory. Rollback and multi-version coexistence come free, and a
   // half-written tree can never be mistaken for a complete one.
@@ -225,7 +307,7 @@ async function resolveOnce(log: (message: string) => void): Promise<string> {
 
   if (isUsable(binary)) return binary;
 
-  await download(lock, installDir, log);
+  await download(source, lock, installDir, log);
 
   if (!isUsable(binary)) {
     throw new CompanionDownloadError(
@@ -245,6 +327,7 @@ function isUsable(binary: string): boolean {
 }
 
 async function download(
+  source: CompanionSource,
   lock: CompanionLock,
   installDir: string,
   log: (message: string) => void
@@ -261,7 +344,7 @@ async function download(
   );
 
   try {
-    const actualSha = await fetchToFile(lock.url, tarball);
+    const actualSha = await source.fetch(lock.url, tarball);
     if (actualSha !== lock.sha256) {
       throw new CompanionDownloadError(
         `checksum mismatch for ${lock.url}`,

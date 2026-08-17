@@ -42,9 +42,12 @@ import {
   ToggleGestureError,
   UntypeableTextError,
 } from "./errors.ts";
-// `ax/tree.ts`'s `AXElement` is the internal, open type; the closed public one
-// lands in plan step 8, when `canonicalise` becomes the conversion point
-// (DECISIONS.md #4).
+// Two element types, and the aliases say which is which (DECISIONS.md #4).
+// `ax/tree.ts`'s own `AXElement` is the open type the companion speaks — free
+// JSON, nulls and all — and is what the raw reads below deal in; it is aliased
+// `RawAXElement` here so that `AXElement`, the name on every public signature,
+// is the closed type from the spec. `canonicalise` is the crossing between
+// them, and the only one.
 import {
   DESCRIBE_KEYS,
   POINT_KEYS,
@@ -61,6 +64,7 @@ import {
   translateRemoteSubtrees,
   uniquelyLabelled,
   type AXElement,
+  type RawAXElement,
   type Frame,
 } from "./ax/tree.ts";
 import { decideTapVerb, holdSeconds } from "./ax/tap.ts";
@@ -293,15 +297,13 @@ const DIAGNOSTIC_POINT_PROBES = 3;
 const DIAGNOSTIC_POINT = { x: 100, y: 100 };
 
 /**
- * A toggle's state as `TapResult` carries it: the raw value, narrowed from the
- * internal `AXElement`'s `unknown` to the two things a companion ever reports
- * it as, and `undefined` for everything else — including an element that could
- * not be read back at all, which is the case the result exists to make
- * visible.
+ * A toggle's state as `TapResult` carries it. The narrowing to the two things a
+ * companion ever reports a value as is `canonicalise`'s now; what is left here
+ * is the element that could not be read back at all, which becomes `undefined`
+ * — the case the result exists to make visible.
  */
 function toggleValue(element: AXElement | null): string | number | undefined {
-  const value = element?.AXValue;
-  return typeof value === "string" || typeof value === "number" ? value : undefined;
+  return element?.AXValue;
 }
 
 /** Ports index.ts:691 — the companion's rejections are not always `Error`s. */
@@ -746,7 +748,7 @@ export class Simulator {
       const frame = await this.deps.withClient(this.udid, async (client) => {
         const info = (await client.accessibilityInfo({
           format: Format.NESTED,
-        })) as AXElement[] | AXElement | null;
+        })) as RawAXElement[] | RawAXElement | null;
         if (info == null) return null;
         const root = Array.isArray(info) ? info[0] : info;
         return root?.frame ?? null;
@@ -772,7 +774,7 @@ export class Simulator {
           format: Format.LEGACY,
           keys: DESCRIBE_KEYS,
         })
-      )) as AXElement | null;
+      )) as RawAXElement | null;
       return !!element?.frame && !!(element.frame.width || element.frame.height);
     } catch {
       return false;
@@ -908,17 +910,17 @@ export class Simulator {
    * are tried before anyone sees a failure. `withAccessibilityRecovery` covers
    * the third shape, where the read throws instead of returning nothing.
    */
-  private async describeAll(): Promise<AXElement[]> {
+  private async describeAll(): Promise<RawAXElement[]> {
     const read = () =>
       this.deps.withClient(this.udid, async (client) => {
         const info = await client.accessibilityInfo({ format: Format.NESTED });
         // An empty read comes back as JSON null, which must not become [null]
         // -- that reads as a one-element tree and would be returned as success.
-        if (info == null) return [] as AXElement[];
-        return (Array.isArray(info) ? info : [info]) as AXElement[];
+        if (info == null) return [] as RawAXElement[];
+        return (Array.isArray(info) ? info : [info]) as RawAXElement[];
       });
 
-    const usable = (elements: AXElement[]) => {
+    const usable = (elements: RawAXElement[]) => {
       if (isDegenerateTree(elements)) return false;
       this.markAnswered();
       return true;
@@ -972,8 +974,8 @@ export class Simulator {
             backend,
             keys,
           });
-          if (info == null) return [] as AXElement[];
-          return (Array.isArray(info) ? info : [info]) as AXElement[];
+          if (info == null) return [] as RawAXElement[];
+          return (Array.isArray(info) ? info : [info]) as RawAXElement[];
         };
 
         try {
@@ -1079,7 +1081,7 @@ export class Simulator {
    * rejected a 0x0 root — but a root with no frame at all is not degenerate by
    * that rule, and a screen is a better answer than a crash.
    */
-  private screenFrom(elements: AXElement[]): { width: number; height: number } {
+  private screenFrom(elements: RawAXElement[]): { width: number; height: number } {
     const frame = elements[0]?.frame;
     if (frame) this.noteRootFrame(frame);
     return { width: frame?.width ?? 0, height: frame?.height ?? 0 };
@@ -1174,7 +1176,7 @@ export class Simulator {
             marker,
             matchKey,
             keys: DESCRIBE_KEYS,
-          })) as { elements?: AXElement } | null;
+          })) as { elements?: RawAXElement } | null;
           this.markAnswered();
           const element = found?.elements;
           return element ? canonicalise(element) : null;
@@ -1251,7 +1253,7 @@ export class Simulator {
             point: { x: Math.round(x), y: Math.round(y) },
             format: Format.LEGACY,
             keys: POINT_KEYS,
-          })) as AXElement | null;
+          })) as RawAXElement | null;
           if (!element) return null;
           // This backend has its own names for things. Say what the tree would.
           element.type = reconcileType(element.type, element.subrole);

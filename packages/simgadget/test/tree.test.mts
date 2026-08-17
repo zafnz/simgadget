@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { AXElement } from "../src/ax/tree.ts";
+import type { RawAXElement } from "../src/ax/tree.ts";
 import {
   canonicalise,
   centreOf,
@@ -25,7 +25,7 @@ import {
 // A screen shaped like the ones these rules were written against: a root that
 // is nothing but a rectangle, system chrome nested in anonymous groups, and a
 // control whose visible text lives in its value rather than its label.
-const screen = (): AXElement[] => [
+const screen = (): RawAXElement[] => [
   {
     type: "Application",
     frame: { x: 0, y: 0, width: 402, height: 874 },
@@ -221,7 +221,7 @@ test("isInteresting", async (t) => {
 // differ in the one way that matters — the autofill sheet's window sits at
 // y=476, the picker's at the screen origin — so together they pin down both
 // that the translation happens and that it is not applied blindly.
-const autofillSheet = (): AXElement[] => [
+const autofillSheet = (): RawAXElement[] => [
   {
     type: "Application",
     frame: { x: 0, y: 0, width: 402, height: 874 },
@@ -261,7 +261,7 @@ const autofillSheet = (): AXElement[] => [
   },
 ];
 
-const find = (elements: AXElement[], label: string): AXElement | undefined => {
+const find = (elements: RawAXElement[], label: string): RawAXElement | undefined => {
   for (const element of elements) {
     if (element.AXLabel === label) return element;
     const hit = find(element.children ?? [], label);
@@ -301,7 +301,7 @@ test("translateRemoteSubtrees", async (t) => {
   // A full-screen picker is hosted exactly the same way, and its frames are
   // already correct. If this became a shift, every picker would break.
   await t.test("is a no-op when the hosting window is at the origin", () => {
-    const tree: AXElement[] = [
+    const tree: RawAXElement[] = [
       {
         type: "Application",
         frame: { x: 0, y: 0, width: 402, height: 874 },
@@ -338,7 +338,7 @@ test("translateRemoteSubtrees", async (t) => {
   // Real trees carry these next to the live one. Without the size guard each
   // would drag its subtree by its parent's whole origin.
   await t.test("ignores a boundary node that does not match its parent", () => {
-    const tree: AXElement[] = [
+    const tree: RawAXElement[] = [
       {
         type: "Any",
         frame: { x: 0, y: 476, width: 402, height: 340 },
@@ -362,7 +362,7 @@ test("translateRemoteSubtrees", async (t) => {
   });
 
   await t.test("leaves a boundary node with no parent alone", () => {
-    const tree: AXElement[] = [
+    const tree: RawAXElement[] = [
       {
         type: "83",
         frame: { x: 0, y: 0, width: 402, height: 874 },
@@ -382,7 +382,7 @@ test("translateRemoteSubtrees", async (t) => {
   // A host inside a host: the inner offset is measured against the outer one's
   // already-corrected parent, so the two compose instead of stacking.
   await t.test("composes nested hosts rather than accumulating them", () => {
-    const tree: AXElement[] = [
+    const tree: RawAXElement[] = [
       {
         type: "Any",
         frame: { x: 0, y: 100, width: 200, height: 200 },
@@ -432,7 +432,7 @@ test("locateInTree", async (t) => {
 
   // What a point read at the button's true position returns: the right
   // element, carrying the frame it has 476 points further up the screen.
-  const asPointRead = (): AXElement => ({
+  const asPointRead = (): RawAXElement => ({
     type: "Button",
     AXLabel: "Fill Strong Password",
     AXUniqueId: "GenerateStrongPasswordButton",
@@ -853,7 +853,7 @@ test("matchInTree", async (t) => {
   });
 
   await t.test("matches across typography in either direction", () => {
-    const tree: AXElement[] = [{ AXLabel: "Don’t Allow" }];
+    const tree: RawAXElement[] = [{ AXLabel: "Don’t Allow" }];
     assert.equal(matchInTree(tree, "Don't Allow")?.AXLabel, "Don’t Allow");
     assert.equal(matchInTree([{ AXLabel: "Don't Allow" }], "Don’t")?.AXLabel, "Don't Allow");
   });
@@ -861,7 +861,7 @@ test("matchInTree", async (t) => {
   // A label match wins wherever it sits, so naming a control by its label does
   // not lose to something else that happens to carry the same text as a value.
   await t.test("a label match beats an earlier value match", () => {
-    const tree: AXElement[] = [
+    const tree: RawAXElement[] = [
       {
         children: [
           { type: "TextField", AXValue: "Settings", AXUniqueId: "field" },
@@ -879,7 +879,7 @@ test("matchInTree", async (t) => {
   // rather than a reason. Document order still decides between equals — see the
   // ranking tests above.
   await t.test("a control beats the container that encloses it", () => {
-    const tree: AXElement[] = [
+    const tree: RawAXElement[] = [
       {
         AXLabel: "Search results",
         children: [
