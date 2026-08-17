@@ -64,6 +64,24 @@ export interface SimulatorDeps {
    */
   spawn(cmd: string, args: string[]): ChildProcess;
   sleep(ms: number): Promise<void>;
+  /**
+   * A timer that can be called off, returning its own cancel function.
+   *
+   * Distinct from `sleep` because the two want opposite things from an
+   * abandoned wait. `sleep` is a wait the library intends to sit through — the
+   * rotation settle, the boot poll — and holding the event loop open is the
+   * point of it. This is a *fallback* that usually loses its race, and a
+   * fallback nobody cancels is a defect in a library even though it was
+   * invisible in a server: a pending `setTimeout` keeps Node alive, so
+   * `waitForRecordingStart`'s 3s "alive but silent, assume it started" timer
+   * added a silent three-second tail to the exit of every script that recorded
+   * anything (measured: 3001ms). The server never noticed because it outlived
+   * the timer by hours. The three-line script this library exists to serve does
+   * not.
+   *
+   * Cancelling an already-fired timer is a no-op, so callers may cancel freely.
+   */
+  setTimer(ms: number, fn: () => void): () => void;
   /** Milliseconds since the epoch. `Date.now()` in production; a fake clock
    * in tests, so the recovery cooldown and the rotation settle can be
    * measured without waiting them out. */
@@ -109,6 +127,10 @@ export const realDeps: SimulatorDeps = {
   },
   spawn: (cmd, args) => spawn(cmd, args),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  setTimer(ms, fn) {
+    const handle = setTimeout(fn, ms);
+    return () => clearTimeout(handle);
+  },
   now: () => Date.now(),
   closeCompanion: (udid) => companions.close(udid),
   reopenCompanion: (udid) => companions.reopen(udid),

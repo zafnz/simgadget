@@ -517,9 +517,43 @@ test("Simulator.startRecording", async (t) => {
     // No greeting at all: simctl's is not something to depend on, and a caller
     // who asked for a recording and got one is not helped by an error about a
     // missing line of stderr.
-    await harness.sim.startRecording("out.mp4");
+    const started = harness.sim.startRecording("out.mp4");
 
-    assert.ok(harness.deps.calls.sleep.includes(3_000));
+    // The fallback only fires because this test fires it. That is the point of
+    // it being a cancellable timer rather than a sleep: nothing resolves this
+    // wait on its own, in a test or in production.
+    const fallback = harness.deps.calls.timers.at(-1)!;
+    assert.equal(fallback.ms, 3_000);
+    fallback.fire();
+
+    await started;
+  });
+
+  // The other half of the same rule, and the one that costs a user something
+  // when it is wrong. A `setTimeout` nobody clears keeps Node's event loop
+  // alive, so an uncancelled fallback put a silent three-second tail on the
+  // exit of every script that recorded anything — measured at 3001ms. It never
+  // showed up in the server, which outlived the timer by hours.
+  await t.test("a start that announces itself cancels the fallback timer", async () => {
+    const harness = recordingHarness();
+
+    const started = harness.sim.startRecording("out.mp4");
+    harness.children[0].emitStderr("Recording started\n");
+    await started;
+
+    const fallback = harness.deps.calls.timers.at(-1)!;
+    assert.equal(fallback.cancelled, true);
+  });
+
+  await t.test("a start that fails cancels the fallback timer too", async () => {
+    const harness = recordingHarness();
+
+    const started = harness.sim.startRecording("out.mp4");
+    harness.children[0].emitStderr("The output file already exists\n");
+    harness.children[0].emitClose(1);
+    await assert.rejects(started);
+
+    assert.equal(harness.deps.calls.timers.at(-1)!.cancelled, true);
   });
 
   await t.test("a process that exits early rejects with what it wrote to stderr", async () => {

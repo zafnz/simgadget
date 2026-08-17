@@ -121,10 +121,29 @@ export class FakeChildProcess extends EventEmitter {
   }
 }
 
+/** One armed `setTimer`, as the fake records it. */
+export interface FakeTimer {
+  ms: number;
+  cancelled: boolean;
+  /** Runs the callback, unless it was already cancelled or already fired. */
+  fire(): void;
+}
+
 export interface FakeDepsCalls {
   run: RunCall[];
   spawn: RunCall[];
   sleep: number[];
+  /**
+   * Every `setTimer` a test armed, in order, with whether it was cancelled and
+   * a `fire()` to run it on demand.
+   *
+   * A test asserts two different things here and needs both. `fire()` drives
+   * the fallback path — a recording that never announces itself — in
+   * microseconds. `cancelled` proves the *other* path: that a timer which lost
+   * its race was actually called off, which is what stops a pending
+   * `setTimeout` adding a silent three-second tail to a short script's exit.
+   */
+  timers: FakeTimer[];
   withClient: string[];
   /**
    * The udid of every `withClient` call that asked for the **exclusive** lock,
@@ -203,6 +222,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
     run: [],
     spawn: [],
     sleep: [],
+    timers: [],
     withClient: [],
     withClientExclusive: [],
     closeCompanion: [],
@@ -271,6 +291,24 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
       calls.sleep.push(ms);
       calls.order.push(`sleep:${ms}`);
       await clock.sleep(ms);
+    },
+    setTimer(ms: number, fn: () => void): () => void {
+      calls.order.push(`setTimer:${ms}`);
+      let done = false;
+      const timer: FakeTimer = {
+        ms,
+        cancelled: false,
+        fire() {
+          if (done || timer.cancelled) return;
+          done = true;
+          fn();
+        },
+      };
+      calls.timers.push(timer);
+      return () => {
+        if (done) return;
+        timer.cancelled = true;
+      };
     },
     now() {
       return clock.now();

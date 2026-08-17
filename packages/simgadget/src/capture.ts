@@ -375,9 +375,16 @@ export function waitForRecordingStart(
     let errorOutput = "";
     let settled = false;
 
+    let cancelFallback = () => {};
+
     const settle = (fn: () => void) => {
       if (!settled) {
         settled = true;
+        // Whichever way this resolved, the fallback below has lost its race and
+        // must not keep the process alive waiting to fire. See
+        // `SimulatorDeps.setTimer`: an uncancelled timer here put a silent
+        // three-second tail on the exit of every script that recorded anything.
+        cancelFallback();
         fn();
       }
     };
@@ -401,8 +408,13 @@ export function waitForRecordingStart(
       settle(() => reject(error));
     });
 
-    // Through `deps.sleep`, so no unit test waits three seconds out.
-    void deps.sleep(RECORDING_START_TIMEOUT_MS).then(() =>
+    // `simctl` does not always announce itself. A process still alive after
+    // this long without having said "Recording started" is taken to be
+    // recording; one that has exited by then failed and never said why.
+    //
+    // Through `deps.setTimer` rather than `deps.sleep` so that settling can
+    // call the timer off — see that method for what an uncancelled one costs.
+    cancelFallback = deps.setTimer(RECORDING_START_TIMEOUT_MS, () =>
       settle(() => {
         if (child.exitCode !== null) {
           reject(new Error(errorOutput.trim() || "Recording process exited unexpectedly"));
