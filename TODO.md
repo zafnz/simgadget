@@ -56,12 +56,59 @@
     catching a wedge in the wild. That is the honest state of it, and it should
     be said out loud rather than implied by a green suite.
 
+- [ ] **#73 Do TESTING_TOOLS.md Part 6's timings in the e2e, where they can
+  finally measure the thing itself.** Requested 2026-08-17.
+
+  Part 6 measures how long the *work* takes. The MCP round trip in those
+  figures was never the subject — it was overhead nobody could subtract,
+  because until this branch there was no way to call the functions directly.
+  There is now, so the numbers get sharper and the current expected bands
+  (which include HTTP, JSON-RPC and a server hop) need re-deriving against
+  direct calls rather than copied across.
+
+  **Two of the rows are the only thing that would catch their regression**,
+  which is what makes this worth automating rather than leaving as a table
+  someone eyeballs:
+
+  - **A tap that costs less than the 100 ms hold means the floor has been
+    lost.** `MIN_TAP_HOLD_SECONDS` exists because an instantaneous touch
+    actuates a control about 40% of the time (#62). Lose it and every tap still
+    reports success, every assertion in the e2e still passes, and taps merely
+    become unreliable — the timing is the only witness.
+  - **A point read at ~300 ms instead of single digits means `isRemotelyHosted`
+    is firing on ordinary elements**, so every point read is paying for a
+    whole-screen fallback while still returning the right answer. Nothing
+    fails. Measured at 313 ms once, because a hit-test at x=200 returned the
+    home screen's Health icon, whose frame ends at x=188.67.
+
+  **Assert load-robustly, or this will be the flaky part of the suite** — and
+  SIMGADGET_PLAN.md is explicit that flakiness is not acceptable and must not
+  be retried away. Absolute milliseconds on a machine that might be building
+  something else are exactly the wrong shape. Both regressions above are
+  reachable without them:
+  - the hold floor is a **lower bound** — `tap({x, y})` must take *at least*
+    `MIN_TAP_HOLD_SECONDS`. A busy machine only makes a lower bound safer.
+  - the fallback is a **ratio** — `describePoint` must be substantially cheaper
+    than `describeScreen` on the same screen. Load moves both together, which
+    is precisely what the doc means by "the ratios are what matter".
+  Anything wanting absolute figures belongs in a reported table rather than an
+  assertion.
+
+  **Methodology already learned the hard way, in Part 6's own notes:** measure
+  against a screen that does not change (three tools alter what is on screen,
+  and a `ui_find` hit silently becoming a miss reads as a fast-path regression
+  — it happened three times while writing that table); tap something inert;
+  take medians of several runs; and discard the first call after a boot, which
+  includes connecting to the companion and runs an order of magnitude slower.
+
+  Worth reporting the full table as output even where it is not asserted, so a
+  human running the suite sees the same figures Part 6 tabulates today.
+
 - [ ] **#72 The e2e suite has no counterpart to TESTING_TOOLS.md Part 3 —
   remote-hosted views.** Noted 2026-08-17 while checking the new
   `test:e2e` journey against the manual plan it is the library-level analogue
   of. Parts 1, 2 and 4 map across closely; Part 5 is
-  `check-companion-contract.mjs`; Part 6 measures MCP round trips and does not
-  apply. Part 3 has nothing.
+  `check-companion-contract.mjs`; Part 6 is #73 below. Part 3 has nothing.
 
   **Why this is the gap worth naming.** It is the machinery behind #60, the one
   bug on this list that reached production. iOS draws the "Use Strong

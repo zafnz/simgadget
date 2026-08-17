@@ -217,8 +217,15 @@ a finding that lives only in a commit message is a finding that gets rediscovere
 This suite is the library-level analogue of TESTING_TOOLS.md, and it follows
 that plan's Part 1 (portrait), Part 2 (coordinates after rotation) and Part 4
 (toggles, disabled and covered controls) closely. Part 5 is
-`check-companion-contract.mjs` rather than anything here, and Part 6 measures
-MCP round trips, which a library has none of.
+`check-companion-contract.mjs` rather than anything here.
+
+**Part 6 — timing — is not covered yet, and should be.** It measures how long
+the work itself takes; the MCP round trip in those figures is overhead that had
+to be tolerated because there was no way to call the functions directly. There
+is now. Two of its rows are the only thing that would catch their regression:
+a tap under 100 ms means the hold floor has been lost and taps are unreliable
+again, and a point read at ~300 ms means `isRemotelyHosted` is firing on
+ordinary elements — in both cases every other check still passes. See TODO #73.
 
 **Part 3 — remote-hosted views — has no counterpart here, and that is the one
 worth knowing about.** It is the machinery behind TODO #60: a sheet or picker
