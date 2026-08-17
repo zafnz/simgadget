@@ -8,8 +8,9 @@
  * `findByIdentifier()`, `describePoint()` — and the wedge-recovery machinery
  * underneath all of them. Step 4 adds orientation: `rotate()`,
  * `detectOrientation()`, and the coordinate contract's three lifetimes of
- * state. Acting and capture arrive in steps 5 and 6; do not add methods here
- * for those, extend this class in the step that owns them instead.
+ * state. Step 5 adds acting: `tap()`, `typeText()`, `swipe()`,
+ * `pressButton()`. Capture arrives in step 6; do not add methods here for it,
+ * extend this class in the step that owns it instead.
  *
  * Every impure call goes through `this.deps` (`./internal/deps.ts`), never
  * `child_process` or a companion singleton directly — the fake-client test
@@ -30,9 +31,14 @@ import {
 import type { SimulatorDeps } from "./internal/deps.ts";
 import {
   AccessibilityUnreadableError,
+  ElementDisabledError,
+  ElementNotFoundError,
   SimGadgetError,
   SimulatorNotAnsweringError,
   SimulatorNotFoundError,
+  TapObstructedError,
+  ToggleGestureError,
+  UntypeableTextError,
 } from "./errors.ts";
 // `ax/tree.ts`'s `AXElement` is the internal, open type; the closed public one
 // lands in plan step 8, when `canonicalise` becomes the conversion point
@@ -49,11 +55,13 @@ import {
   matchInTree,
   pruneTree,
   reconcileType,
+  sameElement,
   translateRemoteSubtrees,
   uniquelyLabelled,
   type AXElement,
   type Frame,
 } from "./ax/tree.ts";
+import { decideTapVerb, holdSeconds } from "./ax/tap.ts";
 import { isNoElementError, isWedgeError, shouldRecover } from "./ax/recovery.ts";
 // `ax/orientation.ts`'s own `Orientation` is the *hint* vocabulary — the four
 // device orientations plus `"auto"` — and is deliberately a different type from
@@ -66,7 +74,8 @@ import {
   transformPointToPortrait,
   type Orientation as OrientationHint,
 } from "./ax/orientation.ts";
-import { Backend, Format, OrientationType, SearchableKey } from "./idb/client.ts";
+import { Backend, Button, Format, OrientationType, SearchableKey } from "./idb/client.ts";
+import { unmappedCharacters } from "./idb/keymap.ts";
 import { existsSync } from "fs";
 import path from "path";
 
@@ -84,6 +93,92 @@ export interface RotateResult {
    * iPhone ever adopts upside_down). Coordinates now follow this. */
   adopted: Orientation;
 }
+
+/**
+ * Where a tap is aimed. The two are different verbs kept under one name because
+ * callers think of them as one; `tap`'s doc comment has the difference.
+ */
+export type TapTarget = { x: number; y: number } | { label: string };
+
+export interface TapOptions {
+  /** Press duration in seconds. A floor of 0.1s is always applied — an
+   * instantaneous touch actuates a control about half the time (measured
+   * 5/12; with the floor 12/12) — so passing less changes nothing. Above
+   * ~0.5s UIKit reads it as a long press. */
+  durationSeconds?: number;
+  /** Number of taps; 2 = double-tap. Default 1. */
+  count?: number;
+}
+
+/**
+ * What a tap did, and what it read back. There is no success that carries no
+ * information: "Tapped successfully" is the bug class this whole library was
+ * reshaped to kill, because a tap that hit the wrong control, a tap that landed
+ * 40% of the time and a tap that actuated nothing each reported exactly that
+ * same cheerful string.
+ */
+export type TapResult =
+  | {
+      /** A real synthesized touch was delivered. */
+      acted: "touch";
+      /** Logical coordinates the touch landed at — the element's centre when
+       * aimed by label, the caller's own coordinates otherwise. Never the
+       * portrait-space pair actually sent: reporting those would answer a
+       * landscape tap at (162, 352) with "tapped at (50, 163)", a coordinate in
+       * a space the caller does not use and cannot check against the tree. */
+      x: number;
+      y: number;
+      count: number;
+      durationSeconds: number;
+      /** Present when aimed by label: the element that was resolved and
+       * hit-test-verified. Absent for a coordinate tap — coordinates are the
+       * caller saying where, and are taken at their word.
+       *
+       * Names *what* was tapped, not merely that something was: matching is a
+       * substring and the companion returns the first hit, so the element found
+       * is not always the one meant — a status line reading "Settings Switch =
+       * on" has outranked the switch it was describing, and a permission
+       * alert's sentence has outranked an app icon. */
+      element?: AXElement;
+    }
+  | {
+      /** A toggle was operated through accessibility (`AXPress` — the
+       * activation VoiceOver performs), because a toggle's frame is routinely
+       * not its actuating region and no coordinate can hit it. */
+      acted: "activation";
+      element: AXElement;
+      before?: string | number;
+      /** Undefined when the state could not be read back — the host must be
+       * able to say so rather than claim success. When defined and equal to
+       * `before`, the activation did not take (most often: the control is
+       * scrolled out of view). */
+      after?: string | number;
+    };
+
+/**
+ * Our button names to idb's `HIDButtonType`. Straight through, unlike
+ * `HID_ORIENTATION` above — the two vocabularies agree about buttons because
+ * there is only one thing a home button can mean.
+ */
+const HID_BUTTON: Record<
+  "home" | "lock" | "side-button" | "siri" | "apple-pay",
+  Button
+> = {
+  home: Button.HOME,
+  lock: Button.LOCK,
+  "side-button": Button.SIDE_BUTTON,
+  siri: Button.SIRI,
+  "apple-pay": Button.APPLE_PAY,
+};
+
+/**
+ * The pause between the taps of a multi-tap.
+ *
+ * Long enough that the companion's HID events do not arrive as one smeared
+ * gesture, short enough to stay inside UIKit's double-tap window — which is
+ * what a caller asking for `count: 2` means by it.
+ */
+const TAP_REPEAT_GAP_MS = 50;
 
 /**
  * Our orientation names to idb's `HIDOrientationType`.
@@ -183,6 +278,18 @@ const DIAGNOSTIC_POINT_PROBES = 3;
 /** Where the diagnosis probes. Any point on screen answers on a live bridge;
  * this one is inside the status bar on every device this library supports. */
 const DIAGNOSTIC_POINT = { x: 100, y: 100 };
+
+/**
+ * A toggle's state as `TapResult` carries it: the raw value, narrowed from the
+ * internal `AXElement`'s `unknown` to the two things a companion ever reports
+ * it as, and `undefined` for everything else — including an element that could
+ * not be read back at all, which is the case the result exists to make
+ * visible.
+ */
+function toggleValue(element: AXElement | null): string | number | undefined {
+  const value = element?.AXValue;
+  return typeof value === "string" || typeof value === "number" ? value : undefined;
+}
 
 /** Ports index.ts:691 — the companion's rejections are not always `Error`s. */
 function toError(input: unknown): Error {
@@ -469,14 +576,32 @@ export class Simulator {
    * the identity is right for it.
    */
   private async toPortrait(x: number, y: number): Promise<{ x: number; y: number }> {
+    return (await this.portraitTransform())(x, y);
+  }
+
+  /**
+   * The same transform, resolved once and then applied as many times as a
+   * gesture has endpoints.
+   *
+   * A swipe is why this exists rather than two `toPortrait` calls: the first
+   * call can be the read that refreshes the screen rectangle and retires the
+   * orientation hint, so a second call would transform the far end of the
+   * gesture in a *different* space from the near end — a swipe in a direction
+   * nobody asked for. Resolving the space once makes that structurally
+   * impossible instead of merely unlikely.
+   */
+  private async portraitTransform(): Promise<
+    (x: number, y: number) => { x: number; y: number }
+  > {
     const dims = await this.logicalDimensions();
-    if (!dims) return { x, y };
+    if (!dims) return (x, y) => ({ x, y });
     const orientation = getEffectiveOrientation(
       this.orientationHint,
       dims.width,
       dims.height
     );
-    return transformPointToPortrait(x, y, orientation, dims.width, dims.height);
+    return (x, y) =>
+      transformPointToPortrait(x, y, orientation, dims.width, dims.height);
   }
 
   /**
@@ -1266,6 +1391,310 @@ export class Simulator {
       // Detection is best-effort; degrade gracefully
       return "portrait";
     }
+  }
+
+  // ---- acting -------------------------------------------------------------
+
+  /**
+   * Tap by label or by coordinate. Two verbs under one name, because callers
+   * think of them as one:
+   *
+   * - `{x, y}` is a literal touch at the caller's coordinates: no resolution,
+   *   no verification, delivered with the 0.1s floor. Coordinates are the
+   *   caller saying where, and are taken at their word. Answers
+   *   `acted: "touch"` with no `element`.
+   * - `{label}` is "find this thing and operate it", and the order below is the
+   *   specification: resolve, refuse a disabled control, activate a toggle
+   *   through accessibility (falling back to a real touch when the action API
+   *   cannot reach it), refuse a hold or multi-tap aimed at a toggle, take the
+   *   centre of the frame, transform it, hit-test it, and only then touch.
+   *
+   * Every branch of that order exists because a tap once silently did the wrong
+   * thing and reported success; the reasons are on the pieces
+   * (`./ax/tap.ts`'s `decideTapVerb`, `activateToggle` and the hit-test below).
+   */
+  async tap(target: TapTarget, opts?: TapOptions): Promise<TapResult> {
+    this.assertNotDeleted();
+
+    const count = opts?.count ?? 1;
+    const durationSeconds = holdSeconds(opts?.durationSeconds);
+
+    if (!("label" in target)) {
+      const portrait = await this.toPortrait(target.x, target.y);
+      await this.sendTouch(portrait, count, durationSeconds);
+      return {
+        acted: "touch",
+        x: Math.round(target.x),
+        y: Math.round(target.y),
+        count,
+        durationSeconds,
+      };
+    }
+
+    const element = await this.findByLabel(target.label);
+    if (!element) throw new ElementNotFoundError(target.label);
+
+    switch (decideTapVerb(element, opts)) {
+      case "element-disabled":
+        throw new ElementDisabledError(element);
+      case "toggle-needs-plain-tap":
+        // Which gesture it was is the caller's own request read back: a
+        // duration means a hold, and with no duration the only way to reach
+        // here is a count above one.
+        throw new ToggleGestureError(
+          element,
+          opts?.durationSeconds !== undefined ? "hold" : "multi-tap"
+        );
+      case "activation": {
+        const activated = await this.activateToggle(element, target.label);
+        // `null` means the action API could not reach this one, and a real
+        // touch is the right answer for it — see `activateToggle`.
+        if (activated) return activated;
+        break;
+      }
+      case "touch":
+        break;
+    }
+
+    const centre = centreOf(element);
+    if (!centre) {
+      throw new SimGadgetError(
+        "element-unusable-frame",
+        `Found an element matching "${target.label}", but it has no usable frame to aim at.`
+      );
+    }
+
+    const portrait = await this.toPortrait(centre.x, centre.y);
+    const point = { x: Math.round(portrait.x), y: Math.round(portrait.y) };
+    // What the caller would recognise, for anything said back to them: the
+    // logical centre, not the portrait pair actually sent.
+    const spoken = { x: Math.round(centre.x), y: Math.round(centre.y) };
+
+    // Check the touch will reach the element it was aimed at, before sending
+    // it.
+    //
+    // A frame can be perfectly correct and still not be tappable at its centre:
+    // an element scrolled under a toolbar, covered by a keyboard, or sitting
+    // below the fold keeps its place in the tree while its centre belongs to
+    // whatever is drawn on top. Measured on this project's fixture, whose
+    // stepper sits under the toolbar — a tap by name on "Plain Stepper,
+    // Increment" focused the *toolbar's search field*, opened the keyboard, and
+    // answered "Tapped successfully". Every frame involved was correct, so no
+    // amount of tree work would have caught it.
+    //
+    // A hit-test is ~10ms against a tap that already costs ~110ms, and it is the
+    // only general defence. Refuses rather than taps, because the wrong action
+    // is worse than none and the caller can still aim by coordinate.
+    //
+    // `readPoint`, not `describePoint`: the transform has already happened, and
+    // the public verb would apply it a second time. A failure here is not
+    // swallowed the way the tool body this ports swallowed it — an empty point
+    // now arrives as `null` rather than as an exception (SIMGADGET_PLAN.md's
+    // deliberate change 3), so all that is left to catch is a bridge that has
+    // stopped answering, which is a typed error and the caller's real answer.
+    const atPoint = await this.readPoint(point.x, point.y);
+    if (!atPoint || !sameElement(element, atPoint)) {
+      throw new TapObstructedError(element, atPoint, spoken);
+    }
+
+    await this.sendTouch(point, count, durationSeconds);
+    return {
+      acted: "touch",
+      x: spoken.x,
+      y: spoken.y,
+      count,
+      durationSeconds,
+      element,
+    };
+  }
+
+  /**
+   * Flips a toggle the way VoiceOver does, and reads the state back — or
+   * answers `null` when the action API cannot reach this one.
+   *
+   * Why this is not a touch: a switch's accessibility frame is routinely not
+   * its actuating region, so no coordinate the tree can offer will hit it
+   * (`decideTapVerb` carries the measurements). Activating it is a deliberate
+   * step away from "synthesize a touch": `AXPress` does not hit-test, so it
+   * will operate a control a finger could not reach — one under an invisible
+   * overlay, say. That is the trade, and `tap({x, y})` remains a real touch for
+   * callers who need that fidelity.
+   */
+  private async activateToggle(
+    element: AXElement,
+    query: string
+  ): Promise<Extract<TapResult, { acted: "activation" }> | null> {
+    const before = toggleValue(element);
+    const name = typeof element.AXLabel === "string" ? element.AXLabel : query;
+
+    // Prefer the identifier: the companion re-resolves the element itself, with
+    // its own stricter matching, and an identifier is exact where a label is a
+    // substring that may well match something else on screen. `findByLabel` has
+    // already done the forgiving match — this only has to name what it found.
+    const id = element.AXUniqueId;
+    const useId = typeof id === "string" && id.length > 0;
+
+    try {
+      await this.withAccessibilityRecovery(() =>
+        this.deps.withClient(
+          this.udid,
+          (client) =>
+            client.activate(
+              useId ? id : name,
+              useId ? SearchableKey.UNIQUE_ID : SearchableKey.LABEL
+            ),
+          { exclusive: true }
+        )
+      );
+    } catch (error) {
+      // The action API cannot reach every element the tree can.
+      //
+      // `AccessibilityActionRequest` has no `backend` field, where the read
+      // request does — so a lookup can fall back to AXBridge and an *action*
+      // cannot. Anything only that backend can see is therefore findable and
+      // not activatable: a switch in a toolbar or nav bar, or one inside a
+      // sheet drawn by another process.
+      //
+      // Handing the tap back rather than failing, because this is exactly the
+      // case where a coordinate genuinely works: such a switch was reachable by
+      // name until toggles started being activated instead of touched, and its
+      // frame was the control all along. The caller's tap then goes through the
+      // ordinary path, hold and hit-test verification included, so if the centre
+      // turns out not to be the control they get the honest refusal rather than
+      // a touch into empty space.
+      if (!isNoElementError(toError(error).message)) throw error;
+      return null;
+    }
+
+    // Read it back rather than assuming it flipped — by identifier where there
+    // is one, because a label is a substring and the screen has just changed.
+    // An app that reports what happened in its own UI is enough to break this:
+    // the fixture's status line reads "Settings Switch = on" after the toggle,
+    // so a second lookup for "Settings Switch" finds that sentence rather than
+    // the control, and reads back no value at all. That was a real bug, found
+    // and fixed.
+    const after = useId
+      ? await this.findByIdentifier(id)
+      : await this.findByLabel(query);
+
+    // `after` stays undefined when there was nothing to read: the host must be
+    // able to say the state could not be confirmed rather than claim success.
+    return { acted: "activation", element, before, after: toggleValue(after) };
+  }
+
+  /**
+   * Delivers the touches, in **portrait** coordinates.
+   *
+   * Exclusive, because interleaving another caller's input with a multi-tap
+   * would turn a double-tap into two unrelated single taps.
+   */
+  private async sendTouch(
+    point: { x: number; y: number },
+    count: number,
+    durationSeconds: number
+  ): Promise<void> {
+    await this.deps.withClient(
+      this.udid,
+      async (client) => {
+        for (let i = 0; i < count; i++) {
+          if (i > 0) await this.deps.sleep(TAP_REPEAT_GAP_MS);
+          await client.tap(point.x, point.y, durationSeconds);
+        }
+      },
+      { exclusive: true }
+    );
+  }
+
+  /**
+   * Types printable ASCII and newline as key events.
+   *
+   * The refusal is here, at the library boundary, rather than left to the idb
+   * client's own — which raises an `IdbError` naming keycodes. Checking twice
+   * costs a set membership per character and buys the thing design rule 2 asks
+   * for: the typed error is what escapes, with the distinct offending
+   * characters on it, and no caller has to read a message to find out what they
+   * were. Before any event goes out, either way: half a string typed into an
+   * app is not a failure a caller can undo.
+   *
+   * Exclusive, so another caller's taps cannot land mid-string.
+   */
+  async typeText(text: string): Promise<void> {
+    this.assertNotDeleted();
+
+    // Distinct, and in the order they were met: a caller who typed the same
+    // emoji forty times wants to be told about the emoji, once.
+    const unmapped = [...new Set(unmappedCharacters(text))];
+    if (unmapped.length > 0) throw new UntypeableTextError(unmapped);
+
+    await this.deps.withClient(this.udid, (client) => client.typeText(text), {
+      exclusive: true,
+    });
+  }
+
+  /**
+   * A swipe between two points in logical space.
+   *
+   * Void because there is genuinely nothing to read back: the companion acks
+   * delivery and knows no more than we do about what the app made of it.
+   *
+   * Both endpoints go through one resolved transform, so they cannot end up in
+   * different coordinate spaces (see `portraitTransform`). `delta` and
+   * `durationSeconds` pass through as given — the client already substitutes 0
+   * for `undefined`, and the defaults a caller sees belong to whatever host is
+   * asking (DECISIONS.md #15).
+   *
+   * Exclusive: a swipe is a stream of events, and another caller's input
+   * landing between them scrambles the gesture.
+   */
+  async swipe(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    opts?: { durationSeconds?: number; delta?: number }
+  ): Promise<void> {
+    this.assertNotDeleted();
+
+    const transform = await this.portraitTransform();
+    const start = transform(from.x, from.y);
+    const end = transform(to.x, to.y);
+
+    await this.deps.withClient(
+      this.udid,
+      (client) =>
+        client.swipe(
+          { x: Math.round(start.x), y: Math.round(start.y) },
+          { x: Math.round(end.x), y: Math.round(end.y) },
+          { delta: opts?.delta, duration: opts?.durationSeconds }
+        ),
+      { exclusive: true }
+    );
+  }
+
+  /**
+   * A hardware button. HOME is the only way to leave an app without launching
+   * another, which is the first thing a short script needs.
+   */
+  async pressButton(
+    button: "home" | "lock" | "side-button" | "siri" | "apple-pay",
+    opts?: { durationSeconds?: number }
+  ): Promise<void> {
+    this.assertNotDeleted();
+
+    const hid = HID_BUTTON[button];
+    if (hid === undefined) {
+      // The parameter is a closed union, so this is only reachable from
+      // JavaScript. A TypeError for the same reason `rotate` throws one: it is
+      // a bad argument rather than anything about the simulator, so there is no
+      // state for a typed `ErrorCode` to carry.
+      throw new TypeError(
+        `Unknown button "${button}". Expected one of: ${Object.keys(HID_BUTTON).join(", ")}.`
+      );
+    }
+
+    await this.deps.withClient(
+      this.udid,
+      (client) => client.pressButton(hid, opts?.durationSeconds),
+      { exclusive: true }
+    );
   }
 
   // ---- low level — you should never need these ---------------------------

@@ -1,7 +1,8 @@
 /**
  * A scriptable stand-in for the slice of `IdbClient` the library uses:
  * `accessibilityInfo`, in its three shapes (a whole-screen tree, a server-side
- * marker query, a point read), plus `describe` and `setOrientation`.
+ * marker query, a point read), plus `describe`, `setOrientation`, and the input
+ * verbs `activate`, `tap`, `typeText`, `swipe` and `pressButton`.
  *
  * **The tether rule (SIMGADGET_PLAN.md) binds this file absolutely.** It
  * encodes our beliefs about somebody else's undocumented binary, and every one
@@ -26,14 +27,34 @@
  *    never sends one, so this fake never has to model it;
  *  - `describe()` reports screen dimensions in **both pixels and points**
  *    (check 9), which is where the coordinate contract's cached portrait point
- *    dimensions come from.
+ *    dimensions come from;
+ *  - `activate()` operates a switch **without a touch** (check 6), which is the
+ *    entire basis for routing a plain tap on a toggle through the action API.
  *
- * `setOrientation` claims nothing at all, and that is the tether rule being
- * satisfied rather than dodged: whether the interface obeys a rotation is the
- * app's decision and iOS's, which is precisely why `rotate()` reads the
- * orientation back instead of trusting the request. A fake that made the screen
- * turn would be asserting the one thing the real binary does not promise. Tests
- * script what the screen looks like afterwards themselves.
+ * `setOrientation`, `tap`, `typeText`, `swipe` and `pressButton` claim nothing
+ * at all — they record what was asked and return. That is the tether rule being
+ * satisfied rather than dodged: whether the interface obeys a rotation, or an
+ * app notices a touch, is the app's decision and iOS's, which is precisely why
+ * `rotate()` reads the orientation back and `tap()` hit-tests before it sends
+ * instead of trusting either. A fake that made the screen turn or a control
+ * actuate would be asserting the one thing the real binary does not promise.
+ * Tests script what the screen looks like afterwards themselves.
+ *
+ * `typeText` deliberately does **not** re-implement the real client's own
+ * refusal of unmappable characters. The library refuses first, at its own
+ * boundary, and a fake that refused too would let that test pass on either
+ * layer's behaviour — the recorded call is the only thing that can prove no
+ * event went out.
+ *
+ * **One belief here is not pinned by any contract check, and is flagged rather
+ * than hidden** (the same treatment DECISIONS.md #24 gives the `UNIQUE_ID`
+ * match): that `accessibility_action` reports an element it cannot reach with
+ * idb's "found no element" wording, the way an absent *marker query* does
+ * (check 7). `tap()`'s fall-back-to-a-real-touch path depends on it, and it is
+ * the wording the repo-root server has matched in production since the toggle
+ * path was written. The fake models it only where a test asks for it — the
+ * handler raises `noElementError` itself — so the assumption is visible at the
+ * point it is used. A check for it belongs with plan step 10's other four.
  *
  * Reached by importing `../src/simulator.ts` directly, which is a privilege of
  * living inside the package: the `exports` map makes the seam unresolvable to
@@ -41,7 +62,13 @@
  */
 
 import type { AXElement } from "../../src/ax/tree.ts";
-import { Backend, Format, OrientationType, SearchableKey } from "../../src/idb/client.ts";
+import {
+  Backend,
+  Button,
+  Format,
+  OrientationType,
+  SearchableKey,
+} from "../../src/idb/client.ts";
 
 /** One accessibility read, as the fake saw it. */
 export interface AccessibilityCall {
@@ -87,6 +114,13 @@ export interface FakeIdbOptions {
    * them — the one case the library has to tolerate without a typed error.
    */
   describe?: () => FakeTargetDescription;
+  /**
+   * Answers `activate()`. Defaults to succeeding silently, which is what
+   * check 6 pins: the action operates the control and reports nothing about it.
+   * Throw `noElementError(marker)` to model the element the action API cannot
+   * reach — see this file's header for why that wording is an unpinned belief.
+   */
+  activate?: (marker: string, matchKey: SearchableKey) => void;
 }
 
 /** The slice of `TargetDescription` the library reads. */
@@ -202,6 +236,26 @@ export class FakeIdbClient {
    * is the test's to script — see this file's header. */
   readonly orientations: OrientationType[] = [];
 
+  /** Every `activate()`, in order, with the key it was matched on — which is
+   * the assertion "activation goes by identifier where there is one" is made
+   * against. */
+  readonly activations: { marker: string; matchKey: SearchableKey }[] = [];
+
+  /** Every touch, in order: the portrait-space point and the hold. */
+  readonly taps: { x: number; y: number; duration?: number }[] = [];
+
+  /** Every string handed to `typeText`. Empty is the proof that a refusal
+   * happened before any event went out. */
+  readonly typed: string[] = [];
+
+  readonly swipes: {
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    options: { delta?: number; duration?: number };
+  }[] = [];
+
+  readonly buttons: { button: Button; duration?: number }[] = [];
+
   constructor(private readonly options: FakeIdbOptions = {}) {}
 
   async describe(): Promise<FakeTargetDescription> {
@@ -211,6 +265,31 @@ export class FakeIdbClient {
 
   async setOrientation(orientation: OrientationType): Promise<void> {
     this.orientations.push(orientation);
+  }
+
+  async activate(marker: string, matchKey: SearchableKey): Promise<void> {
+    this.activations.push({ marker, matchKey });
+    this.options.activate?.(marker, matchKey);
+  }
+
+  async tap(x: number, y: number, duration?: number): Promise<void> {
+    this.taps.push({ x, y, duration });
+  }
+
+  async typeText(text: string): Promise<void> {
+    this.typed.push(text);
+  }
+
+  async swipe(
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+    options: { delta?: number; duration?: number } = {}
+  ): Promise<void> {
+    this.swipes.push({ start, end, options });
+  }
+
+  async pressButton(button: Button, duration?: number): Promise<void> {
+    this.buttons.push({ button, duration });
   }
 
   async accessibilityInfo(query: unknown): Promise<unknown> {

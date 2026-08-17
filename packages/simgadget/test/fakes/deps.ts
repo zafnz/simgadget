@@ -97,6 +97,15 @@ export interface FakeDepsCalls {
   spawn: RunCall[];
   sleep: number[];
   withClient: string[];
+  /**
+   * The udid of every `withClient` call that asked for the **exclusive** lock,
+   * in order. Input is what takes it — a multi-tap interleaved with another
+   * caller's touches is two unrelated single taps, and a string typed through
+   * someone else's tap is a different string — so a test proving "two taps
+   * within one exclusive lock" needs to count the locks, not just the taps.
+   * Reads never appear here.
+   */
+  withClientExclusive: string[];
   closeCompanion: string[];
   reopenCompanion: string[];
   shutdownCompanion: string[];
@@ -128,6 +137,15 @@ export interface FakeDepsOptions {
     accessibilityInfo(query: unknown): Promise<unknown>;
     describe?(): Promise<unknown>;
     setOrientation?(orientation: number): Promise<void>;
+    activate?(marker: string, matchKey: number): Promise<void>;
+    tap?(x: number, y: number, duration?: number): Promise<void>;
+    typeText?(text: string): Promise<void>;
+    swipe?(
+      start: { x: number; y: number },
+      end: { x: number; y: number },
+      options?: { delta?: number; duration?: number }
+    ): Promise<void>;
+    pressButton?(button: number, duration?: number): Promise<void>;
   };
   /** A registry to share between two handles on one udid, for a test about
    * exactly that. Defaults to a fresh one, which is what every other test
@@ -157,6 +175,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
     spawn: [],
     sleep: [],
     withClient: [],
+    withClientExclusive: [],
     closeCompanion: [],
     reopenCompanion: [],
     shutdownCompanion: [],
@@ -209,9 +228,14 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
       const child = options.spawn?.(cmd, args) ?? new FakeChildProcess();
       return child as unknown as ChildProcess;
     },
-    async withClient(udid, fn) {
+    async withClient(udid, fn, options) {
       calls.withClient.push(udid);
-      calls.order.push(`withClient:${udid}`);
+      // The exclusive flag is part of the order log, not only of its own array,
+      // so a test can see where the lock opened relative to the client calls
+      // made inside it. A plain read still logs `withClient:<udid>` exactly as
+      // before, which is what the existing ordering tests look for.
+      if (options?.exclusive) calls.withClientExclusive.push(udid);
+      calls.order.push(`withClient:${udid}${options?.exclusive ? " exclusive" : ""}`);
       return fn(loggedClient as unknown as Parameters<typeof fn>[0]);
     },
     async sleep(ms) {
