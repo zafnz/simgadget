@@ -161,6 +161,19 @@ await companions.withClient(udid, async (client) => {
   // The entire reason `findByLabel` has a fallback, and that it costs ~300ms
   // only on a miss. If the default backend ever gained this, the fallback
   // becomes dead weight; if AXBridge lost it, toolbars go unreachable again.
+  //
+  // **This one is true eventually, not immediately, and the difference is not
+  // visible from here.** Measured by the e2e suite over 40 consecutive reads of
+  // one unchanging screen, 2026-08-17: for the first few reads after the app
+  // reaches the foreground, a marker query on the default backend *does* answer
+  // for a toolbar control; then it stops, permanently. Run this check promptly
+  // after launching the fixture and it fails, and the conclusion drawn would be
+  // that the companion had changed when nothing had.
+  //
+  // It is safe here only because checks 1-3 have already issued several reads
+  // by the time it runs. That ordering is therefore load-bearing: do not move
+  // this check earlier in the file, and be suspicious of a lone failure here on
+  // a freshly launched app before believing the assumption has broken.
   {
     let axSaw = true;
     try {
