@@ -9,8 +9,10 @@
  * underneath all of them. Step 4 adds orientation: `rotate()`,
  * `detectOrientation()`, and the coordinate contract's three lifetimes of
  * state. Step 5 adds acting: `tap()`, `typeText()`, `swipe()`,
- * `pressButton()`. Capture arrives in step 6; do not add methods here for it,
- * extend this class in the step that owns it instead.
+ * `pressButton()`. Step 6 adds capture: `screenshot()`, `startRecording()`,
+ * `stopRecording()` — thin, because the pipeline underneath them is about
+ * `simctl`, `sips` and a child process rather than about a simulator, and
+ * lives in `./capture.ts` accordingly.
  *
  * Every impure call goes through `this.deps` (`./internal/deps.ts`), never
  * `child_process` or a companion singleton directly — the fake-client test
@@ -74,8 +76,19 @@ import {
   transformPointToPortrait,
   type Orientation as OrientationHint,
 } from "./ax/orientation.ts";
+import {
+  captureScreenshot,
+  pointDimensions,
+  recordingArgs,
+  stopRecordingProcess,
+  waitForRecordingStart,
+  type RecordingOptions,
+  type Screenshot,
+  type ScreenshotOptions,
+} from "./capture.ts";
 import { Backend, Button, Format, OrientationType, SearchableKey } from "./idb/client.ts";
 import { unmappedCharacters } from "./idb/keymap.ts";
+import type { ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import path from "path";
 
@@ -356,6 +369,20 @@ export class Simulator {
    * aspect.
    */
   protected orientationHint: OrientationHint = "auto";
+
+  /**
+   * The one recording this handle may have running, and where it is being
+   * written.
+   *
+   * **Per handle, not per udid**, which is the spec's wording and the reason
+   * `stopRecording()` can answer with a path at all: it is the same
+   * per-session slot today's `activeRecordings` map keys by session id
+   * (index.ts:2434), and two handles on one simulator recording to two files
+   * is a thing simctl itself allows. Cleared when the process exits on its
+   * own, so a recording that died leaves the handle able to start another
+   * rather than permanently "already active".
+   */
+  private recording: { child: ChildProcess; path: string } | null = null;
 
   /** How the last boot/waitReady went; set by `createSimulator` (through
    * `boot()`), `boot()` and `waitReady()`. Undefined on a fresh attach. A
@@ -1695,6 +1722,141 @@ export class Simulator {
       (client) => client.pressButton(hid, opts?.durationSeconds),
       { exclusive: true }
     );
+  }
+
+  // ---- capture ------------------------------------------------------------
+
+  /**
+   * A screenshot of the screen, **rotated to match the interface**.
+   *
+   * simctl captures in physical portrait pixel orientation whatever the device
+   * is doing, so a landscape capture arrives on its side; every caller of this
+   * library would then have to know that and undo it. Rotating here is a
+   * deliberate change from today's `screenshot` tool, which saves the raw
+   * capture — the spec's `Screenshot` type mandates it, and `orientation` says
+   * which way up the returned image is.
+   *
+   * `resizeTo: "points"` is the option `ui_view` was built out of: the image
+   * comes back in the coordinate space the caller's own taps live in, which is
+   * both far smaller than native pixels and directly comparable with anything
+   * a describe reported.
+   */
+  async screenshot(opts: ScreenshotOptions = {}): Promise<Screenshot> {
+    this.assertNotDeleted();
+
+    const orientation = await this.captureOrientation();
+    const resize =
+      opts.resizeTo === "points"
+        ? await this.portraitResizeDimensions()
+        : opts.resizeTo ?? null;
+
+    try {
+      return await captureScreenshot(this.deps, this.udid, opts, { orientation, resize });
+    } catch (error) {
+      throw this.mapSimctlError(error);
+    }
+  }
+
+  /**
+   * Which way up the returned image has to be.
+   *
+   * The read is paid for only when the hint is `"auto"`: a hint set by a
+   * rotation or a probe is authoritative and knows something the screen's shape
+   * cannot say, so asking the screen could only lose the chirality that probe
+   * paid for. Ports index.ts:2192.
+   */
+  private async captureOrientation(): Promise<Orientation> {
+    const dims = this.orientationHint === "auto" ? await this.logicalDimensions() : null;
+    return getEffectiveOrientation(
+      this.orientationHint,
+      dims?.width ?? 0,
+      dims?.height ?? 0
+    );
+  }
+
+  /**
+   * The portrait point dimensions to resample to for `resizeTo: "points"`.
+   *
+   * `describe` first, because it answers from target metadata rather than from
+   * the bridge (DECISIONS.md #6). The accessibility root frame is the fallback
+   * — it is where these came from before, and normalising it to portrait is
+   * what index.ts:2183 did — and it is also what raises the caller's real
+   * problem when neither source can answer, since `screenSize()` runs the whole
+   * cure ladder and throws a typed error rather than returning a shrug.
+   */
+  private async portraitResizeDimensions(): Promise<{ width: number; height: number }> {
+    return (await this.portraitPointDimensions()) ?? pointDimensions(await this.screenSize());
+  }
+
+  /**
+   * Starts recording video to `path`, and resolves once it is under way.
+   *
+   * One recording per handle: a second call throws rather than silently
+   * replacing the first, because the process it would abandon holds the only
+   * reference to a file that never gets finalized.
+   */
+  async startRecording(outputPath: string, opts: RecordingOptions = {}): Promise<void> {
+    this.assertNotDeleted();
+
+    if (this.recording) {
+      throw new SimGadgetError(
+        "recording-already-active",
+        "A recording is already in progress for this simulator handle. Stop it first."
+      );
+    }
+
+    // DECISIONS.md #12: `path.resolve` against the process cwd and nothing
+    // more. `~/Downloads` and the default output directory are host policy.
+    const absolutePath = path.resolve(outputPath);
+
+    // Nothing may `await` between the spawn and the listeners: what the child
+    // says about starting is said within milliseconds, and a listener attached
+    // after it has spoken never hears it.
+    const child = this.deps.spawn(
+      "xcrun",
+      recordingArgs({ udid: this.udid, outputPath: absolutePath, ...opts })
+    );
+    const started = waitForRecordingStart(this.deps, child);
+
+    try {
+      await started;
+    } catch (error) {
+      throw this.mapSimctlError(error);
+    }
+
+    this.recording = { child, path: absolutePath };
+    // A recording that dies on its own must not leave the handle permanently
+    // refusing to start another (index.ts:2514). Guarded on identity, so a
+    // late `close` from the process this one replaced cannot clear it.
+    child.on("close", () => {
+      if (this.recording?.child === child) this.recording = null;
+    });
+  }
+
+  /**
+   * Stops the recording and returns where it was written.
+   *
+   * The path comes from the handle rather than from the caller: `startRecording`
+   * resolved it, and answering with anything else would hand back a relative
+   * path the caller would have to resolve the same way to use.
+   */
+  async stopRecording(): Promise<{ path: string }> {
+    this.assertNotDeleted();
+
+    const active = this.recording;
+    if (!active) {
+      throw new SimGadgetError(
+        "no-active-recording",
+        "No recording is in progress for this simulator handle."
+      );
+    }
+
+    // Cleared before the stop rather than after: the wait for the file to
+    // finalize is a second long, and a second `stopRecording` inside it would
+    // otherwise interrupt the same process twice.
+    this.recording = null;
+    await stopRecordingProcess(this.deps, active.child);
+    return { path: active.path };
   }
 
   // ---- low level — you should never need these ---------------------------

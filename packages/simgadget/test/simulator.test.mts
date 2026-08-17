@@ -262,6 +262,9 @@ test("every method throws SimulatorNotFoundError after delete(), touching nothin
     ["detectOrientation", (sim) => sim.detectOrientation()],
     ["restartBridge", (sim) => sim.restartBridge()],
     ["releaseCompanion", (sim) => sim.releaseCompanion()],
+    ["screenshot", (sim) => sim.screenshot()],
+    ["startRecording", (sim) => sim.startRecording("out.mp4")],
+    ["stopRecording", (sim) => sim.stopRecording()],
   ];
 
   for (const [name, call] of cases) {

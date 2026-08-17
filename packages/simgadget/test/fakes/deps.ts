@@ -71,16 +71,29 @@ export class FakeClock {
 
 /**
  * A `ChildProcess`-shaped `EventEmitter`, for deps that `spawn()` a process
- * they may need to `.kill()` (`waitForBootStatus`'s `simctl bootstatus`).
- * Never actually spawns anything; a test fires `.emitExit()` itself to
- * simulate the child finishing.
+ * they may need to `.kill()` (`waitForBootStatus`'s `simctl bootstatus`,
+ * `startRecording`'s `simctl io recordVideo`). Never actually spawns anything;
+ * a test drives the child itself with `emitStderr`, `emitExit` and `emitClose`.
+ *
+ * `signals` rather than only `killed`, because **which** signal was sent is the
+ * whole assertion for a recording: `SIGINT` is what lets `simctl io recordVideo`
+ * finalize the file, and a `SIGKILL` leaves a file that exists, has a plausible
+ * size and will not play. A boolean cannot tell those apart.
  */
 export class FakeChildProcess extends EventEmitter {
   exitCode: number | null = null;
   killed = false;
+  /** Every signal `kill()` was called with, in order; `undefined` for a bare
+   * `kill()`, which is Node's `SIGTERM`. */
+  readonly signals: (NodeJS.Signals | number | undefined)[] = [];
+  /** The child's stderr. A real `ChildProcess` types this as nullable and the
+   * code under test reads it as such, so a fake that always has one is the
+   * easy case rather than a cheat. */
+  readonly stderr = new EventEmitter();
 
-  kill(): boolean {
+  kill(signal?: NodeJS.Signals | number): boolean {
     this.killed = true;
+    this.signals.push(signal);
     return true;
   }
 
@@ -89,6 +102,22 @@ export class FakeChildProcess extends EventEmitter {
   emitExit(code = 0): void {
     this.exitCode = code;
     this.emit("exit", code);
+  }
+
+  /**
+   * Simulates the child's stdio closing. Separate from `emitExit` because a
+   * real child emits `exit` and then `close`, and the two consumers in this
+   * package listen for different ones — `waitForBootStatus` for `exit`, the
+   * recording's start protocol for `close`.
+   */
+  emitClose(code = 0): void {
+    this.exitCode = code;
+    this.emit("close", code);
+  }
+
+  /** One chunk on stderr, which is where `simctl io` says everything it says. */
+  emitStderr(text: string): void {
+    this.stderr.emit("data", Buffer.from(text));
   }
 }
 
