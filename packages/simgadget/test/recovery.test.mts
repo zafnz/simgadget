@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { isWedgeError, shouldRecover } from "../src/ax/recovery.ts";
+import { isNoElementError, isWedgeError, shouldRecover } from "../src/ax/recovery.ts";
 
 // The message idb actually raises, in full. Its wording blames coordinates and
 // a dialog; neither is ever the cause.
@@ -55,6 +55,52 @@ test("isWedgeError", async (t) => {
       "",
     ]) {
       assert.equal(isWedgeError(message), false, `should not match: ${message}`);
+    }
+  });
+});
+
+test("isNoElementError", async (t) => {
+  await t.test("matches how the companion reports an absent marker", () => {
+    assert.equal(isNoElementError("found no element matching Plain Button"), true);
+    // Contract check 7 pins the wording, not the casing or the wrapping.
+    assert.equal(isNoElementError("Error: FOUND NO ELEMENT for marker"), true);
+  });
+
+  // Each of these is a real failure. Reading one as "absent" would turn a dead
+  // companion, a bad backend or a wedged bridge into a serene `null`, and the
+  // caller would be told the control is simply not on screen.
+  await t.test("does not match failures that only look like absence", () => {
+    for (const message of [
+      "Element not found",
+      "could not find element matching Plain Button",
+      "no element",
+      "found no elements",
+      "no translation object returned for simulator",
+      "Unable to connect to idb_companion",
+      "",
+    ]) {
+      assert.equal(
+        isNoElementError(message),
+        // "found no elements" contains the phrase and is deliberately a match:
+        // a plural is the same answer.
+        message === "found no elements",
+        `mismatch for: ${message}`
+      );
+    }
+  });
+
+  // The two predicates in this module must not overlap: `describePoint` and
+  // `findByLabel` both depend on exactly one of them recognising a message.
+  await t.test("never agrees with isWedgeError", () => {
+    for (const message of [
+      "found no element matching Plain Button",
+      "INTERNAL: No translation object returned for simulator",
+    ]) {
+      assert.notEqual(
+        isNoElementError(message),
+        isWedgeError(message),
+        `both predicates claimed: ${message}`
+      );
     }
   });
 });

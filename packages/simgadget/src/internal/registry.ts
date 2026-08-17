@@ -29,6 +29,10 @@
  * timestamp, the in-flight promise, and the cure ladder itself. The fields
  * for those are declared below as the shape step 3 fills in; nothing in this
  * file computes a cooldown or launches a recovery.
+ *
+ * Step 3 has since done exactly that, in `../simulator.ts`, and reaches this
+ * registry through `SimulatorDeps.recovery` rather than through the singleton
+ * below — see DECISIONS.md #21 for why a test must never share it.
  */
 
 export interface RecoveryEntry {
@@ -93,8 +97,14 @@ export class RecoveryRegistry {
   }
 }
 
-/** The one registry for this process. Import this, never construct your own
- * — a second instance would let two handles on one udid each keep their own
- * copy of state that is supposed to be shared, which is exactly the bug this
- * design avoids. */
+/**
+ * The one registry for this process, and `realDeps.recovery`'s value. Reach it
+ * through `SimulatorDeps.recovery` rather than importing it — production gets
+ * this instance either way, and a test gets a fresh one, which is the whole
+ * point (DECISIONS.md #21).
+ *
+ * Nothing in production may construct a second: two handles on one udid would
+ * each keep their own copy of state that is supposed to be shared, losing the
+ * dedup that exists because a wedge presents as several reads failing at once.
+ */
 export const recoveryRegistry = new RecoveryRegistry();

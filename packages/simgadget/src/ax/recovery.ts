@@ -2,15 +2,21 @@
  * When to reach for the cure, as a decision.
  *
  * The cure itself — stopping the guest's `com.apple.CoreSimulator.bridge` so
- * launchd brings up a fresh one — is three lines of `simctl` in `index.ts`.
- * What is not simple is deciding *when*, and getting that wrong is expensive
- * in both directions: too eager and every simulator that is merely slow to boot
- * gets its bridge restarted out from under the boot wait; too shy and a wedged
- * session stays dead for the rest of its life. Both failures cost a simulator
- * boot to observe, which is why the rule lives here where a test can reach it.
+ * launchd brings up a fresh one — is three lines of `simctl` in
+ * `../simulator.ts`. What is not simple is deciding *when*, and getting that
+ * wrong is expensive in both directions: too eager and every simulator that is
+ * merely slow to boot gets its bridge restarted out from under the boot wait;
+ * too shy and a wedged session stays dead for the rest of its life. Both
+ * failures cost a simulator boot to observe, which is why the rule lives here
+ * where a test can reach it.
+ *
+ * This module also owns **idb's error wording**, and is the only place in the
+ * library allowed to regex somebody else's message. Every belief encoded here
+ * has a check in `scripts/check-companion-contract.mjs` (7 and 8), because each
+ * one is invisible while it holds and silently wrong when it stops.
  *
  * Pure and dependency-free, like its siblings in this directory; the state it
- * reasons about is held in `index.ts` and passed in.
+ * reasons about is held in the `Simulator` handle's registry and passed in.
  */
 
 /**
@@ -31,6 +37,25 @@
  */
 export function isWedgeError(message: string): boolean {
   return /no translation object/i.test(message);
+}
+
+/**
+ * How the companion reports a marker query that matched nothing.
+ *
+ * It raises rather than returning an empty result, so absence arrives as an
+ * error and has to be recognised before it is treated as one: `findByLabel`
+ * and `findByIdentifier` turn this into `null`, which is the ordinary answer
+ * to "is this on screen?", and only an action that cannot proceed without the
+ * element turns it into `ElementNotFoundError`.
+ *
+ * Here rather than in `simulator.ts` for the same reason `isWedgeError` is:
+ * this module owns idb's vocabulary, so no regex over a companion message
+ * lives anywhere else. Contract check 7 is what keeps the belief honest when
+ * the pinned companion moves — if the wording ever changes, absence becomes a
+ * thrown gRPC error and every lookup in the library breaks at once.
+ */
+export function isNoElementError(message: string): boolean {
+  return /found no element/i.test(message);
 }
 
 export interface RecoveryDecision {

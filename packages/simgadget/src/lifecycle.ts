@@ -33,7 +33,6 @@ import {
   SimulatorNotFoundError,
 } from "./errors.ts";
 import { realDeps, type SimulatorDeps } from "./internal/deps.ts";
-import { recoveryRegistry } from "./internal/registry.ts";
 import { Format } from "./idb/client.ts";
 import { Simulator } from "./simulator.ts";
 
@@ -419,8 +418,10 @@ export async function waitUntilDriveable(
         // (index.ts:1137) recorded this; the port dropped it because this
         // registry did not exist yet (DECISIONS.md #18). Restored here now
         // that it does — this is a write of a plain fact, not the cooldown
-        // or cure-ladder logic step 3 owns.
-        recoveryRegistry.markAnswered(udid);
+        // or cure-ladder logic step 3 owns. Through the deps seam rather than
+        // the singleton, so a test's boot does not arm recovery for the next
+        // test's simulator (DECISIONS.md #21).
+        deps.recovery.markAnswered(udid);
         return {
           ready: true,
           waitedMs: deps.now() - started,

@@ -31,6 +31,7 @@ import { ChildProcess, execFile, spawn } from "child_process";
 import { promisify } from "util";
 import { IdbClient } from "../idb/client.ts";
 import { companions, type WithClientOptions } from "../idb/companionManager.ts";
+import { recoveryRegistry, type RecoveryRegistry } from "./registry.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -84,6 +85,18 @@ export interface SimulatorDeps {
    * Delegates to `CompanionManager.shutdown`. This is `releaseCompanion()`'s
    * tidy path. */
   shutdownCompanion(udid: string): Promise<void>;
+  /**
+   * The udid-keyed recovery state — has this simulator ever answered, when was
+   * its bridge last restarted, is a restart in flight.
+   *
+   * On the seam rather than imported as the singleton (DECISIONS.md #21): the
+   * process-level `recoveryRegistry` is right for production, where two handles
+   * on one udid must share one recovery attempt, and wrong for tests, where one
+   * case's `markAnswered` would leak into the next and quietly decide whether
+   * recovery is eligible at all. The fake supplies a fresh registry per test,
+   * exactly the way it supplies a fake clock.
+   */
+  recovery: RecoveryRegistry;
 }
 
 export const realDeps: SimulatorDeps = {
@@ -100,4 +113,5 @@ export const realDeps: SimulatorDeps = {
   closeCompanion: (udid) => companions.close(udid),
   reopenCompanion: (udid) => companions.reopen(udid),
   shutdownCompanion: (udid) => companions.shutdown(udid),
+  recovery: recoveryRegistry,
 };

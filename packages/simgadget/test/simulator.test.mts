@@ -10,7 +10,6 @@ import {
   RECOVERY_TAIL_MS,
 } from "../src/lifecycle.ts";
 import { SimGadgetError, SimulatorNotFoundError } from "../src/errors.ts";
-import { recoveryRegistry } from "../src/internal/registry.ts";
 import { createFakeDeps } from "./fakes/deps.ts";
 
 /** This test file itself -- an absolute path guaranteed to exist, so
@@ -235,11 +234,11 @@ test("Simulator.delete()", async (t) => {
   await t.test("clears the recovery registry", async () => {
     const deps = createFakeDeps();
     const sim = new Simulator("UDID-CLEARS", "iPhone", deps);
-    recoveryRegistry.markAnswered("UDID-CLEARS");
+    deps.recovery.markAnswered("UDID-CLEARS");
 
     await sim.delete();
 
-    assert.equal(recoveryRegistry.hasAnswered("UDID-CLEARS"), false);
+    assert.equal(deps.recovery.hasAnswered("UDID-CLEARS"), false);
   });
 });
 
@@ -254,6 +253,11 @@ test("every method throws SimulatorNotFoundError after delete(), touching nothin
     ["delete", (sim) => sim.delete()],
     ["installApp", (sim) => sim.installApp(thisFile)],
     ["launchApp", (sim) => sim.launchApp("com.example.app")],
+    ["describeScreen", (sim) => sim.describeScreen()],
+    ["screenSize", (sim) => sim.screenSize()],
+    ["findByLabel", (sim) => sim.findByLabel("Plain Button")],
+    ["findByIdentifier", (sim) => sim.findByIdentifier("PlainButton")],
+    ["describePoint", (sim) => sim.describePoint(10, 10)],
     ["restartBridge", (sim) => sim.restartBridge()],
     ["releaseCompanion", (sim) => sim.releaseCompanion()],
   ];

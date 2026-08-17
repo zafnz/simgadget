@@ -13,17 +13,23 @@
  * e.g. `Simulator.delete()` closing the companion before any simctl call.
  *
  * The tether rule (SIMGADGET_PLAN.md) binds what a fake *`IdbClient`* may
- * claim a real companion does. This file does not implement one — tests
- * script `withClient`'s callback argument directly, as a plain object shaped
- * like the slice of `IdbClient` the code under test calls — so nothing here
- * needs a contract check of its own. A later step that wants a fuller fake
- * `IdbClient` (to exercise more of `idb/client.ts`'s surface) should add it
- * as a sibling file in this directory and keep that rule in mind then.
+ * claim a real companion does. This file still does not implement one: the
+ * `client` option takes any object shaped like the slice of `IdbClient` the
+ * code under test calls, and the scriptable fake that models the companion's
+ * three read shapes lives next door in `./idb.ts`, where every belief it
+ * encodes is listed against the contract check that pins it.
+ *
+ * `recovery` is a **fresh `RecoveryRegistry` per fake** rather than the
+ * process-level singleton (DECISIONS.md #21). Sharing it would let one case's
+ * `markAnswered` decide whether the next case's simulator is even eligible for
+ * a bridge restart — a leak that shows up as a test that passes alone and
+ * fails in the suite.
  */
 
 import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type { SimulatorDeps } from "../../src/internal/deps.ts";
+import { RecoveryRegistry } from "../../src/internal/registry.ts";
 
 export interface RunCall {
   cmd: string;
@@ -111,10 +117,15 @@ export interface FakeDepsOptions {
    * explicitly handled, so a test only has to script the calls it cares
    * about. */
   run?: RunHandler;
-  /** Answers `withClient()`'s callback with this fake client. Defaults to one
-   * whose `accessibilityInfo()` always rejects, i.e. "never becomes
-   * driveable" — the common case for a boot-ladder timeout test. */
+  /** Answers `withClient()`'s callback with this fake client — usually
+   * `createFakeIdbClient(...)` from `./idb.ts`. Defaults to one whose
+   * `accessibilityInfo()` always rejects, i.e. "never becomes driveable" — the
+   * common case for a boot-ladder timeout test. */
   client?: { accessibilityInfo: (query: unknown) => Promise<unknown> };
+  /** A registry to share between two handles on one udid, for a test about
+   * exactly that. Defaults to a fresh one, which is what every other test
+   * wants. */
+  recovery?: RecoveryRegistry;
   /** Fake `spawn()` results, keyed the same way `run` calls are logged
    * ("cmd arg1 arg2"). Falls back to a `FakeChildProcess` that never exits on
    * its own, so `waitForBootStatus` resolves via the `capMs` sleep race. */
@@ -153,6 +164,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
   return {
     calls,
     clock,
+    recovery: options.recovery ?? new RecoveryRegistry(),
     async run(cmd, args) {
       calls.run.push({ cmd, args });
       calls.order.push(`run:${commandKey(cmd, args)}`);
