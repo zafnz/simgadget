@@ -437,6 +437,52 @@ export async function stopRecordingProcess(
   deps: SimulatorDeps,
   child: ChildProcess
 ): Promise<void> {
+  untrackRecording(child);
   child.kill("SIGINT");
   await deps.sleep(RECORDING_FINALIZE_MS);
+}
+
+/**
+ * Recordings this process started, so none of them outlives it.
+ *
+ * `CompanionManager` reaps companions on exit and deliberately never reaps
+ * simulators — a script's simulator keeps running, state intact, after the
+ * script ends. A *recording* is neither of those things: it is a child process
+ * of ours writing to a file the caller asked for, and nothing else will ever
+ * stop it. Observed: a script that started one and exited left
+ * `simctl io ... recordVideo` running six minutes later, against a simulator
+ * that had itself been deleted in the meantime.
+ *
+ * This is the backstop, not the tidy path — `stopRecording()` is that, and it
+ * waits for the file to finalize. An 'exit' handler cannot await, so all this
+ * can do is send the signal and hope simctl is quick; a file reaped this way
+ * may well be truncated. That is still better than a recorder that runs until
+ * the machine is rebooted.
+ */
+const activeRecordings = new Set<ChildProcess>();
+let exitHookInstalled = false;
+
+export function trackRecording(child: ChildProcess): void {
+  activeRecordings.add(child);
+  child.once("close", () => activeRecordings.delete(child));
+
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  // Only 'exit', for the same reason `CompanionManager` gives: a host may
+  // install its own async SIGINT/SIGTERM handlers, and a second handler
+  // calling process.exit() would cut those off mid-await. 'exit' runs after
+  // them and covers the paths that never reach them.
+  process.on("exit", () => {
+    for (const recording of activeRecordings) {
+      try {
+        recording.kill("SIGINT");
+      } catch {
+        // Exiting anyway.
+      }
+    }
+  });
+}
+
+export function untrackRecording(child: ChildProcess): void {
+  activeRecordings.delete(child);
 }

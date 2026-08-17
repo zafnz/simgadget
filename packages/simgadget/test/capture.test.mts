@@ -621,3 +621,49 @@ test("Simulator.stopRecording", async (t) => {
     assert.deepEqual(harness.children[0].signals, ["SIGINT"]);
   });
 });
+
+/**
+ * Deleting the device does not stop `simctl io ... recordVideo`.
+ *
+ * Watched happen: a script started a recording, deleted its simulator, and
+ * exited; six minutes later the recorder was still running against a udid that
+ * `simctl list devices` no longer knew, writing to a file nothing would ever
+ * finalize. So `delete()` stops its handle's recording first — which is also
+ * the only ordering that can finalize the file, since after the delete there is
+ * nothing left to record.
+ */
+test("Simulator.delete stops a recording it would otherwise orphan", async (t) => {
+  await t.test("signals the recorder before the device goes away", async () => {
+    const harness = recordingHarness();
+    await startRecording(harness);
+
+    await harness.sim.delete();
+
+    assert.deepEqual(harness.children[0].signals, ["SIGINT"]);
+    // Order is the assertion, not just the signal: a stop after the delete
+    // would be signalling a recorder whose device had already gone.
+    const stopIndex = harness.deps.calls.order.findIndex((c) => c.startsWith("sleep:1000"));
+    const deleteIndex = harness.deps.calls.order.findIndex((c) =>
+      c.includes("simctl delete")
+    );
+    assert.ok(stopIndex >= 0 && deleteIndex >= 0);
+    assert.ok(
+      stopIndex < deleteIndex,
+      `expected the recording to be stopped before the delete, got ${harness.deps.calls.order.join(" | ")}`
+    );
+  });
+
+  await t.test("deletes anyway when the recording cannot be stopped", async () => {
+    const harness = recordingHarness();
+    await startRecording(harness);
+    harness.children[0].kill = () => {
+      throw new Error("no such process");
+    };
+
+    // A recorder that will not die must not strand the caller with a simulator
+    // they asked to have deleted. The exit hook is the backstop for it.
+    await harness.sim.delete();
+
+    assert.ok(harness.deps.calls.order.some((c) => c.includes("simctl delete")));
+  });
+});

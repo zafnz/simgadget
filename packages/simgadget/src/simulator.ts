@@ -85,6 +85,7 @@ import {
   pointDimensions,
   recordingArgs,
   stopRecordingProcess,
+  trackRecording,
   waitForRecordingStart,
   type RecordingOptions,
   type Screenshot,
@@ -532,9 +533,25 @@ export class Simulator {
    *    stale for it.
    * 4. Mark the handle stale and forget this udid's recovery state (today's
    *    `forgetSimulator`, index.ts:888).
+   *
+   * Before any of that, a recording this handle started is stopped. Deleting
+   * the device out from under `simctl io ... recordVideo` does not stop it:
+   * observed leaving a recorder running six minutes later against a udid that
+   * no longer existed. Stopping first is also the only ordering that can
+   * finalize the file, since after the delete there is nothing left to record.
    */
   async delete(): Promise<void> {
     this.assertNotDeleted();
+
+    if (this.recording) {
+      try {
+        await this.stopRecording();
+      } catch {
+        // Best effort. A recording that could not be stopped must not block
+        // the delete — the exit hook is the backstop for it, and a caller who
+        // asked for the simulator to be gone should get that.
+      }
+    }
 
     await this.deps.closeCompanion(this.udid);
 
@@ -1827,6 +1844,9 @@ export class Simulator {
     }
 
     this.recording = { child, path: absolutePath };
+    // Nothing else will ever stop this process, so the library takes
+    // responsibility for it from here — see `trackRecording`.
+    trackRecording(child);
     // A recording that dies on its own must not leave the handle permanently
     // refusing to start another (index.ts:2514). Guarded on identity, so a
     // late `close` from the process this one replaced cannot clear it.
