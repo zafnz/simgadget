@@ -1196,7 +1196,25 @@ export class Simulator {
           })) as { elements?: RawAXElement } | null;
           this.markAnswered();
           const element = found?.elements;
-          return element ? canonicalise(element) : null;
+          if (!element) return null;
+          // The companion matches an identifier by SUBSTRING, exactly as it
+          // matches a label — its own refusal says "found no element whose
+          // AXUniqueId contains". Measured against the pinned companion, 2026-08-17:
+          // the marker "lainSwitch", strictly inside "PlainSwitch", resolves to
+          // it. Contract check 11 pins this.
+          //
+          // An identifier lookup is the one that is supposed to be *exact* —
+          // that is the whole reason it exists next to a label lookup, and what
+          // `tap`'s toggle read-back relies on to re-read the control it just
+          // operated rather than some other element whose identifier merely
+          // contains the same text. Since the companion will not do it, it is
+          // done here. The tree-walk path (`matchInTree`) has always compared
+          // identifiers exactly, so this also makes the two paths agree for the
+          // first time.
+          if (matchKey === SearchableKey.UNIQUE_ID && element.AXUniqueId !== marker) {
+            return null;
+          }
+          return canonicalise(element);
         } catch (error) {
           // "found no element" is how the companion reports an empty result,
           // and is not a failure. Anything else is — including the wedge, which

@@ -51,7 +51,7 @@
     "watch": "tsc --watch",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "node --experimental-transform-types --test \"test/*.test.mts\"",
-    "test:e2e": "node --test \"test/e2e/*.e2e.mts\""
+    "test:e2e": "node --experimental-transform-types --test --test-concurrency=1 \"test/e2e/*.e2e.mts\""
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.13.0",

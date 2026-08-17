@@ -416,6 +416,49 @@ test("findByIdentifier asks by identifier and canonicalises the hit", async () =
   );
 });
 
+/**
+ * The companion matches an identifier by substring, and this is where that is
+ * undone.
+ *
+ * Contract check 11, measured 2026-08-17: the marker "lainSwitch" — strictly
+ * inside "PlainSwitch", not a prefix — resolves to that switch, and the
+ * companion's refusal wording says "found no element whose AXUniqueId
+ * contains". `findByIdentifier` has documented itself as exact since it was
+ * written; it was not.
+ *
+ * The consequence worth a test is `tap`'s toggle read-back, which re-reads by
+ * identifier precisely because a label is a substring that might drift onto a
+ * status line describing the control. Re-reading through a substring match put
+ * it back in exactly the position it was written to escape.
+ */
+test("findByIdentifier is exact, though the companion's marker is not", async (t) => {
+  await t.test("rejects a hit whose identifier merely contains what was asked", async () => {
+    const { sim } = harness(
+      // What the real companion does with a partial: it answers, with the
+      // wrong element, and nothing in the reply says the match was loose.
+      { marker: markerIn([PLAIN_BUTTON]) },
+      true
+    );
+
+    assert.equal(await sim.findByIdentifier("lainButton"), null);
+  });
+
+  await t.test("still resolves the identifier it was actually given", async () => {
+    const { sim } = harness({ marker: markerIn([PLAIN_BUTTON]) }, true);
+
+    assert.deepEqual(await sim.findByIdentifier("PlainButton"), PLAIN_BUTTON);
+  });
+
+  // The label path is substring by design and documented as such, so the filter
+  // must not touch it — "Plain Butt" finding "Plain Button" is the behaviour
+  // every agent-facing description promises.
+  await t.test("leaves label matching substring, as documented", async () => {
+    const { sim } = harness({ marker: markerIn([PLAIN_BUTTON]) }, true);
+
+    assert.deepEqual(await sim.findByLabel("Plain Butt"), PLAIN_BUTTON);
+  });
+});
+
 // ---- describePoint --------------------------------------------------------
 
 test("describePoint", async (t) => {
