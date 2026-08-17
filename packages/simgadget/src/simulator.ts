@@ -22,6 +22,7 @@
 import {
   BOOT_READY_TIMEOUT_MS,
   findDevice,
+  parseLaunchPid,
   isAlreadyBootedError,
   isInvalidDeviceError,
   restartSimulatorBridge,
@@ -600,10 +601,7 @@ export class Simulator {
       bundleId,
     ]);
 
-    // simctl launch outputs the PID as the first token in stdout; not every
-    // invocation has one.
-    const pidMatch = stdout.match(/^(\d+)/);
-    return { pid: pidMatch ? Number(pidMatch[1]) : null };
+    return { pid: parseLaunchPid(stdout) };
   }
 
   // ---- reading: the two funnels later steps hang off ----------------------
@@ -1214,6 +1212,22 @@ export class Simulator {
           if (matchKey === SearchableKey.UNIQUE_ID && element.AXUniqueId !== marker) {
             return null;
           }
+          // Say what the tree would, as the point read does.
+          //
+          // The marker query is served by the default backend, which calls a
+          // `UISwitch` a `CheckBox` where the tree calls it a `Switch`. Without
+          // this, `findByIdentifier("PlainSwitch").type` was `"CheckBox"` while
+          // `describeScreen` and `describePoint` both said `"Switch"` for that
+          // same element — an agent branching on `type` behaving differently
+          // depending on which lookup happened to answer, which is the exact
+          // inconsistency `canonicalise` exists to end. Found by the e2e suite
+          // against the real fixture, 2026-08-17.
+          //
+          // `subrole` is here to read despite not being in the requested keys:
+          // the companion honours `keys` for point and whole-screen reads and
+          // ignores it for marker queries, so a marker hit arrives with every
+          // field regardless. `canonicalise` drops it again on the way out.
+          element.type = reconcileType(element.type, element.subrole);
           return canonicalise(element);
         } catch (error) {
           // "found no element" is how the companion reports an empty result,

@@ -184,14 +184,26 @@ a finding that lives only in a commit message is a finding that gets rediscovere
    an activation aimed at the toolbar switch would succeed in those first
    moments and the fallback would go untested.
 
-3. **The marker path does not normalise `type` where the point read does.** The
-   default backend calls a `UISwitch` a `CheckBox`. `readPoint` runs
-   `reconcileType` and so reports `Switch`, matching the tree; the marker path
-   does not, so `findByIdentifier("PlainSwitch").type` is `CheckBox` while
-   `describeScreen` and `describePoint` both say `Switch` for the same element.
-   That is the "same element, different type depending which call asked"
-   inconsistency `canonicalise` was meant to end. Asserted as it stands, with a
-   comment, so a fix has to come past it.
+3. **The marker path did not normalise `type` where the point read does —
+   fixed.** The default backend, which serves a marker query, calls a
+   `UISwitch` a `CheckBox`; the tree calls it a `Switch`. `readPoint` ran
+   `reconcileType` and so agreed with the tree, and the marker path did not, so
+   `findByIdentifier("PlainSwitch").type` was `CheckBox` while `describeScreen`
+   and `describePoint` both said `Switch` for the same element — an agent
+   branching on `type` behaving differently depending on which lookup happened
+   to answer, which is the inconsistency `canonicalise` exists to end. The
+   marker path now runs `reconcileType` as well, and the case above asserts all
+   three paths agree. A marker hit carries `subrole` regardless of the
+   requested keys (the companion honours `keys` only for point and
+   whole-screen reads), so the evidence `reconcileType` needs was already
+   arriving.
+
+4. **`launchApp` could never return a pid — fixed.** `simctl launch` answers
+   `com.example.mcptestapp: 18900`, and the parse was `/^(\d+)/`, anchored at
+   the start of a line that begins with the bundle identifier. It could not
+   match, so `{pid}` was `null` for every launch that ever succeeded. The
+   shipped server has the same bug (`src/index.ts:2648`). Now parsed from the
+   end of the reply, since a bundle identifier may itself contain digits.
 
 4. **`launchApp` never returns a pid.** `simctl launch` prints
    `com.example.mcptestapp: 18900`, and the parse is `/^(\d+)/` — anchored at the

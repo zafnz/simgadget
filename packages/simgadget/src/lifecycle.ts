@@ -212,6 +212,27 @@ export function pickLatestRuntime(list: RuntimeInfo[]): string {
  * `simctl list devices` run by a human is easy to tell apart from their own
  * simulators.
  */
+/**
+ * The pid out of `simctl launch`'s reply, or null when it did not report one.
+ *
+ * simctl prints `com.example.app: 18900` — the bundle identifier first, then
+ * the pid. The port of this read `/^(\d+)/`, anchored at the start of the
+ * line, which cannot match that and so returned null for every launch that
+ * ever succeeded. Found by the e2e suite against the real fixture, 2026-08-17;
+ * the shipped server has the same bug (index.ts:2648).
+ *
+ * Matched from the end rather than after a colon, because a bundle identifier
+ * may itself contain digits and the pid is the last thing on the line either
+ * way. A reply with no pid in it at all stays null, which is a real case: not
+ * every launch reports one.
+ */
+export function parseLaunchPid(stdout: string): number | null {
+  const match = stdout.trim().match(/(\d+)\s*$/);
+  if (!match) return null;
+  const pid = Number(match[1]);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+}
+
 export function deriveDeviceName(keyword: string, name?: string): string {
   if (name) return name;
   return `simgadget-${keyword.toLowerCase().replace(/\s+/g, "-")}`;

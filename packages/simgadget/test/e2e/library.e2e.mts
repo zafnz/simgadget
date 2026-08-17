@@ -119,10 +119,18 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
 
   it("installs and launches the fixture", async () => {
     await sim.installApp(FIXTURE_APP);
-    await sim.launchApp(FIXTURE_BUNDLE_ID, { terminateRunning: true });
+    const launched = await sim.launchApp(FIXTURE_BUNDLE_ID, { terminateRunning: true });
     await waitForFixture();
 
     assert.equal(await status(), "status: ready");
+
+    // The pid a successful launch actually reports. This assertion is here
+    // because its absence is how `pid` stayed null for every launch that ever
+    // succeeded: simctl answers `com.example.mcptestapp: 18900`, and the parse
+    // was anchored at the start of a line beginning with the bundle id, so it
+    // could never match. Nothing asserted on the value, so nothing noticed.
+    assert.equal(typeof launched.pid, "number");
+    assert.ok(launched.pid! > 0, `expected a real pid, got ${launched.pid}`);
   });
 
   // ---- reading -------------------------------------------------------------
@@ -245,14 +253,15 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
       );
     }
 
-    // A finding, recorded here so it cannot be lost: the marker path does
-    // not run `reconcileType`, where the point read does. iOS's default backend
-    // calls a UISwitch a `CheckBox`, so the same element is `CheckBox` from
-    // `findByIdentifier` and `Switch` from `describeScreen` and `describePoint`
-    // — the "same element, different type depending which call asked"
-    // inconsistency `canonicalise` was meant to end.
+    // Every path names this element the same thing, which is the whole point
+    // of `canonicalise` and was not true until this suite found otherwise.
+    // iOS's default backend, which serves the marker query, calls a UISwitch a
+    // `CheckBox`; the tree calls it a `Switch`. `findByIdentifier` reported the
+    // former and `describeScreen`/`describePoint` the latter, so an agent
+    // branching on `type` behaved differently depending on which lookup
+    // happened to answer. The marker path now runs `reconcileType` too.
     const byId = await sim.findByIdentifier("PlainSwitch");
-    assert.equal(byId?.type, "CheckBox");
+    assert.equal(byId?.type, "Switch");
     const inTree = flatten((await sim.describeScreen()).elements).find(
       (e) => e.AXUniqueId === "PlainSwitch"
     );

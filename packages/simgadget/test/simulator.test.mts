@@ -338,13 +338,20 @@ test("Simulator.installApp", async (t) => {
 // ---- launchApp --------------------------------------------------------------
 
 test("Simulator.launchApp", async (t) => {
-  await t.test("parses the pid from the first token of stdout", async () => {
+  // The fixture here is what `simctl launch` actually prints, which is the
+  // whole point: this test used to feed it a bare `"1234\n"` and passed against
+  // a parse anchored with `/^(\d+)/` that could never match the real thing. The
+  // e2e suite found `pid` was null for every launch that had ever succeeded.
+  await t.test("parses the pid simctl prints after the bundle id", async () => {
     const deps = createFakeDeps({
-      run: (cmd, args) => (args[1] === "launch" ? { stdout: "1234\n", stderr: "" } : { stdout: "", stderr: "" }),
+      run: (cmd, args) =>
+        args[1] === "launch"
+          ? { stdout: "com.example.mcptestapp: 18900\n", stderr: "" }
+          : { stdout: "", stderr: "" },
     });
     const sim = new Simulator("UDID", "iPhone", deps);
 
-    assert.deepEqual(await sim.launchApp("com.example.app"), { pid: 1234 });
+    assert.deepEqual(await sim.launchApp("com.example.app"), { pid: 18900 });
   });
 
   await t.test("returns null when stdout carries no pid", async () => {

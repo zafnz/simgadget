@@ -15,6 +15,7 @@ import {
   listSimulatorsWith,
   parseDevices,
   pickDeviceType,
+  parseLaunchPid,
   pickLatestRuntime,
   shouldAttemptBootRecovery,
   waitUntilDriveable,
@@ -547,5 +548,34 @@ test("attachSimulatorWith", async (t) => {
     // Clears a block a previous detach left behind, via the deps seam
     // (DECISIONS.md #19).
     assert.deepEqual(deps.calls.reopenCompanion, ["UDID-1"]);
+  });
+});
+
+/**
+ * The shapes `simctl launch` actually answers with.
+ *
+ * The port read `/^(\\d+)/` — anchored at the start of a line that begins with
+ * the bundle identifier — so it matched nothing simctl has ever printed, and
+ * `launchApp` returned `{pid: null}` for every successful launch. The unit test
+ * that covered it fed a bare `"1234\\n"`, a fixture no simctl produces, which
+ * is how the bug outlived a test suite. Found by the e2e suite, 2026-08-17.
+ */
+test("parseLaunchPid", async (t) => {
+  await t.test("reads the pid out of what simctl prints", () => {
+    assert.equal(parseLaunchPid("com.example.mcptestapp: 18900"), 18900);
+    assert.equal(parseLaunchPid("com.example.mcptestapp: 18900\n"), 18900);
+  });
+
+  // A bundle identifier may itself contain digits, which is why the pid is
+  // taken from the end of the reply rather than after the first colon.
+  await t.test("is not confused by digits in the bundle identifier", () => {
+    assert.equal(parseLaunchPid("com.example.app2fa: 4242"), 4242);
+    assert.equal(parseLaunchPid("io.grpc9.thing99: 7"), 7);
+  });
+
+  await t.test("answers null when there is no pid to read", () => {
+    for (const reply of ["", "   ", "com.example.app:", "no pid here"]) {
+      assert.equal(parseLaunchPid(reply), null, `should be null: ${JSON.stringify(reply)}`);
+    }
   });
 });

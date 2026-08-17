@@ -578,3 +578,52 @@ test("screenSize is the cheap unpruned read", async () => {
   assert.equal(call.backend, undefined);
   assert.equal(call.keys, undefined);
 });
+
+/**
+ * All three reads name an element the same thing.
+ *
+ * The marker query is served by the default backend, which calls a `UISwitch`
+ * a `CheckBox` where the tree calls it a `Switch`. `readPoint` has always run
+ * `reconcileType`; the marker path did not, so `findByIdentifier` disagreed
+ * with `describeScreen` and `describePoint` about the same element — an agent
+ * branching on `type` behaving differently depending on which lookup answered.
+ * That is the inconsistency `canonicalise` exists to end, and the e2e suite
+ * found it still standing, 2026-08-17.
+ *
+ * `subrole` is the evidence `reconcileType` needs, and it arrives on a marker
+ * hit whether or not it was asked for: the companion honours `keys` for point
+ * and whole-screen reads and ignores it for marker queries.
+ */
+test("a marker hit is typed the way the tree types it", async (t) => {
+  const SWITCH = {
+    AXLabel: "Plain Switch",
+    AXUniqueId: "PlainSwitch",
+    AXValue: "0",
+    type: "CheckBox",
+    subrole: "AXSwitch",
+    frame: { x: 0, y: 0, width: 51, height: 31 },
+  };
+
+  await t.test("normalises CheckBox to Switch on the identifier path", async () => {
+    const { sim } = harness({ marker: markerIn([SWITCH]) }, true);
+
+    const found = await sim.findByIdentifier("PlainSwitch");
+    assert.equal(found?.type, "Switch");
+  });
+
+  await t.test("normalises it on the label path too", async () => {
+    const { sim } = harness({ marker: markerIn([SWITCH]) }, true);
+
+    const found = await sim.findByLabel("Plain Switch");
+    assert.equal(found?.type, "Switch");
+  });
+
+  // `subrole` is evidence, never output: it is outside DESCRIBE_KEYS, so
+  // `canonicalise` drops it on the way back to the caller.
+  await t.test("does not leak the subrole it reasoned from", async () => {
+    const { sim } = harness({ marker: markerIn([SWITCH]) }, true);
+
+    const found = await sim.findByIdentifier("PlainSwitch");
+    assert.equal((found as Record<string, unknown>).subrole, undefined);
+  });
+});
