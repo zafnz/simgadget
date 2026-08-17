@@ -205,7 +205,7 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
     assert.equal(field.AXValue, "Toolbar Search");
   });
 
-  it("resolves by accessibility identifier, and matches a substring of one", async () => {
+  it("resolves by accessibility identifier, exactly, where a label is a substring", async () => {
     const field = await sim.findByIdentifier("PlainField");
 
     assert.ok(field);
@@ -214,19 +214,38 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
     assert.equal(field.AXValue, "Type here");
     assert.equal(field.type, "TextField");
 
-    // **Measured, and it settles an open question (DECISIONS.md #24): a
-    // `UNIQUE_ID` marker match is a SUBSTRING, not exact.** `findByIdentifier`
-    // is documented as exact; it is not. `"lainSwitch"` is a strict interior
-    // substring of `PlainSwitch` — neither a prefix nor a suffix — so this rules
-    // out anchored matching as well as exact. It matters because `findByLabel`
-    // falls back to an identifier lookup, so a caller's partial name can
-    // silently resolve an element whose identifier merely contains it, and
-    // `tap`'s toggle read-back leans on the identifier being unambiguous.
-    const partial = await sim.findByIdentifier("lainSwitch");
-    assert.ok(partial, "a partial identifier found nothing — UNIQUE_ID matching is exact after all");
-    assert.equal(partial.AXUniqueId, "PlainSwitch");
+    // The asymmetry between the two lookups, and the case that has to run on a
+    // device: **the companion matches an identifier by substring**, exactly as
+    // it matches a label — its own refusal says "found no element whose
+    // AXUniqueId contains" — so every one of these returns a hit over the wire
+    // and `findByIdentifier` is what discards it. A fake cannot show that,
+    // because a fake that generalised substring to both keys would agree with a
+    // library that had no filter at all.
+    //
+    // Cut every way, so an anchored match is ruled out along with a substring
+    // one. `tap`'s toggle read-back is what depends on it: it re-reads by
+    // identifier precisely because a label drifts, and the fixture's own status
+    // line reads "Settings Switch = on" after a toggle.
+    for (const near of ["PlainButto", "lainButton", "lainButto", "Plain", "Button"]) {
+      assert.equal(
+        await sim.findByIdentifier(near),
+        null,
+        `findByIdentifier(${JSON.stringify(near)}) resolved something — identifier matching is substring again`
+      );
+    }
+    assert.equal((await sim.findByIdentifier("PlainButton"))?.AXUniqueId, "PlainButton");
 
-    // A second finding, recorded here so it cannot be lost: the marker path does
+    // ...while a *label* stays a substring, which is what every agent-facing
+    // description of this library promises and what makes a partial name usable.
+    for (const near of ["Plain Butto", "lain Button", "lain Butto"]) {
+      assert.equal(
+        (await sim.findByLabel(near))?.AXUniqueId,
+        "PlainButton",
+        `findByLabel(${JSON.stringify(near)}) missed — label matching has become exact`
+      );
+    }
+
+    // A finding, recorded here so it cannot be lost: the marker path does
     // not run `reconcileType`, where the point read does. iOS's default backend
     // calls a UISwitch a `CheckBox`, so the same element is `CheckBox` from
     // `findByIdentifier` and `Switch` from `describeScreen` and `describePoint`
