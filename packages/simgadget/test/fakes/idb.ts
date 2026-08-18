@@ -46,15 +46,14 @@
  * layer's behaviour — the recorded call is the only thing that can prove no
  * event went out.
  *
- * **One belief here is not pinned by any contract check, and is flagged rather
- * than hidden** (the same treatment DECISIONS.md #24 gives the `UNIQUE_ID`
- * match): that `accessibility_action` reports an element it cannot reach with
- * idb's "found no element" wording, the way an absent *marker query* does
- * (check 7). `tap()`'s fall-back-to-a-real-touch path depends on it, and it is
- * the wording the repo-root server has matched in production since the toggle
- * path was written. The fake models it only where a test asks for it — the
- * handler raises `noElementError` itself — so the assumption is visible at the
- * point it is used. A check for it belongs with plan step 10's other four.
+ * **The belief that once went unpinned here is contract check 12 now**: that
+ * `accessibility_action` reports an element it cannot reach with idb's "found
+ * no element" wording, the way an absent *marker query* does (check 7).
+ * `tap()`'s fall-back-to-a-real-touch path depends on it entirely — if the
+ * wording drifts, an unreachable element becomes an opaque gRPC failure and a
+ * toolbar switch stops being tappable by name. The fake still models it only
+ * where a test asks for it (the handler raises `noElementError` itself), so
+ * the assumption stays visible at the point it is used.
  *
  * Reached by importing `../src/simulator.ts` directly, which is a privilege of
  * living inside the package: the `exports` map makes the seam unresolvable to

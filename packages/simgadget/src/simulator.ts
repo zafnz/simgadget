@@ -44,11 +44,11 @@ import {
   ToggleGestureError,
   UntypeableTextError,
 } from "./errors.ts";
-// Two element types, and the aliases say which is which (DECISIONS.md #4).
-// `ax/tree.ts`'s own `AXElement` is the open type the companion speaks — free
-// JSON, nulls and all — and is what the raw reads below deal in; it is aliased
-// `RawAXElement` here so that `AXElement`, the name on every public signature,
-// is the closed type from the spec. `canonicalise` is the crossing between
+// Two element types, and the names say which is which (DECISIONS.md #4).
+// `ax/tree.ts`'s `RawAXElement` is the open type the companion speaks — free
+// JSON, nulls and all — and is what the raw reads below deal in. `AXElement`,
+// the name on every public signature, is the closed type from the spec, and
+// the one that same file publishes. `canonicalise` is the crossing between
 // them, and the only one.
 import {
   DESCRIBE_KEYS,
@@ -179,8 +179,8 @@ export type TapResult =
 
 /**
  * Our button names to idb's `HIDButtonType`. Straight through, unlike
- * `HID_ORIENTATION` above — the two vocabularies agree about buttons because
- * there is only one thing a home button can mean.
+ * `HID_ORIENTATION` further down this file — the two vocabularies agree about
+ * buttons because there is only one thing a home button can mean.
  */
 const HID_BUTTON: Record<
   "home" | "lock" | "side-button" | "siri" | "apple-pay",

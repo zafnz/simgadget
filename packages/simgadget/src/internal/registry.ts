@@ -16,23 +16,19 @@
  * simulator, not a request or a handle, must be shared by everything that
  * touches that udid.
  *
- * **Step ownership**, since this file is built ahead of the logic that reads
- * it: step 2b (this file) builds the container, `markAnswered`/`hasAnswered`
- * and `forget` — `forget` is what `Simulator.delete()` needs (today's
- * `forgetSimulator`, index.ts:888). `markAnswered` is also wired from
- * `lifecycle.ts`'s `waitUntilDriveable`, restoring the
- * `markAccessibilityAnswered` call the port had dropped (DECISIONS.md #18):
- * that call is a plain fact recorded the moment a real frame comes back, not
- * a recovery *decision*, so writing it here does not reach into step 3's
- * territory. Step 3 owns everything that *reads* this registry to decide
- * whether to recover — `shouldRecover`'s wiring against the cooldown
- * timestamp, the in-flight promise, and the cure ladder itself. The fields
- * for those are declared below as the shape step 3 fills in; nothing in this
- * file computes a cooldown or launches a recovery.
+ * **This file holds the state and nothing that decides on it.** It owns the
+ * container, `markAnswered`/`hasAnswered` and `forget` — `forget` is what
+ * `Simulator.delete()` needs (today's `forgetSimulator`, index.ts:888), and
+ * `markAnswered` is wired from `lifecycle.ts`'s `waitUntilDriveable`, which
+ * records the plain fact that a real frame came back (DECISIONS.md #18). The
+ * cooldown timestamp and the in-flight promise are declared here and read in
+ * `../simulator.ts`: `shouldRecover`'s wiring, the dedup and the cure ladder
+ * all live there, and nothing in this file computes a cooldown or launches a
+ * recovery.
  *
- * Step 3 has since done exactly that, in `../simulator.ts`, and reaches this
- * registry through `SimulatorDeps.recovery` rather than through the singleton
- * below — see DECISIONS.md #21 for why a test must never share it.
+ * Everything that reads this registry reaches it through
+ * `SimulatorDeps.recovery` rather than through the singleton below — see
+ * DECISIONS.md #21 for why a test must never share it.
  */
 
 export interface RecoveryEntry {

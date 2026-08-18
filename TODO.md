@@ -423,32 +423,29 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
 
 ## Comments that do not match the code
 
-- [ ] **#86 Stale comments from the `AXElement`/`RawAXElement` rename, plus
-  smaller doc-attachment defects.** All cheap; the first two are actively
-  misleading at the library's most important type boundary:
-  - `ax/tree.ts:39` — the closed type's doc says it is "the type `index.ts`
-    publishes as `RawAXElement`". Inverted: index.ts publishes it as
-    `AXElement`; `RawAXElement` is the internal open type.
-  - `simulator.ts:46` — claims tree.ts's own `AXElement` is the open type,
-    "aliased `RawAXElement` here"; both halves stale, and the import contains
-    no aliasing.
-  - `lifecycle.ts:204` — `deriveDeviceName`'s doc comment is stranded:
-    `parseLaunchPid` (doc + function) was inserted between the comment and
-    the function it documents.
-  - `simulator.ts:177` — `HID_BUTTON` says "unlike `HID_ORIENTATION` above";
-    it is 40 lines below.
-  - `test/fakes/idb.ts:49` — claims the action-API "found no element" wording
-    is "not pinned by any contract check"; check 12 pins exactly that.
-  - `lifecycle.ts:25` — "the closed public one lands in plan step 8" (it
-    landed); `internal/registry.ts`'s step-ownership header narrates the
-    build order and then patches itself ("Step 3 has since done exactly
-    that") — rewrite both in the present tense.
+- [x] **#86 DONE 2026-08-18. All six corrected; no behaviour changed.**
+  - `ax/tree.ts` — the closed type's doc now says `index.ts` publishes it as
+    `AXElement`, and names `RawAXElement` as the internal open one.
+  - `simulator.ts:46` — the import comment described an aliasing that is not
+    there: `ax/tree.ts` exports both names itself, and the comment now says
+    which is which without inventing a rename.
+  - `lifecycle.ts` — `deriveDeviceName`'s doc moved back onto
+    `deriveDeviceName`; `parseLaunchPid` and its own doc had been inserted
+    between the two.
+  - `simulator.ts` — `HID_BUTTON`'s "unlike `HID_ORIENTATION` above" is now
+    "further down this file", which is where it is.
+  - `test/fakes/idb.ts` — the action-API "found no element" wording is pinned
+    by contract check 12, so the header no longer claims it is unpinned; the
+    flag is now a pointer to the check.
+  - `lifecycle.ts:25` and `internal/registry.ts` — both step-narrating headers
+    rewritten in the present tense, describing what the files hold rather than
+    the order they were built in and then patching themselves.
 
-- [ ] **#87 TESTING_LIBRARY.md defects.** Two contradictory items both
-  numbered 4 (~line 201): the first correctly records the `launchApp` pid
-  parse as fixed and asserted; the stale second claims it was "faithfully
-  ported" and unasserted — delete the second. Line 17 says "250 unit tests";
-  the suite reports 495.
+- [x] **#87 DONE 2026-08-18. TESTING_LIBRARY.md's duplicate item 4 and its
+  test count.** The stale second copy — which claimed the `launchApp` pid parse
+  was "faithfully ported" and unasserted, contradicting the corrected item
+  immediately above it — is deleted. The heading now says 507 unit tests, which
+  is what the suite reports after this session's additions.
 
 ## Housekeeping
 

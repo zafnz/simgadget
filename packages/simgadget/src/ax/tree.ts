@@ -36,7 +36,8 @@ export interface Frame {
 
 /**
  * An element as this library hands one out — what `canonicalise` produces, and
- * the type `index.ts` publishes as `RawAXElement`.
+ * the type `index.ts` publishes as `AXElement`. `RawAXElement` above is the
+ * internal, open one, and never leaves the package.
  *
  * Closed on purpose, where the type above is open: no index signature, so a
  * caller reaching for `element.role` is told so by the compiler instead of

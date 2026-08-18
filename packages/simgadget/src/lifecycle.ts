@@ -23,9 +23,9 @@
  */
 
 // `ax/tree.ts`'s `RawAXElement` is the internal, open type ([key: string]:
-// unknown); the closed public one lands in plan step 8, when `canonicalise`
-// becomes the conversion point (DECISIONS.md #4). Used here only for the
-// `.frame` read on a root element, which exists on both shapes.
+// unknown); the closed public `AXElement` is the same file's other export, and
+// `canonicalise` is the crossing between them (DECISIONS.md #4). Used here
+// only for the `.frame` read on a root element, which exists on both shapes.
 import type { RawAXElement } from "./ax/tree.ts";
 import {
   DeviceTypeNotFoundError,
@@ -202,17 +202,6 @@ export function pickLatestRuntime(list: RuntimeInfo[]): string {
 }
 
 /**
- * The default `simctl` device name when the caller does not supply one.
- *
- * Today's server builds `${sessionId}_${keyword}`, but a session id is a
- * *server* concept (SIMGADGET.md, "The split rule") that must not reach the
- * library — two library callers picking the same keyword would otherwise
- * collide on nothing meaningful anyway, since `simctl create` keys devices by
- * udid, not by name; the name is cosmetic. `simgadget-` prefixes it so a
- * `simctl list devices` run by a human is easy to tell apart from their own
- * simulators.
- */
-/**
  * The pid out of `simctl launch`'s reply, or null when it did not report one.
  *
  * simctl prints `com.example.app: 18900` — the bundle identifier first, then
@@ -240,6 +229,17 @@ export function parseLaunchPid(stdout: string): number | null {
   return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 }
 
+/**
+ * The default `simctl` device name when the caller does not supply one.
+ *
+ * Today's server builds `${sessionId}_${keyword}`, but a session id is a
+ * *server* concept (SIMGADGET.md, "The split rule") that must not reach the
+ * library — two library callers picking the same keyword would otherwise
+ * collide on nothing meaningful anyway, since `simctl create` keys devices by
+ * udid, not by name; the name is cosmetic. `simgadget-` prefixes it so a
+ * `simctl list devices` run by a human is easy to tell apart from their own
+ * simulators.
+ */
 export function deriveDeviceName(keyword: string, name?: string): string {
   if (name) return name;
   return `simgadget-${keyword.toLowerCase().replace(/\s+/g, "-")}`;

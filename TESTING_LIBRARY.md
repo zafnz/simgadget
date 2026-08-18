@@ -14,7 +14,7 @@ npm run test:e2e -w simgadget
 Roughly 110 seconds, unattended, from a cold start. It creates two throwaway
 simulators, deletes them, and leaves nothing behind.
 
-## Why it exists, given there are already 250 unit tests
+## Why it exists, given there are already 507 unit tests
 
 The unit suite proves the library calls the right things in the right order,
 against a fake `idb_companion` that answers instantly and always agrees with
@@ -215,13 +215,6 @@ a finding that lives only in a commit message is a finding that gets rediscovere
    changes nothing about a real reply. Pinned in `test/lifecycle.test.mts`,
    "does not read a digit-ending bundle id as a pid" — a pure test, because
    there is nothing about it a device could settle.
-
-4. **`launchApp` never returns a pid.** `simctl launch` prints
-   `com.example.mcptestapp: 18900`, and the parse is `/^(\d+)/` — anchored at the
-   start of a line that begins with the bundle identifier. So `{pid}` is always
-   `null`. Faithfully ported from `src/index.ts:2648`, where it has the same
-   effect; the suite therefore asserts that the launch *worked* (by reading the
-   app off the screen) and says nothing about the pid.
 
 ## What it deliberately does not cover
 
