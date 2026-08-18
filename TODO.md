@@ -266,20 +266,27 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   `simulator.ts`, the test fakes and TESTING_LIBRARY.md — including decisions
   the spec does not record.
 
-- [ ] **#75 `waitForBootStatus` reintroduces the pending-timer defect the
-  library itself documents at `SimulatorDeps.setTimer`.**
-  `packages/simgadget/src/lifecycle.ts:400` races the bootstatus child's exit
-  against `deps.sleep(BOOTSTATUS_CAP_MS)` (30s); the losing timer is never
-  cancelled and holds the event loop open. Confirmed empirically: a raced
+- [x] **#75 DONE 2026-08-18. `waitForBootStatus` waits on a cancellable timer,
+  and cancels it whichever way the race goes.** `lifecycle.ts`'s
+  `deps.sleep(BOOTSTATUS_CAP_MS)` race is now `deps.setTimer` with a `settle`
+  that calls the loser off, the same shape `waitForRecordingStart` already
+  used. Landed with #81 in one rewrite. Tests: `test/lifecycle.test.mts`,
+  "the cap timer is cancelled when bootstatus exits first" (asserts
+  `timers[0].cancelled`) and "the cap fires, and kills the child rather than
+  leaving it" (fires the timer by hand, asserts nothing is armed after it) —
+  the fake's `setTimer` log proves both directions in microseconds.
+  TESTING_LIBRARY.md's "does not cover" section records why the suite's wall
+  clock is the only device-level sign of this class of defect.
+
+  The fake's default spawned child now exits on the next turn, as
+  `bootstatus -b` does against an already-booted device — the case that paid
+  the full 30s tail, and now the case the fake models.
+
+  Original finding: `lifecycle.ts:400` raced the bootstatus child's exit
+  against `deps.sleep(BOOTSTATUS_CAP_MS)` (30s) and never cancelled the losing
+  timer, holding the event loop open. Confirmed empirically: a raced
   `realDeps.sleep(3000)` resolves at 0ms and the process exits at 3002ms —
-  the same measurement that motivated `setTimer` for the recording path
-  ("measured: 3001ms"). On an already-booted simulator `bootstatus -b` exits
-  immediately, so every short script calling `waitReady()`/`boot()` gets a
-  silent tail of up to ~30s after its work is done — worst exactly for the
-  three-line scripts the library exists to serve. Fix: `deps.setTimer` with a
-  cancel, as `waitForRecordingStart` does. Per the regression rule this lands
-  with a unit test (fake clock can prove no timer outlives the call) and a
-  TESTING_LIBRARY.md note.
+  the same measurement that motivated `setTimer` for the recording path.
 
 - [ ] **#76 External deletion is only half-mapped: the companion path throws
   `CompanionStartError`, breaking the spec's promise.** The spec: after
@@ -332,12 +339,18 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   window; free fix: attach the `close` handler and `trackRecording`
   synchronously with the spawn, as `waitForRecordingStart` attaches its own.
 
-- [ ] **#81 `waitForBootStatus`'s spawned child has no `error` listener.** If
-  `deps.spawn` cannot execute the binary, the unhandled `error` event crashes
-  the process (EventEmitter semantics). Effectively unreachable on a working
-  macOS box, but it is the only unguarded spawn in the library —
-  `awaitReadiness` and `waitForRecordingStart` both handle it. Fold into #75's
-  rewrite of the same function.
+- [x] **#81 DONE 2026-08-18. The spawned bootstatus child has an `error`
+  listener.** Folded into #75's rewrite of the same function, as that item
+  said to. Treated exactly like an exit — stop waiting, let the poll decide
+  readiness — rather than propagated, since there is nothing here a caller
+  could act on. Test: `test/lifecycle.test.mts`, "a spawn that cannot run the
+  binary is a wait ended, not a crash", which emits `error` on the fake child
+  and would take the test process down without the listener.
+
+  Original finding: if `deps.spawn` cannot execute the binary, the unhandled
+  `error` event crashes the process (EventEmitter semantics). Effectively
+  unreachable on a working macOS box, but it was the only unguarded spawn in
+  the library — `awaitReadiness` and `waitForRecordingStart` both handle it.
 
 - [ ] **#82 A few untyped errors are reachable by callers**, against design
   rule 2's spirit: the closed-udid refusal (`companionManager.ts:172` — a

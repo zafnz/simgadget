@@ -227,6 +227,22 @@ a tap under 100 ms means the hold floor has been lost and taps are unreliable
 again, and a point read at ~300 ms means `isRemotelyHosted` is firing on
 ordinary elements — in both cases every other check still passes. See TODO #73.
 
+**A timer that outlives the call it was armed in is not assertable here, and
+the suite's wall clock is the only sign of it.** Twice now a raced
+`deps.sleep` has been left pending after the race was decided — the recording
+path's 3s fallback, and `waitForBootStatus`'s 30s cap on `simctl bootstatus`.
+Both are invisible to every assertion in this file: the call returns the right
+answer at the right time, and it is the *process* that then refuses to exit
+until the orphaned timer fires. `boot()` and `waitReady()` were the worse of
+the two, because `bootstatus -b` against a device that has already booted exits
+at once, so the full 30s tail landed on exactly the short scripts this library
+is for. What this suite can show is the aggregate: `npm run test:e2e` runs in
+~110s, and a run noticeably longer than the sum of the boots it reports is a
+file's process being held open after its last case passed. The precise check is
+one layer down — `deps.setTimer` records cancellation, so the fake-clock cases
+in `test/lifecycle.test.mts` ("the cap timer is cancelled when bootstatus exits
+first", and the other direction) prove it in microseconds.
+
 **Part 3 — remote-hosted views — has no counterpart here, and that is the one
 worth knowing about.** It is the machinery behind TODO #60: a sheet or picker
 drawn by another process, hosted inside the app's window, whose elements arrive

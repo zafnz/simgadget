@@ -23,7 +23,7 @@ import {
   type RuntimeInfo,
 } from "../src/lifecycle.ts";
 import { DeviceTypeNotFoundError, SimGadgetError, SimulatorNotFoundError } from "../src/errors.ts";
-import { createFakeDeps } from "./fakes/deps.ts";
+import { FakeChildProcess, createFakeDeps } from "./fakes/deps.ts";
 
 // ---- pure extractions -------------------------------------------------------
 
@@ -287,8 +287,16 @@ test("waitUntilDriveable", async (t) => {
     assert.equal(result.ready, true);
     assert.equal(result.recoveryTried, false);
     assert.equal(result.recovered, false);
-    // Settled first: bootstatus wait + BOOT_SETTLE_MS, before the first probe.
-    assert.ok(result.waitedMs >= BOOTSTATUS_CAP_MS + BOOT_SETTLE_MS);
+    // Settled first, and asserted as an order rather than as a duration: the
+    // bootstatus wait costs whatever the device makes it cost (nothing at all
+    // when it has already booted), but the settle before the first probe is
+    // unconditional. See BOOT_SETTLE_MS for why it is kept.
+    assert.deepEqual(deps.calls.order.slice(0, 4), [
+      "spawn:xcrun simctl bootstatus UDID -b",
+      `setTimer:${BOOTSTATUS_CAP_MS}`,
+      `sleep:${BOOT_SETTLE_MS}`,
+      "withClient:UDID",
+    ]);
   });
 
   await t.test("a 0x0 frame does not count as ready", async () => {
@@ -350,6 +358,70 @@ test("waitUntilDriveable", async (t) => {
 
     assert.equal(deps.calls.spawn.length, 1);
     assert.deepEqual(deps.calls.spawn[0], { cmd: "xcrun", args: ["simctl", "bootstatus", "UDID", "-b"] });
+  });
+
+  // The cap on the bootstatus wait is a race, and both sides of it used to
+  // leak: a raced `deps.sleep` cannot be cancelled, so whichever side lost
+  // kept a `setTimeout` pending and Node alive with it. The two cases below
+  // are that race, run in both directions; `cancelled` is the assertion in
+  // one and "there is no second timer" in the other.
+  await t.test("the cap timer is cancelled when bootstatus exits first", async () => {
+    const deps = createFakeDeps({
+      client: { accessibilityInfo: async () => treeWithFrame(390, 844) },
+    });
+
+    await waitUntilDriveable(deps, "UDID", 55_000);
+
+    // The default fake child exits at once, as bootstatus does on a device
+    // that has already booted — the case a live 30s timer taxed hardest.
+    assert.equal(deps.calls.timers.length, 1);
+    assert.equal(deps.calls.timers[0].ms, BOOTSTATUS_CAP_MS);
+    assert.equal(deps.calls.timers[0].cancelled, true);
+  });
+
+  await t.test("the cap fires, and kills the child rather than leaving it", async () => {
+    const children: FakeChildProcess[] = [];
+    const deps = createFakeDeps({
+      client: { accessibilityInfo: async () => treeWithFrame(390, 844) },
+      // Never exits: bootstatus against a device that really is still coming
+      // up, so the cap is what ends the wait.
+      spawn: () => {
+        const child = new FakeChildProcess();
+        children.push(child);
+        return child;
+      },
+    });
+
+    const pending = waitUntilDriveable(deps, "UDID", 55_000);
+    // Armed synchronously — `waitForBootStatus` spawns and arms before it
+    // yields — so the timer is there to fire without waiting for a tick.
+    assert.equal(deps.calls.timers.length, 1);
+    deps.calls.timers[0].fire();
+    const result = await pending;
+
+    assert.equal(result.ready, true);
+    assert.equal(children[0].killed, true);
+    // One timer, fired rather than cancelled, and nothing armed after it.
+    assert.equal(deps.calls.timers.length, 1);
+    assert.equal(deps.calls.timers[0].cancelled, false);
+  });
+
+  await t.test("a spawn that cannot run the binary is a wait ended, not a crash", async () => {
+    const deps = createFakeDeps({
+      client: { accessibilityInfo: async () => treeWithFrame(390, 844) },
+      spawn: () => {
+        const child = new FakeChildProcess();
+        // An unhandled `error` on an EventEmitter throws, so without the
+        // listener this takes the process down instead of failing a test.
+        setImmediate(() => child.emit("error", new Error("spawn ENOENT")));
+        return child;
+      },
+    });
+
+    const result = await waitUntilDriveable(deps, "UDID", 55_000);
+
+    assert.equal(result.ready, true);
+    assert.equal(deps.calls.timers[0].cancelled, true);
   });
 });
 

@@ -121,6 +121,20 @@ export class FakeChildProcess extends EventEmitter {
   }
 }
 
+/**
+ * A child that exits on the next turn of the event loop, as `simctl bootstatus
+ * -b` does against a device that has already finished booting.
+ *
+ * Asynchronous on purpose: a real `ChildProcess` cannot emit before its caller
+ * has attached listeners, and a fake that exited synchronously inside `spawn()`
+ * would let code with no `exit` listener at all pass.
+ */
+export function childThatExits(code = 0): FakeChildProcess {
+  const child = new FakeChildProcess();
+  setImmediate(() => child.emitExit(code));
+  return child;
+}
+
 /** One armed `setTimer`, as the fake records it. */
 export interface FakeTimer {
   ms: number;
@@ -199,9 +213,17 @@ export interface FakeDepsOptions {
    * exactly that. Defaults to a fresh one, which is what every other test
    * wants. */
   recovery?: RecoveryRegistry;
-  /** Fake `spawn()` results, keyed the same way `run` calls are logged
-   * ("cmd arg1 arg2"). Falls back to a `FakeChildProcess` that never exits on
-   * its own, so `waitForBootStatus` resolves via the `capMs` sleep race. */
+  /**
+   * Fake `spawn()` results, keyed the same way `run` calls are logged
+   * ("cmd arg1 arg2"). Falls back to a `FakeChildProcess` that exits on the
+   * next turn of the event loop, which is what `simctl bootstatus -b` does
+   * against an already-booted device — the common case, and the one an
+   * uncancelled cap timer used to charge 30s for.
+   *
+   * A test that wants the *other* side of that race — a child still running
+   * when the cap fires — overrides this with a child that never exits and
+   * fires `calls.timers[0]` itself.
+   */
   spawn?: (cmd: string, args: string[]) => FakeChildProcess;
   clock?: FakeClock;
 }
@@ -274,7 +296,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
     spawn(cmd, args) {
       calls.spawn.push({ cmd, args });
       calls.order.push(`spawn:${commandKey(cmd, args)}`);
-      const child = options.spawn?.(cmd, args) ?? new FakeChildProcess();
+      const child = options.spawn?.(cmd, args) ?? childThatExits();
       return child as unknown as ChildProcess;
     },
     async withClient(udid, fn, options) {

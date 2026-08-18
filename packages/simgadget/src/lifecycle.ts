@@ -388,9 +388,11 @@ export async function restartSimulatorBridge(deps: SimulatorDeps, udid: string):
  * nothing about the accessibility service, which is what the settle and the
  * poll after this are for.
  *
- * Failures are swallowed: this is a way to wait well, not a precondition.
- * Uses `deps.spawn`, not `deps.run`, because it may need to kill the process
- * before it exits on its own.
+ * Nothing here is a failure worth reporting: an old Xcode, a device that
+ * finished before we asked, even a `spawn` that could not run the binary all
+ * mean the same thing — stop waiting and start polling, which is the actual
+ * readiness test. Uses `deps.spawn`, not `deps.run`, because it may need to
+ * kill the process before it exits on its own.
  */
 async function waitForBootStatus(
   deps: SimulatorDeps,
@@ -398,19 +400,40 @@ async function waitForBootStatus(
   capMs: number
 ): Promise<void> {
   const child = deps.spawn("xcrun", ["simctl", "bootstatus", udid, "-b"]);
-  try {
-    await Promise.race([
-      new Promise<void>((resolve) => child.on("exit", () => resolve())),
-      deps.sleep(capMs),
-    ]);
-  } catch {
-    // Older Xcode, or a device that finished before we asked. The poll below
-    // is the actual readiness test either way.
-  } finally {
-    // Nothing downstream needs this process once we have stopped waiting on
-    // it, and leaving it attached would outlive the call that started it.
-    if (child.exitCode === null) child.kill();
-  }
+
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    let cancelCap = () => {};
+
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      // Whichever way this resolved, the cap has lost its race and must be
+      // called off. See `SimulatorDeps.setTimer`: a pending timer keeps Node
+      // alive, and `bootstatus -b` against an already-booted device exits at
+      // once — so an uncancelled cap put a silent tail of up to 30s on the
+      // exit of every script that called `boot()` or `waitReady()`, worst
+      // exactly for the short ones this library exists to serve.
+      cancelCap();
+      resolve();
+    };
+
+    child.on("exit", settle);
+    // An `error` — `spawn` could not execute the binary — is treated the same
+    // as an exit rather than propagated: there is nothing to report, and an
+    // unhandled `error` on an EventEmitter takes the process down with it.
+    // This is the reason the listener exists at all.
+    child.on("error", settle);
+
+    // Through `deps.setTimer` rather than `deps.sleep` so that settling can
+    // call the timer off; a raced `sleep` cannot be cancelled, which is what
+    // made this the defect above.
+    cancelCap = deps.setTimer(capMs, settle);
+  });
+
+  // Nothing downstream needs this process once we have stopped waiting on
+  // it, and leaving it attached would outlive the call that started it.
+  if (child.exitCode === null) child.kill();
 }
 
 /**
