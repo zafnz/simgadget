@@ -14,7 +14,7 @@ npm run test:e2e -w simgadget
 Roughly 110 seconds, unattended, from a cold start. It creates two throwaway
 simulators, deletes them, and leaves nothing behind.
 
-## Why it exists, given there are already 507 unit tests
+## Why it exists, given there are already 509 unit tests
 
 The unit suite proves the library calls the right things in the right order,
 against a fake `idb_companion` that answers instantly and always agrees with
@@ -105,7 +105,7 @@ launched.
 | refuses to attach to a udid that does not exist | `SimulatorNotFoundError`, carrying the udid | anything else — especially a gRPC timeout — is the failure mode the typed error exists to replace |
 | deletes the simulator | `delete()` completes: companion closed first, then shutdown, then delete | see the ordering note in `Simulator.delete()`; a delete that races its own companion respawn leaves a companion attached to nothing |
 | every method on the deleted handle throws `SimulatorNotFoundError` | all twenty-three public methods, from one table. The guard is per-method | a method missing `assertNotDeleted` reaches simctl or the companion for a udid that no longer exists, and the answer to that is a thirty-second timeout rather than an error. This is the case that catches a newly added method that forgot |
-| the same error on the *other* handle, by both routes out of it | external deletion is mapped wherever it surfaces: a handle whose simulator was deleted underneath it says `SimulatorNotFoundError` in the same words as one that deleted it itself, whether the call went through simctl (`state()`) or over the companion (`describeScreen`, `findByLabel`) | the attached handle's staleness flag is clear, so nothing local knows the device has gone. A `companion-start-failed` here is the bug this case was widened for: a companion spawned for a udid that no longer exists cannot resolve its target and exits, which is true about the companion and silent about the cause. `findByLabel` is in the list because it is the one that could answer `null` instead of throwing — right about a label, wrong about a simulator |
+| the same error on the *other* handle, by both routes out of it | external deletion is mapped wherever it surfaces: a handle whose simulator was deleted underneath it says `SimulatorNotFoundError` in the same words as one that deleted it itself, whether the call went through simctl (`state()`) or over the companion (`describeScreen`, `findByLabel`) | the attached handle's staleness flag is clear, so nothing local knows the device has gone. **This case is why the companion-path mapping is a lookup and not a list of error shapes.** It was first written to expect the `CompanionStartError` a companion spawned against a vanished udid produces — and a handle that already has a companion never gets that far: it fails on the block `delete()` puts on the udid, as an untyped `IdbError`. An external `simctl delete` against a live companion is the same story. A failed companion call now asks simctl who exists, and only a udid that is gone is renamed. `findByLabel` is in the list because it is the one that could answer `null` instead of throwing — right about a label, wrong about a simulator |
 | gone as far as simctl is concerned | the ground truth, read from `simctl list devices -j` rather than from the library | a pass on `delete()` with a device still listed means the delete failed and was swallowed |
 
 ## Part 2 — `library.e2e.mts`

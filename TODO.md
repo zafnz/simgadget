@@ -290,20 +290,33 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
 
 - [x] **#76 DONE 2026-08-18. The companion path maps external deletion too, by
   asking simctl who exists.** Every companion call the handle makes now goes
-  through one private `Simulator.withClient`, which catches `CompanionStartError`
-  and consults `findDevice`: only a udid simctl no longer lists becomes
-  `SimulatorNotFoundError`. A start failure against a simulator that is still
-  there keeps its own error and its own `stderrTail` — a real fault, and
-  renaming it would send whoever reads it looking in the wrong place. Nothing
-  else pays the round trip: an ordinary gRPC failure and the wedge vocabulary
-  the recovery ladder reads never reach it.
-  Tests: `test/simulator.test.mts`, "a companion that will not start is
-  resolved against simctl" — gone → `SimulatorNotFoundError`, present →
-  `CompanionStartError`, an unrelated read failure asks simctl nothing, and
-  `findByLabel` throws rather than answering `null` through its tree fallback.
-  The e2e case at `test/e2e/lifecycle.e2e.mts` now drives the stale handle by
-  all three routes instead of `state()` alone; TESTING_LIBRARY.md's Part 1 row
-  says why.
+  through one private `Simulator.withClient`, which on a failure consults
+  `findDevice`: only a udid simctl no longer lists becomes
+  `SimulatorNotFoundError`, and everything else is rethrown exactly as it
+  arrived — a companion that could not start against a simulator still sitting
+  there keeps its own error and its `stderrTail`. The wedge vocabulary is
+  exempt and never pays the round trip: those errors are about a bridge
+  belonging to a simulator that plainly exists, `withAccessibilityRecovery`
+  reads them to choose the cure, and they are the only companion failure
+  frequent enough for the cost to matter.
+
+  **The e2e is what settled the mechanism, and it contradicted the review.**
+  Written first as the finding described — catch `CompanionStartError`, look
+  the udid up — it passed every fake-layer test and failed against a real
+  simulator: a handle that *already has* a companion never reaches a spawn, so
+  it fails on the block `delete()` puts on the udid, as an untyped `IdbError`.
+  An external `simctl delete` against a live companion lands the same way.
+  Chasing error shapes is how half of this went missing the first time, so the
+  question is now asked of the only thing that can answer it. Widening past the
+  finding's letter was checked with the owner before it was written.
+
+  Tests: `test/simulator.test.mts`, "a failed companion call is resolved
+  against simctl" — gone → `SimulatorNotFoundError` (both a start failure and
+  the closed-udid refusal), present → the original error untouched, a wedge
+  error asks simctl nothing, and `findByLabel` throws rather than answering
+  `null` through its tree fallback. The e2e case at
+  `test/e2e/lifecycle.e2e.mts` drives the stale handle by all three routes
+  instead of `state()` alone; TESTING_LIBRARY.md's Part 1 row says why.
 
   Original finding: the spec promises that after external deletion "every
   method throws SimulatorNotFoundError — a clear error, never a gRPC timeout",

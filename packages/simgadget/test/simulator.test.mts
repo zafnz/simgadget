@@ -319,7 +319,7 @@ function devicesListing(present: boolean) {
   };
 }
 
-test("a companion that will not start is resolved against simctl", async (t) => {
+test("a failed companion call is resolved against simctl", async (t) => {
   // The spec promises `SimulatorNotFoundError` from *every* method on a
   // simulator deleted underneath a live handle. `mapSimctlError` could only
   // ever deliver that for the methods that go through simctl; a read or a tap
@@ -363,21 +363,71 @@ test("a companion that will not start is resolved against simctl", async (t) => 
     });
   });
 
-  await t.test("asks simctl once, and only about a start failure", async () => {
-    // An ordinary read failure — a wedged bridge, a gRPC error — must not pay
-    // a simctl round trip on its way out.
+  await t.test("a wedged bridge is never resolved against simctl", async () => {
+    // The one exemption, and it has to hold: idb's "no translation object" is
+    // a statement about a bridge belonging to a simulator that plainly
+    // exists, `withAccessibilityRecovery` reads that wording to pick the cure,
+    // and it is the only companion failure frequent enough for a `simctl
+    // list` per attempt to be worth avoiding.
     const deps = createFakeDeps({
       run: () => devicesListing(true),
       client: {
         accessibilityInfo: async () => {
-          throw new Error("some other gRPC failure");
+          throw new Error("no translation object for this element");
         },
       },
     });
     const sim = new Simulator("UDID", "iPhone", deps);
 
     await assert.rejects(sim.describeScreen());
-    assert.equal(deps.calls.run.length, 0);
+    assert.equal(
+      deps.calls.run.filter((c) => c.args[1] === "list").length,
+      0,
+      "a wedge error must not pay a simctl round trip on its way out"
+    );
+  });
+
+  await t.test("a udid that is still there keeps whatever failure it got", async () => {
+    // Not every companion failure is a start failure — a udid that already had
+    // a companion fails somewhere else entirely — so the lookup is what
+    // decides, not the error's class. A simulator still listed keeps its own
+    // error, whatever that was.
+    const failure = new Error("14 UNAVAILABLE: no connection established");
+    const deps = createFakeDeps({
+      run: () => devicesListing(true),
+      client: {
+        accessibilityInfo: async () => {
+          throw failure;
+        },
+      },
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+
+    await assert.rejects(sim.describeScreen(), (error: unknown) => {
+      assert.equal(error, failure);
+      return true;
+    });
+  });
+
+  await t.test("a udid that is gone becomes SimulatorNotFoundError however it failed", async () => {
+    // The e2e's case: the handle already had a companion, so the failure never
+    // goes near a spawn. `delete()` blocks the udid, and the manager's refusal
+    // is an untyped IdbError that says nothing about the simulator being gone.
+    const deps = createFakeDeps({
+      run: () => devicesListing(false),
+      client: {
+        accessibilityInfo: async () => {
+          throw new Error("Simulator UDID is being shut down, so no companion will be started for it.");
+        },
+      },
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+
+    await assert.rejects(sim.describeScreen(), (error: unknown) => {
+      assert.ok(error instanceof SimulatorNotFoundError, `got ${(error as Error).name}`);
+      assert.equal(error.udid, "UDID");
+      return true;
+    });
   });
 
   await t.test("findByLabel throws rather than answering null", async () => {

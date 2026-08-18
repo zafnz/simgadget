@@ -34,7 +34,6 @@ import {
 import type { SimulatorDeps } from "./internal/deps.ts";
 import {
   AccessibilityUnreadableError,
-  CompanionStartError,
   ElementDisabledError,
   ElementNotFoundError,
   SimGadgetError,
@@ -454,24 +453,32 @@ export class Simulator {
   }
 
   /**
-   * Every companion call this class makes, with a start failure resolved
-   * against simctl before it is reported.
+   * Every companion call this class makes, with a failure resolved against
+   * simctl before it is reported.
    *
-   * A companion spawned for a udid that no longer exists cannot resolve its
-   * target and exits, which arrives as `CompanionStartError` —
-   * `companion-start-failed`, which is true and useless: nothing about the
-   * companion is wrong. The spec promises `SimulatorNotFoundError` from
-   * *every* method on a simulator deleted underneath a live handle, and
-   * `mapSimctlError` could only ever deliver that for the methods that go
-   * through simctl — `state()` and the app calls. Every read and every tap
-   * went out over the companion and came back naming the wrong thing.
+   * The spec promises `SimulatorNotFoundError` from *every* method on a
+   * simulator deleted underneath a live handle — "a clear error, never a gRPC
+   * timeout". `mapSimctlError` can only deliver that for the methods that go
+   * through simctl (`state()`, the app calls); every read and every tap goes
+   * out over the companion, and there is no single shape those come back in:
+   * a companion spawned for a udid that no longer exists cannot resolve its
+   * target and exits (`CompanionStartError`), while a udid that already had
+   * one fails somewhere else entirely — including the manager's own refusal
+   * to start a companion for a udid `delete()` has closed. Chasing the shapes
+   * is how half of this went missing the first time.
    *
-   * So a start failure asks simctl who exists. Only a udid that is genuinely
-   * gone is renamed; a companion that failed to start against a simulator
-   * still sitting there keeps its own error, because that is a real fault and
-   * calling it "not found" would send whoever reads it looking in the wrong
-   * place. Nothing else is touched: an ordinary gRPC failure, and the wedge
-   * vocabulary the recovery ladder reads, never reach the simctl round trip.
+   * So the question is asked of the only thing that can answer it: a failed
+   * companion call consults simctl, and only a udid that is genuinely gone is
+   * renamed. Everything else is rethrown exactly as it arrived — a companion
+   * that could not start against a simulator still sitting there keeps its
+   * own error and its `stderrTail`, because that is a real fault and "not
+   * found" would send whoever reads it looking in the wrong place.
+   *
+   * The wedge vocabulary is exempt and must stay exempt. Those errors are a
+   * statement about a bridge belonging to a simulator that plainly exists,
+   * `withAccessibilityRecovery` reads them to decide on the cure, and they
+   * are the one companion failure that happens often enough for a `simctl
+   * list` per attempt to be worth avoiding.
    */
   private async withClient<T>(
     fn: (client: IdbClient) => Promise<T>,
@@ -480,10 +487,10 @@ export class Simulator {
     try {
       return await this.deps.withClient(this.udid, fn, options);
     } catch (error) {
-      if (!(error instanceof CompanionStartError)) throw error;
+      if (isWedgeError(toError(error).message)) throw error;
       try {
-        // Present, or simctl could not be asked: either way the companion's
-        // own error is the most truthful thing we have.
+        // Present, or simctl could not be asked: either way the failure that
+        // actually happened is the most truthful thing we have.
         if (await findDevice(this.deps, this.udid)) throw error;
       } catch {
         throw error;
