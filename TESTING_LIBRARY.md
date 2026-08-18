@@ -203,7 +203,18 @@ a finding that lives only in a commit message is a finding that gets rediscovere
    the start of a line that begins with the bundle identifier. It could not
    match, so `{pid}` was `null` for every launch that ever succeeded. The
    shipped server has the same bug (`src/index.ts:2648`). Now parsed from the
-   end of the reply, since a bundle identifier may itself contain digits.
+   end of the reply, since a bundle identifier may itself contain digits, and
+   the suite asserts a real pid comes back — its absence is exactly how the
+   bug survived a port.
+
+   Reading from the end has an edge the fixture cannot show, because
+   `com.example.mcptestapp` does not end in a digit: a reply that is *only* a
+   bundle identifier, from a launch that reported no pid, would have had its
+   trailing digits read as one (`com.example.app2` → `2`). The pid must now be
+   preceded by the colon or space that separates it from the identifier, which
+   changes nothing about a real reply. Pinned in `test/lifecycle.test.mts`,
+   "does not read a digit-ending bundle id as a pid" — a pure test, because
+   there is nothing about it a device could settle.
 
 4. **`launchApp` never returns a pid.** `simctl launch` prints
    `com.example.mcptestapp: 18900`, and the parse is `/^(\d+)/` — anchored at the

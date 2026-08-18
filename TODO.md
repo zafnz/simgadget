@@ -336,12 +336,18 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   the mapped `SimulatorNotFoundError` while `this.deleted` stayed false and
   `recovery.forget` never ran.
 
-- [ ] **#78 `parseLaunchPid` can misparse a digit-ending bundle id.**
-  `lifecycle.ts:229` matches `/(\d+)\s*$/`. The doc claims a no-pid reply
-  "stays null", but if such a reply is just the bundle id and the id ends in
-  digits (`com.example.app2`), the trailing digits parse as a pid. Requiring
-  a delimiter — `/[:\s](\d+)\s*$/` — keeps the fixed behaviour (the `/^(\d+)/`
-  bug this replaced) and closes the hole.
+- [x] **#78 DONE 2026-08-18. `parseLaunchPid` requires a delimiter before the
+  pid.** `/[:\s](\d+)\s*$/` rather than `/(\d+)\s*$/`, so the digits have to be
+  separated from the bundle identifier by the colon or space simctl puts there.
+  Every real reply parses exactly as it did; a reply that is only a
+  digit-ending identifier now stays null instead of reporting its own suffix as
+  a process id. Test: `test/lifecycle.test.mts`, "does not read a digit-ending
+  bundle id as a pid". TESTING_LIBRARY.md's item 4 records why the fixture
+  cannot show this one — `com.example.mcptestapp` does not end in a digit.
+
+  Original finding: `lifecycle.ts:229` matched `/(\d+)\s*$/`. The doc claimed a
+  no-pid reply "stays null", but if such a reply is just the bundle id and the
+  id ends in digits (`com.example.app2`), the trailing digits parse as a pid.
 
 - [ ] **#79 Custom `resizeTo: {width, height}` is applied before rotation, so
   a landscape screenshot comes back transposed.** In `captureScreenshot`

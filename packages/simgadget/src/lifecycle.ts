@@ -225,9 +225,16 @@ export function pickLatestRuntime(list: RuntimeInfo[]): string {
  * may itself contain digits and the pid is the last thing on the line either
  * way. A reply with no pid in it at all stays null, which is a real case: not
  * every launch reports one.
+ *
+ * The delimiter is what makes those two rules compatible. `com.example.app2`
+ * with no pid is exactly the reply the second rule is about, and trailing
+ * digits alone cannot tell it apart from a pid — so a pid has to be preceded
+ * by the colon or the space that separates it from the identifier. Requiring
+ * one keeps every real reply parsing as it did and stops a digit-ending
+ * bundle id being read as the process it failed to report.
  */
 export function parseLaunchPid(stdout: string): number | null {
-  const match = stdout.trim().match(/(\d+)\s*$/);
+  const match = stdout.trim().match(/[:\s](\d+)\s*$/);
   if (!match) return null;
   const pid = Number(match[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : null;

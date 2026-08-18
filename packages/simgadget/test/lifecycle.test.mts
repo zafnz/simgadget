@@ -645,6 +645,17 @@ test("parseLaunchPid", async (t) => {
     assert.equal(parseLaunchPid("io.grpc9.thing99: 7"), 7);
   });
 
+  // The other half of the same fact: an identifier ending in digits, in a
+  // reply that carries no pid at all. Reading from the end is only safe
+  // because the pid must be preceded by the delimiter that separates it from
+  // the identifier -- without that, this returns 2 and the caller is handed a
+  // process id that never existed.
+  await t.test("does not read a digit-ending bundle id as a pid", () => {
+    for (const reply of ["com.example.app2", "com.example.app2\n", "io.grpc9.thing99"]) {
+      assert.equal(parseLaunchPid(reply), null, `should be null: ${JSON.stringify(reply)}`);
+    }
+  });
+
   await t.test("answers null when there is no pid to read", () => {
     for (const reply of ["", "   ", "com.example.app:", "no pid here"]) {
       assert.equal(parseLaunchPid(reply), null, `should be null: ${JSON.stringify(reply)}`);
