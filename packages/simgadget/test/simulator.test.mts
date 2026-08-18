@@ -9,7 +9,7 @@ import {
   BRIDGE_RECOVERY_MIN_POLL_MS,
   RECOVERY_TAIL_MS,
 } from "../src/lifecycle.ts";
-import { SimGadgetError, SimulatorNotFoundError } from "../src/errors.ts";
+import { CompanionStartError, SimGadgetError, SimulatorNotFoundError } from "../src/errors.ts";
 import { createFakeDeps } from "./fakes/deps.ts";
 
 /** This test file itself -- an absolute path guaranteed to exist, so
@@ -239,6 +239,103 @@ test("Simulator.delete()", async (t) => {
     await sim.delete();
 
     assert.equal(deps.recovery.hasAnswered("UDID-CLEARS"), false);
+  });
+});
+
+// ---- external deletion, on the companion path ------------------------------
+
+/** simctl's device list, as `findDevice` reads it. `present: false` is a udid
+ * simctl no longer knows — a simulator deleted underneath a live handle. */
+function devicesListing(present: boolean) {
+  return {
+    stdout: JSON.stringify({
+      devices: present
+        ? {
+            "com.apple.CoreSimulator.SimRuntime.iOS-18-0": [
+              { udid: "UDID", name: "iPhone 16 Pro", state: "Booted", deviceTypeIdentifier: "x" },
+            ],
+          }
+        : {},
+    }),
+    stderr: "",
+  };
+}
+
+test("a companion that will not start is resolved against simctl", async (t) => {
+  // The spec promises `SimulatorNotFoundError` from *every* method on a
+  // simulator deleted underneath a live handle. `mapSimctlError` could only
+  // ever deliver that for the methods that go through simctl; a read or a tap
+  // spawns a companion, which cannot resolve the vanished target and exits, so
+  // it came back as `companion-start-failed` — true about the companion and
+  // wrong about the cause.
+  await t.test("becomes SimulatorNotFoundError when the udid is gone", async () => {
+    const deps = createFakeDeps({
+      run: () => devicesListing(false),
+      companionStartFailure: new CompanionStartError([
+        "Failed to load device set",
+        "no device with udid UDID",
+      ]),
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+
+    await assert.rejects(sim.describeScreen(), (error: unknown) => {
+      assert.ok(error instanceof SimulatorNotFoundError, `got ${(error as Error).name}`);
+      assert.equal(error.code, "simulator-not-found");
+      assert.equal(error.udid, "UDID");
+      return true;
+    });
+  });
+
+  await t.test("stays CompanionStartError when the simulator is still there", async () => {
+    // The other half, and the reason this is a lookup rather than a rename: a
+    // companion that genuinely failed to start against a live simulator is a
+    // real fault, and calling it "not found" would send whoever reads it
+    // looking in the wrong place entirely.
+    const deps = createFakeDeps({
+      run: () => devicesListing(true),
+      companionStartFailure: new CompanionStartError(["dyld: library not loaded"]),
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+
+    await assert.rejects(sim.describeScreen(), (error: unknown) => {
+      assert.ok(error instanceof CompanionStartError, `got ${(error as Error).name}`);
+      assert.equal(error.code, "companion-start-failed");
+      assert.deepEqual(error.stderrTail, ["dyld: library not loaded"]);
+      return true;
+    });
+  });
+
+  await t.test("asks simctl once, and only about a start failure", async () => {
+    // An ordinary read failure — a wedged bridge, a gRPC error — must not pay
+    // a simctl round trip on its way out.
+    const deps = createFakeDeps({
+      run: () => devicesListing(true),
+      client: {
+        accessibilityInfo: async () => {
+          throw new Error("some other gRPC failure");
+        },
+      },
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+
+    await assert.rejects(sim.describeScreen());
+    assert.equal(deps.calls.run.length, 0);
+  });
+
+  await t.test("findByLabel throws rather than answering null", async () => {
+    // `findByLabel`'s tree fallback answers `null` when the screen cannot be
+    // read, which is right for a screen that has no such element and wrong for
+    // a simulator that no longer exists: "not found" would be about the label.
+    const deps = createFakeDeps({
+      run: () => devicesListing(false),
+      companionStartFailure: new CompanionStartError(["no device with udid UDID"]),
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+
+    await assert.rejects(sim.findByLabel("Plain Button"), (error: unknown) => {
+      assert.ok(error instanceof SimulatorNotFoundError, `got ${(error as Error).name}`);
+      return true;
+    });
   });
 });
 

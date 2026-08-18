@@ -214,6 +214,18 @@ export interface FakeDepsOptions {
    * wants. */
   recovery?: RecoveryRegistry;
   /**
+   * Makes `withClient` reject with this **before** running the callback, the
+   * way `CompanionManager` does when a companion exits during startup.
+   *
+   * Set rather than throwing from the fake client because the two are
+   * different failures wearing the same shape: a client method that rejects
+   * says the companion answered and refused, and this says there was never a
+   * companion to ask. A simulator deleted underneath a live handle produces
+   * the second — the companion cannot resolve a target that no longer
+   * exists — and the callback never running is the observable difference.
+   */
+  companionStartFailure?: Error;
+  /**
    * Fake `spawn()` results, keyed the same way `run` calls are logged
    * ("cmd arg1 arg2"). Falls back to a `FakeChildProcess` that exits on the
    * next turn of the event loop, which is what `simctl bootstatus -b` does
@@ -252,6 +264,10 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
     shutdownCompanion: [],
     order: [],
   };
+
+  // Read out here because `withClient`'s own `options` parameter shadows this
+  // function's.
+  const startFailure = options.companionStartFailure;
 
   const runHandler: RunHandler = options.run ?? (() => ({ stdout: "", stderr: "" }));
   const client = options.client ?? {
@@ -307,6 +323,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): FakeDeps {
       // before, which is what the existing ordering tests look for.
       if (options?.exclusive) calls.withClientExclusive.push(udid);
       calls.order.push(`withClient:${udid}${options?.exclusive ? " exclusive" : ""}`);
+      if (startFailure) throw startFailure;
       return fn(loggedClient as unknown as Parameters<typeof fn>[0]);
     },
     async sleep(ms) {

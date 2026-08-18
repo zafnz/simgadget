@@ -288,21 +288,30 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   `realDeps.sleep(3000)` resolves at 0ms and the process exits at 3002ms —
   the same measurement that motivated `setTimer` for the recording path.
 
-- [ ] **#76 External deletion is only half-mapped: the companion path throws
-  `CompanionStartError`, breaking the spec's promise.** The spec: after
-  external deletion "every method throws SimulatorNotFoundError — a clear
-  error, never a gRPC timeout". Plan step 2b promised both halves: simctl
-  "Invalid device" shapes *and* "a companion that cannot resolve a vanished
-  udid". Only the first exists (`mapSimctlError`, `simulator.ts:437`). A read
-  on a handle whose simulator was deleted externally spawns a companion
-  against the vanished udid, which exits failing target resolution →
-  `CompanionStartError` with the misleading code `companion-start-failed`.
-  The e2e knows: `lifecycle.e2e.mts:177` tests external deletion only through
-  `state()` — the one method that goes through simctl rather than the
-  companion. Fix: when a companion start fails, consult `findDevice`; if the
-  udid is gone, throw `SimulatorNotFoundError`. Extend the e2e case to a
-  companion-path method (`describeScreen` or `findByLabel`). This matters
-  before step 3: the server's error rendering is built on this promise.
+- [x] **#76 DONE 2026-08-18. The companion path maps external deletion too, by
+  asking simctl who exists.** Every companion call the handle makes now goes
+  through one private `Simulator.withClient`, which catches `CompanionStartError`
+  and consults `findDevice`: only a udid simctl no longer lists becomes
+  `SimulatorNotFoundError`. A start failure against a simulator that is still
+  there keeps its own error and its own `stderrTail` — a real fault, and
+  renaming it would send whoever reads it looking in the wrong place. Nothing
+  else pays the round trip: an ordinary gRPC failure and the wedge vocabulary
+  the recovery ladder reads never reach it.
+  Tests: `test/simulator.test.mts`, "a companion that will not start is
+  resolved against simctl" — gone → `SimulatorNotFoundError`, present →
+  `CompanionStartError`, an unrelated read failure asks simctl nothing, and
+  `findByLabel` throws rather than answering `null` through its tree fallback.
+  The e2e case at `test/e2e/lifecycle.e2e.mts` now drives the stale handle by
+  all three routes instead of `state()` alone; TESTING_LIBRARY.md's Part 1 row
+  says why.
+
+  Original finding: the spec promises that after external deletion "every
+  method throws SimulatorNotFoundError — a clear error, never a gRPC timeout",
+  and only the simctl half existed (`mapSimctlError`). A read on a stale handle
+  spawned a companion against the vanished udid, which exited failing target
+  resolution → `CompanionStartError` with the misleading code
+  `companion-start-failed`. The e2e knew: it tested external deletion only
+  through `state()`, the one method that goes through simctl.
 
 - [ ] **#77 `delete()` failure paths leave the udid wedged shut.**
   `simulator.ts:544`: `closeCompanion` runs first (correctly), but if

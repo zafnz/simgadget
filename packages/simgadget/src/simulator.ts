@@ -34,6 +34,7 @@ import {
 import type { SimulatorDeps } from "./internal/deps.ts";
 import {
   AccessibilityUnreadableError,
+  CompanionStartError,
   ElementDisabledError,
   ElementNotFoundError,
   SimGadgetError,
@@ -93,6 +94,8 @@ import {
   type ScreenshotOptions,
 } from "./capture.ts";
 import { Backend, Button, Format, OrientationType, SearchableKey } from "./idb/client.ts";
+import type { IdbClient } from "./idb/client.ts";
+import type { WithClientOptions } from "./idb/companionManager.ts";
 import { unmappedCharacters } from "./idb/keymap.ts";
 import type { ChildProcess } from "child_process";
 import { existsSync } from "fs";
@@ -450,6 +453,45 @@ export class Simulator {
     }
   }
 
+  /**
+   * Every companion call this class makes, with a start failure resolved
+   * against simctl before it is reported.
+   *
+   * A companion spawned for a udid that no longer exists cannot resolve its
+   * target and exits, which arrives as `CompanionStartError` —
+   * `companion-start-failed`, which is true and useless: nothing about the
+   * companion is wrong. The spec promises `SimulatorNotFoundError` from
+   * *every* method on a simulator deleted underneath a live handle, and
+   * `mapSimctlError` could only ever deliver that for the methods that go
+   * through simctl — `state()` and the app calls. Every read and every tap
+   * went out over the companion and came back naming the wrong thing.
+   *
+   * So a start failure asks simctl who exists. Only a udid that is genuinely
+   * gone is renamed; a companion that failed to start against a simulator
+   * still sitting there keeps its own error, because that is a real fault and
+   * calling it "not found" would send whoever reads it looking in the wrong
+   * place. Nothing else is touched: an ordinary gRPC failure, and the wedge
+   * vocabulary the recovery ladder reads, never reach the simctl round trip.
+   */
+  private async withClient<T>(
+    fn: (client: IdbClient) => Promise<T>,
+    options?: WithClientOptions
+  ): Promise<T> {
+    try {
+      return await this.deps.withClient(this.udid, fn, options);
+    } catch (error) {
+      if (!(error instanceof CompanionStartError)) throw error;
+      try {
+        // Present, or simctl could not be asked: either way the companion's
+        // own error is the most truthful thing we have.
+        if (await findDevice(this.deps, this.udid)) throw error;
+      } catch {
+        throw error;
+      }
+      throw new SimulatorNotFoundError(this.udid);
+    }
+  }
+
   // ---- lifecycle ------------------------------------------------------------
 
   /** Current simctl state. Cheap; hits `simctl list`. */
@@ -690,7 +732,7 @@ export class Simulator {
     if (this.portraitPoints) return this.portraitPoints;
 
     const dimensions = (
-      await this.deps.withClient(this.udid, (client) => client.describe())
+      await this.withClient((client) => client.describe())
     ).screenDimensions;
     if (!dimensions?.widthPoints || !dimensions.heightPoints) return null;
 
@@ -760,7 +802,7 @@ export class Simulator {
    */
   private async accessibilityIsAnswering(): Promise<boolean> {
     try {
-      const frame = await this.deps.withClient(this.udid, async (client) => {
+      const frame = await this.withClient(async (client) => {
         const info = (await client.accessibilityInfo({
           format: Format.NESTED,
         })) as RawAXElement[] | RawAXElement | null;
@@ -783,7 +825,7 @@ export class Simulator {
    */
   private async accessibilityPointAnswers(): Promise<boolean> {
     try {
-      const element = (await this.deps.withClient(this.udid, (client) =>
+      const element = (await this.withClient((client) =>
         client.accessibilityInfo({
           point: DIAGNOSTIC_POINT,
           format: Format.LEGACY,
@@ -927,7 +969,7 @@ export class Simulator {
    */
   private async describeAll(): Promise<RawAXElement[]> {
     const read = () =>
-      this.deps.withClient(this.udid, async (client) => {
+      this.withClient(async (client) => {
         const info = await client.accessibilityInfo({ format: Format.NESTED });
         // An empty read comes back as JSON null, which must not become [null]
         // -- that reads as a one-element tree and would be returned as success.
@@ -982,7 +1024,7 @@ export class Simulator {
    */
   private async readScreenTree(): Promise<AXElement[]> {
     const elements = await this.withAccessibilityRecovery(() =>
-      this.deps.withClient(this.udid, async (client) => {
+      this.withClient(async (client) => {
         const read = async (backend?: Backend, keys?: string[]) => {
           const info = await client.accessibilityInfo({
             format: Format.NESTED,
@@ -1185,7 +1227,7 @@ export class Simulator {
     matchKey: SearchableKey
   ): Promise<AXElement | null> {
     return this.withAccessibilityRecovery(() =>
-      this.deps.withClient(this.udid, async (client) => {
+      this.withClient(async (client) => {
         try {
           const found = (await client.accessibilityInfo({
             marker,
@@ -1297,7 +1339,7 @@ export class Simulator {
   private async readPoint(x: number, y: number): Promise<AXElement | null> {
     return this.withAccessibilityRecovery(async () => {
       try {
-        return await this.deps.withClient(this.udid, async (client) => {
+        return await this.withClient(async (client) => {
           const element = (await client.accessibilityInfo({
             point: { x: Math.round(x), y: Math.round(y) },
             format: Format.LEGACY,
@@ -1364,7 +1406,7 @@ export class Simulator {
       );
     }
 
-    await this.deps.withClient(this.udid, (client) => client.setOrientation(hid));
+    await this.withClient((client) => client.setOrientation(hid));
 
     // Rotation is animated, and the accessibility tree reports the old geometry
     // until it finishes. Through `deps.sleep`, so no unit test waits it out.
@@ -1614,8 +1656,7 @@ export class Simulator {
 
     try {
       await this.withAccessibilityRecovery(() =>
-        this.deps.withClient(
-          this.udid,
+        this.withClient(
           (client) =>
             client.activate(
               useId ? id : name,
@@ -1671,8 +1712,7 @@ export class Simulator {
     count: number,
     durationSeconds: number
   ): Promise<void> {
-    await this.deps.withClient(
-      this.udid,
+    await this.withClient(
       async (client) => {
         for (let i = 0; i < count; i++) {
           if (i > 0) await this.deps.sleep(TAP_REPEAT_GAP_MS);
@@ -1704,7 +1744,7 @@ export class Simulator {
     const unmapped = [...new Set(unmappedCharacters(text))];
     if (unmapped.length > 0) throw new UntypeableTextError(unmapped);
 
-    await this.deps.withClient(this.udid, (client) => client.typeText(text), {
+    await this.withClient((client) => client.typeText(text), {
       exclusive: true,
     });
   }
@@ -1735,8 +1775,7 @@ export class Simulator {
     const start = transform(from.x, from.y);
     const end = transform(to.x, to.y);
 
-    await this.deps.withClient(
-      this.udid,
+    await this.withClient(
       (client) =>
         client.swipe(
           { x: Math.round(start.x), y: Math.round(start.y) },
@@ -1768,8 +1807,7 @@ export class Simulator {
       );
     }
 
-    await this.deps.withClient(
-      this.udid,
+    await this.withClient(
       (client) => client.pressButton(hid, opts?.durationSeconds),
       { exclusive: true }
     );

@@ -171,14 +171,35 @@ describe("simgadget lifecycle against a real simulator", { skip: SKIP }, () => {
   it("turns an externally deleted simulator into the same error on the other handle", async () => {
     // The attached handle never called `delete()`, so its staleness flag is
     // clear and nothing local knows the device has gone. This is the *other*
-    // half of the rule: simctl's "Invalid device" answer is mapped at the deps
-    // boundary, so a handle whose simulator was deleted underneath it says so
-    // in the same words as one that deleted it itself.
-    await assert.rejects(attached.state(), (error: unknown) => {
-      assert.ok(error instanceof SimulatorNotFoundError);
-      assert.equal(error.udid, udid);
-      return true;
-    });
+    // half of the rule: a handle whose simulator was deleted underneath it says
+    // so in the same words as one that deleted it itself.
+    //
+    // Both routes out of the handle are checked, because they fail in
+    // different places and only one of them used to be mapped. `state()` goes
+    // through simctl, which answers "Invalid device". A read spawns a
+    // companion, which cannot resolve a target that no longer exists and exits
+    // — and that came back as `companion-start-failed`, which is true about the
+    // companion and says nothing about why. Whichever method a caller happens
+    // to reach for, the answer has to be the same one.
+    const stale: [string, () => Promise<unknown>][] = [
+      ["state", () => attached.state()],
+      ["describeScreen", () => attached.describeScreen()],
+      // The one that could answer instead of throwing: `findByLabel`'s tree
+      // fallback returns `null` when the screen cannot be read, which is the
+      // right answer about a label and the wrong one about a simulator.
+      ["findByLabel", () => attached.findByLabel("anything")],
+    ];
+
+    for (const [name, call] of stale) {
+      await assert.rejects(call(), (error: unknown) => {
+        assert.ok(
+          error instanceof SimulatorNotFoundError,
+          `${name}() threw ${(error as Error)?.constructor?.name} rather than SimulatorNotFoundError`
+        );
+        assert.equal(error.udid, udid, `${name}()'s error named the wrong udid`);
+        return true;
+      });
+    }
   });
 
   it("is gone as far as simctl is concerned", async () => {
