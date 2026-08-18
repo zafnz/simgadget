@@ -233,6 +233,180 @@
   re-read, test a predicate, repeat within a budget. Design them together or the
   second will duplicate the first's polling loop.
 
+# TODO — Code review: library rewrite, 2026-08-18
+
+Full review of the step-2 library (`packages/simgadget`) against SIMGADGET.md
+and SIMGADGET_PLAN.md. Verified clean and not repeated per-item below: port
+fidelity against the frozen originals (no smuggled behaviour changes; every
+diff traces to a deliberate change), rename completeness, sun_path headroom,
+error-vocabulary containment in `ax/recovery.ts`, the exports boundary, the
+tether rule (all twelve fake beliefs map to contract checks 1–12), plan test
+coverage for steps 1.1–8, the step-9 e2e journey item-for-item, and the exit
+conditions: typecheck, 495/495 unit tests, root build + frozen manifest, and
+the e2e suite re-run during the review — 32/32 in 110s unattended. The one
+thing not re-run: `check:companion` against a booted fixture (exit condition 5).
+
+## Bugs
+
+- [x] **#74 DONE 2026-08-18. DECISIONS.md recovered and committed at the repo
+  root.** It survived intact in the session scratchpad it was written in
+  (`d15f9e10-.../scratchpad/DECISIONS.md`); the committed copy is
+  byte-identical, sha256 `e6883300…`. Its numbering matches every citation, so
+  all 40-odd `DECISIONS.md #N` references across `src/`, the fakes and
+  TESTING_LIBRARY.md now resolve — including #1 (boot opens Simulator.app,
+  settled with the owner), #2 (`(string & {})`), #12 (`path.resolve`-only),
+  #19 (companion close/reopen on the deps seam) and #21 (registry fresh per
+  test). No prose was rewritten: the sign-off trail is the original document,
+  not a reconstruction of it — which is what makes #83's and the
+  `(string & {})` deviation's sign-off claims checkable (items 26 and 2).
+
+  Original finding: cited 82 times and absent from the repo. At least 18
+  distinct numbered decisions (#1–#24) were cited as load-bearing authority
+  across `src/internal/deps.ts`, `internal/registry.ts`, `lifecycle.ts`,
+  `simulator.ts`, the test fakes and TESTING_LIBRARY.md — including decisions
+  the spec does not record.
+
+- [ ] **#75 `waitForBootStatus` reintroduces the pending-timer defect the
+  library itself documents at `SimulatorDeps.setTimer`.**
+  `packages/simgadget/src/lifecycle.ts:400` races the bootstatus child's exit
+  against `deps.sleep(BOOTSTATUS_CAP_MS)` (30s); the losing timer is never
+  cancelled and holds the event loop open. Confirmed empirically: a raced
+  `realDeps.sleep(3000)` resolves at 0ms and the process exits at 3002ms —
+  the same measurement that motivated `setTimer` for the recording path
+  ("measured: 3001ms"). On an already-booted simulator `bootstatus -b` exits
+  immediately, so every short script calling `waitReady()`/`boot()` gets a
+  silent tail of up to ~30s after its work is done — worst exactly for the
+  three-line scripts the library exists to serve. Fix: `deps.setTimer` with a
+  cancel, as `waitForRecordingStart` does. Per the regression rule this lands
+  with a unit test (fake clock can prove no timer outlives the call) and a
+  TESTING_LIBRARY.md note.
+
+- [ ] **#76 External deletion is only half-mapped: the companion path throws
+  `CompanionStartError`, breaking the spec's promise.** The spec: after
+  external deletion "every method throws SimulatorNotFoundError — a clear
+  error, never a gRPC timeout". Plan step 2b promised both halves: simctl
+  "Invalid device" shapes *and* "a companion that cannot resolve a vanished
+  udid". Only the first exists (`mapSimctlError`, `simulator.ts:437`). A read
+  on a handle whose simulator was deleted externally spawns a companion
+  against the vanished udid, which exits failing target resolution →
+  `CompanionStartError` with the misleading code `companion-start-failed`.
+  The e2e knows: `lifecycle.e2e.mts:177` tests external deletion only through
+  `state()` — the one method that goes through simctl rather than the
+  companion. Fix: when a companion start fails, consult `findDevice`; if the
+  udid is gone, throw `SimulatorNotFoundError`. Extend the e2e case to a
+  companion-path method (`describeScreen` or `findByLabel`). This matters
+  before step 3: the server's error rendering is built on this promise.
+
+- [ ] **#77 `delete()` failure paths leave the udid wedged shut.**
+  `simulator.ts:544`: `closeCompanion` runs first (correctly), but if
+  `simctl delete` then fails for a real reason the method throws without
+  `reopenCompanion` — every later read on the still-existing simulator, from
+  any handle in the process, fails inside `companionFor` with an untyped
+  `IdbError` ("is being shut down"). Related edge: if the simulator was
+  already externally deleted, the mapped `SimulatorNotFoundError` propagates
+  but `this.deleted` stays false and `recovery.forget` never runs. Fix:
+  reopen on the failure path; mark the handle stale (and forget recovery)
+  when the mapped error is itself `SimulatorNotFoundError`.
+
+- [ ] **#78 `parseLaunchPid` can misparse a digit-ending bundle id.**
+  `lifecycle.ts:229` matches `/(\d+)\s*$/`. The doc claims a no-pid reply
+  "stays null", but if such a reply is just the bundle id and the id ends in
+  digits (`com.example.app2`), the trailing digits parse as a pid. Requiring
+  a delimiter — `/[:\s](\d+)\s*$/` — keeps the fixed behaviour (the `/^(\d+)/`
+  bug this replaced) and closes the hole.
+
+- [ ] **#79 Custom `resizeTo: {width, height}` is applied before rotation, so
+  a landscape screenshot comes back transposed.** In `captureScreenshot`
+  (`capture.ts:260`) the resize acts on the portrait capture and the rotation
+  follows — correct by construction for `"points"`, but a caller asking for
+  `{width: 800, height: 600}` in landscape receives 600×800. Decide the
+  contract: either document that explicit dimensions are interpreted in
+  portrait space, or swap them when a rotation is coming. Either way the
+  `ScreenshotOptions.resizeTo` doc should say which.
+
+- [ ] **#80 `startRecording` attaches its `close` cleanup after
+  `await started`.** `simulator.ts:1870`: a recording that says "Recording
+  started" and then dies while `started` is being awaited emits `close`
+  before the listener exists; `this.recording` then holds a dead child and
+  the handle refuses new recordings until a manual `stopRecording()`. Narrow
+  window; free fix: attach the `close` handler and `trackRecording`
+  synchronously with the spawn, as `waitForRecordingStart` attaches its own.
+
+- [ ] **#81 `waitForBootStatus`'s spawned child has no `error` listener.** If
+  `deps.spawn` cannot execute the binary, the unhandled `error` event crashes
+  the process (EventEmitter semantics). Effectively unreachable on a working
+  macOS box, but it is the only unguarded spawn in the library —
+  `awaitReadiness` and `waitForRecordingStart` both handle it. Fold into #75's
+  rewrite of the same function.
+
+- [ ] **#82 A few untyped errors are reachable by callers**, against design
+  rule 2's spirit: the closed-udid refusal (`companionManager.ts:172` — a
+  concurrent read during `delete()` sees `IdbError`, which is not exported so
+  cannot even be instanceof-checked) and `readLock`'s missing-lockfile
+  `IdbError` (`companionBinary.ts:139`), which is arguably a
+  companion-download/start condition. Decide codes or accept and document.
+
+## Spec / plan deviations needing sign-off or a doc fix
+
+- [ ] **#83 Contract check 8's `--wedge` flag was never implemented, and the
+  variation is unsigned.** The plan specifies it; the script instead documents
+  (convincingly — see #69's measurements) that a wedge cannot be manufactured
+  on demand and that the empty-point half is the load-bearing half. The plan's
+  rule is sign-off *before* the variation is written; nothing in the repo
+  records it. Same story as `(string & {})` replacing the spec's `| string`.
+  Both are probably right; both are currently unverifiable — see #74.
+
+- [ ] **#84 `decideTapVerb` contradicts the `TapOptions` doc for toggles.**
+  `TapOptions.durationSeconds` (`simulator.ts:122`) says a sub-floor duration
+  "changes nothing", but `decideTapVerb` (`ax/tap.ts:100`) treats *any*
+  explicit duration on a toggle as a hold → `ToggleGestureError`. So
+  `tap({label}, {durationSeconds: 0.1})` throws where omitting the option
+  activates. tap.ts defends the reading; the public-type doc should carry the
+  caveat, since it is the one callers see.
+
+- [ ] **#85 Plan step 5's `describeObstruction(atPoint)` pure extraction does
+  not exist.** The behaviour lives in `TapObstructedError`'s constructor and
+  is covered at the fake layer and in the e2e — missing named extraction, not
+  missing coverage. Extract or strike it from the plan with a note.
+
+## Comments that do not match the code
+
+- [ ] **#86 Stale comments from the `AXElement`/`RawAXElement` rename, plus
+  smaller doc-attachment defects.** All cheap; the first two are actively
+  misleading at the library's most important type boundary:
+  - `ax/tree.ts:39` — the closed type's doc says it is "the type `index.ts`
+    publishes as `RawAXElement`". Inverted: index.ts publishes it as
+    `AXElement`; `RawAXElement` is the internal open type.
+  - `simulator.ts:46` — claims tree.ts's own `AXElement` is the open type,
+    "aliased `RawAXElement` here"; both halves stale, and the import contains
+    no aliasing.
+  - `lifecycle.ts:204` — `deriveDeviceName`'s doc comment is stranded:
+    `parseLaunchPid` (doc + function) was inserted between the comment and
+    the function it documents.
+  - `simulator.ts:177` — `HID_BUTTON` says "unlike `HID_ORIENTATION` above";
+    it is 40 lines below.
+  - `test/fakes/idb.ts:49` — claims the action-API "found no element" wording
+    is "not pinned by any contract check"; check 12 pins exactly that.
+  - `lifecycle.ts:25` — "the closed public one lands in plan step 8" (it
+    landed); `internal/registry.ts`'s step-ownership header narrates the
+    build order and then patches itself ("Step 3 has since done exactly
+    that") — rewrite both in the present tense.
+
+- [ ] **#87 TESTING_LIBRARY.md defects.** Two contradictory items both
+  numbered 4 (~line 201): the first correctly records the `launchApp` pid
+  parse as fixed and asserted; the stale second claims it was "faithfully
+  ported" and unasserted — delete the second. Line 17 says "250 unit tests";
+  the suite reports 495.
+
+## Housekeeping
+
+- [ ] **#88 Repo hygiene.** `.DS_Store` is untracked and not in `.gitignore`.
+  `packages/simgadget/build/` is committed alongside `src/` — if deliberate
+  (the exports test builds into it), note it; otherwise gitignore it, since
+  its stale `.d.ts` files will drift. (`companion.lock.json` and
+  `package.json` still pointing at the old repo path is **correct** for this
+  phase — plan Risks says so; do not "fix" it.)
+
 # TODO — Production bug, reported 2026-08-15
 
 - [x] **#60 FIXED 2026-08-15. The offset was in the tree all along, and we were throwing it away.**
