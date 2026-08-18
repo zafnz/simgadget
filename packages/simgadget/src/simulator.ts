@@ -1929,22 +1929,38 @@ export class Simulator {
     );
     const started = waitForRecordingStart(this.deps, child);
 
+    // Everything this handle owes the child is arranged here, in the same
+    // window as the spawn and for the same reason the listeners are: a child
+    // that says "Recording started" and then dies says the second thing
+    // within milliseconds, and a handler attached after `await started` can
+    // miss it entirely.
+    //
+    // Nothing else will ever stop this process, so the library takes
+    // responsibility for it from here — see `trackRecording`.
+    trackRecording(child);
+    // A recording that dies on its own must not leave the handle permanently
+    // refusing to start another (index.ts:2514). Guarded on identity, so a
+    // late `close` from the process this one replaced cannot clear a
+    // successor.
+    let closed = false;
+    child.on("close", () => {
+      closed = true;
+      if (this.recording?.child === child) this.recording = null;
+    });
+
     try {
       await started;
     } catch (error) {
       throw this.mapSimctlError(error);
     }
 
-    this.recording = { child, path: absolutePath };
-    // Nothing else will ever stop this process, so the library takes
-    // responsibility for it from here — see `trackRecording`.
-    trackRecording(child);
-    // A recording that dies on its own must not leave the handle permanently
-    // refusing to start another (index.ts:2514). Guarded on identity, so a
-    // late `close` from the process this one replaced cannot clear it.
-    child.on("close", () => {
-      if (this.recording?.child === child) this.recording = null;
-    });
+    // `closed` is the other half of the same guard, and it is why attaching
+    // the listener early is not enough on its own. A child that closes in the
+    // window between announcing itself and this line finds nothing to clear —
+    // the handle has not published it yet — and publishing it afterwards
+    // would store a process that has already gone, which is exactly the state
+    // that refuses every later recording until someone stops a corpse.
+    if (!closed) this.recording = { child, path: absolutePath };
   }
 
   /**

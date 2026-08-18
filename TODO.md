@@ -358,13 +358,25 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   portrait space, or swap them when a rotation is coming. Either way the
   `ScreenshotOptions.resizeTo` doc should say which.
 
-- [ ] **#80 `startRecording` attaches its `close` cleanup after
-  `await started`.** `simulator.ts:1870`: a recording that says "Recording
-  started" and then dies while `started` is being awaited emits `close`
-  before the listener exists; `this.recording` then holds a dead child and
-  the handle refuses new recordings until a manual `stopRecording()`. Narrow
-  window; free fix: attach the `close` handler and `trackRecording`
-  synchronously with the spawn, as `waitForRecordingStart` attaches its own.
+- [x] **#80 DONE 2026-08-18. `startRecording` arranges everything it owes the
+  child in the same window as the spawn.** `trackRecording` and the `close`
+  handler are attached before `await started`, keeping the identity guard. The
+  early listener alone turned out not to be enough, and the test is what said
+  so: a close arriving before the handle has published the recording finds
+  nothing of its own to clear, and the publish that follows would store a
+  process that had already gone. So the same handler sets a `closed` flag and
+  the publish is skipped — the handle ends the call with no active recording
+  rather than with a corpse, which is the stated observable ("able to start a
+  new recording"). Test: `test/capture.test.mts`, "a recording that dies the
+  instant it starts releases the handle too", verified to fail against the
+  previous ordering before being kept. TESTING_LIBRARY.md records why the
+  fixture cannot stage this.
+
+  Original finding: `simulator.ts:1870` attached the `close` cleanup after
+  `await started`, so a recording that said "Recording started" and then died
+  while `started` was being awaited emitted `close` before the listener
+  existed; `this.recording` then held a dead child and the handle refused new
+  recordings until a manual `stopRecording()`.
 
 - [x] **#81 DONE 2026-08-18. The spawned bootstatus child has an `error`
   listener.** Folded into #75's rewrite of the same function, as that item

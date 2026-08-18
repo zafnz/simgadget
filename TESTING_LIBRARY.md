@@ -238,6 +238,18 @@ a tap under 100 ms means the hold floor has been lost and taps are unreliable
 again, and a point read at ~300 ms means `isRemotelyHosted` is firing on
 ordinary elements — in both cases every other check still passes. See TODO #73.
 
+**A recorder that dies the instant it starts is not something a device does on
+request.** `simctl io recordVideo` either records or fails outright, and the
+case that matters sits between the two: a child that says "Recording started"
+and then exits within the same millisecond, while `startRecording` is still
+waiting on that greeting. What it costs is not the lost clip — it is that the
+handle is left holding a dead process and refuses every later recording until
+someone stops one that has already gone. Pinned at the fake layer instead
+(`test/capture.test.mts`, "a recording that dies the instant it starts releases
+the handle too"), where the greeting and the close can be delivered in that
+order deliberately. What this suite does check is the ordinary path either side
+of it: a recording that starts, stops, and leaves a non-empty file.
+
 **`delete()`'s failure paths cannot be reached from here, and the state they
 leave behind is process-wide.** The suite deletes simulators that delete
 cleanly, which is the only kind a real run produces on demand. What the failure

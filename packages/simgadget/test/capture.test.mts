@@ -581,6 +581,26 @@ test("Simulator.startRecording", async (t) => {
 
     assert.equal(harness.deps.calls.spawn.length, 2);
   });
+
+  await t.test("a recording that dies the instant it starts releases the handle too", async () => {
+    // The narrow window: the child announces itself and then closes before
+    // `startRecording` has published it. Both halves of the guard are needed
+    // for this — the listener has to exist already (it is attached with the
+    // spawn, not after `await started`), and the close it sees has to stop
+    // the publish, because at that moment there is nothing yet to clear.
+    // Without either, the handle ends up holding a process that has already
+    // gone and refuses every later recording until someone stops a corpse.
+    const harness = recordingHarness();
+
+    const started = harness.sim.startRecording("out.mp4");
+    const child = harness.children.at(-1)!;
+    child.emitStderr("Recording started\n");
+    child.emitClose(0);
+    await started;
+
+    await assert.doesNotReject(startRecording(harness, "second.mp4"));
+    assert.equal(harness.deps.calls.spawn.length, 2);
+  });
 });
 
 test("Simulator.stopRecording", async (t) => {
