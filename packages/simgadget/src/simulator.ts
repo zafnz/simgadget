@@ -599,11 +599,33 @@ export class Simulator {
     await this.deps.closeCompanion(this.udid);
 
     try {
-      await this.deps.run("xcrun", ["simctl", "shutdown", this.udid]);
-    } catch {
-      // May already be shut down.
+      try {
+        await this.deps.run("xcrun", ["simctl", "shutdown", this.udid]);
+      } catch {
+        // May already be shut down.
+      }
+      await this.runSimctl(["delete", this.udid]);
+    } catch (error) {
+      // The close above blocks every companion for this udid, and it stays
+      // blocked until something reopens it. On the success path nothing
+      // should: the simulator is gone. On a failure path the simulator is
+      // still there and still meant to be drivable, and without this the udid
+      // is wedged shut for the whole process — every later read, from any
+      // handle, dying inside `companionFor` with an untyped "is being shut
+      // down".
+      //
+      // Unless the failure is that it had already been deleted, in which case
+      // the caller's wish has been granted by someone else: mark the handle
+      // stale and drop the recovery state exactly as a successful delete
+      // does, so the error is the only difference between the two.
+      if (error instanceof SimulatorNotFoundError) {
+        this.deleted = true;
+        this.deps.recovery.forget(this.udid);
+      } else {
+        this.deps.reopenCompanion(this.udid);
+      }
+      throw error;
     }
-    await this.runSimctl(["delete", this.udid]);
 
     this.deleted = true;
     this.deps.recovery.forget(this.udid);

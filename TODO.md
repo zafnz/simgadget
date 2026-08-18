@@ -313,16 +313,28 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   `companion-start-failed`. The e2e knew: it tested external deletion only
   through `state()`, the one method that goes through simctl.
 
-- [ ] **#77 `delete()` failure paths leave the udid wedged shut.**
-  `simulator.ts:544`: `closeCompanion` runs first (correctly), but if
-  `simctl delete` then fails for a real reason the method throws without
-  `reopenCompanion` — every later read on the still-existing simulator, from
-  any handle in the process, fails inside `companionFor` with an untyped
-  `IdbError` ("is being shut down"). Related edge: if the simulator was
-  already externally deleted, the mapped `SimulatorNotFoundError` propagates
-  but `this.deleted` stays false and `recovery.forget` never runs. Fix:
-  reopen on the failure path; mark the handle stale (and forget recovery)
-  when the mapped error is itself `SimulatorNotFoundError`.
+- [x] **#77 DONE 2026-08-18. A `delete()` that fails no longer leaves the udid
+  wedged shut.** The shutdown/delete pair is wrapped: any failure other than
+  `SimulatorNotFoundError` calls `reopenCompanion` before rethrowing, so a
+  simulator that is still there is still drivable. A mapped
+  `SimulatorNotFoundError` — someone else deleted it first — instead marks the
+  handle deleted and runs `recovery.forget`, so the thrown error is the only
+  difference between that and a delete that worked, and the companion stays
+  blocked because there is nothing left to drive. Tests:
+  `test/simulator.test.mts`, "a delete that fails for a real reason reopens the
+  companion" (asserts the reopen lands *after* the failed simctl call, via the
+  fake's ordered call log, and that the handle still works) and "a delete that
+  finds it already gone marks the handle stale anyway" (no reopen, recovery
+  forgotten, and the handle touches deps no further). TESTING_LIBRARY.md
+  records why the e2e cannot reach either path.
+
+  Original finding: `closeCompanion` ran first (correctly), but a `simctl
+  delete` that then failed for a real reason threw without `reopenCompanion`,
+  so every later read on the still-existing simulator, from any handle in the
+  process, failed inside `companionFor` with an untyped `IdbError` ("is being
+  shut down"). Related edge: an already externally deleted simulator propagated
+  the mapped `SimulatorNotFoundError` while `this.deleted` stayed false and
+  `recovery.forget` never ran.
 
 - [ ] **#78 `parseLaunchPid` can misparse a digit-ending bundle id.**
   `lifecycle.ts:229` matches `/(\d+)\s*$/`. The doc claims a no-pid reply

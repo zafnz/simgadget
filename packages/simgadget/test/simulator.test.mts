@@ -240,6 +240,64 @@ test("Simulator.delete()", async (t) => {
 
     assert.equal(deps.recovery.hasAnswered("UDID-CLEARS"), false);
   });
+
+  // The close that opens `delete()` blocks every companion for the udid until
+  // something reopens it, and only the two paths below decide which. Getting
+  // this wrong is silent: the delete throws, the simulator is still there and
+  // still meant to be drivable, and every later read from any handle in the
+  // process dies inside `companionFor` instead.
+  await t.test("a delete that fails for a real reason reopens the companion", async () => {
+    const deps = createFakeDeps({
+      run: (cmd, args) => {
+        if (args[1] === "delete") throw new Error("Unable to delete: device is booted");
+        // Still listed: the delete failed, so the simulator is still there.
+        if (args[1] === "list") return devicesListing(true);
+        return { stdout: "", stderr: "" };
+      },
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+    deps.recovery.markAnswered("UDID");
+
+    await assert.rejects(sim.delete(), (error: unknown) => {
+      assert.doesNotMatch((error as Error).constructor.name, /SimulatorNotFound/);
+      return true;
+    });
+
+    // Reopened, and after the failed delete rather than before it.
+    assert.deepEqual(deps.calls.reopenCompanion, ["UDID"]);
+    assert.ok(
+      deps.calls.order.indexOf("reopenCompanion:UDID") >
+        deps.calls.order.indexOf("run:xcrun simctl delete UDID")
+    );
+    // The simulator still exists, so the handle is still good for it and the
+    // recovery state is still about a real device.
+    assert.equal(deps.recovery.hasAnswered("UDID"), true);
+    // And the handle is still a working handle on it, not a stale one.
+    assert.equal(await sim.state(), "Booted");
+  });
+
+  await t.test("a delete that finds it already gone marks the handle stale anyway", async () => {
+    const deps = createFakeDeps({
+      run: (cmd, args) => {
+        if (args[1] === "delete") throw new Error("Invalid device: UDID");
+        return { stdout: "", stderr: "" };
+      },
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+    deps.recovery.markAnswered("UDID");
+
+    await assert.rejects(sim.delete(), (error: unknown) => error instanceof SimulatorNotFoundError);
+
+    // Someone else granted the caller's wish. The error is the only difference
+    // between this and a delete that worked: the handle is stale, the recovery
+    // state is dropped, and the companion stays blocked because there is no
+    // simulator left to drive.
+    assert.deepEqual(deps.calls.reopenCompanion, []);
+    assert.equal(deps.recovery.hasAnswered("UDID"), false);
+    const ordersBefore = deps.calls.order.length;
+    await assert.rejects(sim.state(), (error: unknown) => error instanceof SimulatorNotFoundError);
+    assert.equal(deps.calls.order.length, ordersBefore, "a stale handle must not touch deps");
+  });
 });
 
 // ---- external deletion, on the companion path ------------------------------

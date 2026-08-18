@@ -227,6 +227,22 @@ a tap under 100 ms means the hold floor has been lost and taps are unreliable
 again, and a point read at ~300 ms means `isRemotelyHosted` is firing on
 ordinary elements — in both cases every other check still passes. See TODO #73.
 
+**`delete()`'s failure paths cannot be reached from here, and the state they
+leave behind is process-wide.** The suite deletes simulators that delete
+cleanly, which is the only kind a real run produces on demand. What the failure
+paths decide is who reopens the companion: `delete()` closes it first, on
+purpose, so that a concurrent call cannot respawn one against a device that is
+about to stop existing — and that block outlives the call. A delete that then
+fails for a real reason leaves a simulator that is still there, still meant to
+be drivable, and blocked for every handle in the process until something
+reopens it. A delete that fails because the device had *already* been deleted
+is the opposite: nothing to reopen, and the handle must go stale exactly as a
+successful delete leaves it. Both are asserted against the fake's ordered call
+log in `test/simulator.test.mts` ("a delete that fails for a real reason
+reopens the companion", "a delete that finds it already gone marks the handle
+stale anyway"), because forcing `simctl delete` to fail on a real machine means
+contriving the failure, and a contrived failure proves the contrivance.
+
 **A timer that outlives the call it was armed in is not assertable here, and
 the suite's wall clock is the only sign of it.** Twice now a raced
 `deps.sleep` has been left pending after the race was decided — the recording
