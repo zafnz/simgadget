@@ -411,8 +411,9 @@ test("a failed companion call is resolved against simctl", async (t) => {
 
   await t.test("a udid that is gone becomes SimulatorNotFoundError however it failed", async () => {
     // The e2e's case: the handle already had a companion, so the failure never
-    // goes near a spawn. `delete()` blocks the udid, and the manager's refusal
-    // is an untyped IdbError that says nothing about the simulator being gone.
+    // goes near a spawn. Any shape at all arrives here -- the point of asking
+    // simctl is that the shapes were never enumerable -- so the fake throws a
+    // plain Error, and simctl is what decides.
     const deps = createFakeDeps({
       run: () => devicesListing(false),
       client: {
@@ -426,6 +427,33 @@ test("a failed companion call is resolved against simctl", async (t) => {
     await assert.rejects(sim.describeScreen(), (error: unknown) => {
       assert.ok(error instanceof SimulatorNotFoundError, `got ${(error as Error).name}`);
       assert.equal(error.udid, "UDID");
+      return true;
+    });
+  });
+
+  await t.test("a typed refusal mid-delete survives the simctl question", async () => {
+    // The other half of TODO #82: `delete()` closes the udid, then spends
+    // seconds in simctl, so a concurrent read is refused while the device is
+    // *still listed*. `withClient` then asks simctl, is told it exists, and
+    // rethrows what it caught -- which has to already be the typed error, or
+    // this window is the one place a caller still gets an unbranchable one.
+    const refusal = new SimulatorNotFoundError(
+      "UDID",
+      "Simulator UDID is being shut down, so no companion will be started for it."
+    );
+    const deps = createFakeDeps({
+      run: () => devicesListing(true),
+      client: {
+        accessibilityInfo: async () => {
+          throw refusal;
+        },
+      },
+    });
+    const sim = new Simulator("UDID", "iPhone", deps);
+
+    await assert.rejects(sim.describeScreen(), (error: unknown) => {
+      assert.equal(error, refusal, "rethrown as caught, prose and all");
+      assert.equal((error as SimulatorNotFoundError).code, "simulator-not-found");
       return true;
     });
   });

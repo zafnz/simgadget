@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 
+import fs from "node:fs";
+
 import {
   assertSupportedArchitecture,
   cacheRoot,
   findVendorCompanion,
+  readLock,
 } from "../src/idb/companionBinary.ts";
-import { UnsupportedArchitectureError } from "../src/errors.ts";
+import { CompanionDownloadError, UnsupportedArchitectureError } from "../src/errors.ts";
 import { resetEnvWarnings } from "../src/env.ts";
 
 /** Runs `fn` against a scratch copy of `process.env`, restored afterwards. */
@@ -113,6 +116,46 @@ test("cacheRoot", async (t) => {
         path.join(os.homedir(), "Library", "Caches", "simgadget")
       );
     });
+  });
+});
+
+test("readLock", async (t) => {
+  // TODO #82: both failures used to be an `IdbError`, which is not exported --
+  // so a caller could read the message and nothing else. The code is what any
+  // of this is for.
+  // Only the injected path is exercised: the default resolves through
+  // `__dirname`, which does not exist when the suite runs the TypeScript
+  // directly. The shipped file is read for real by the e2e suite instead.
+  await t.test("a missing lock file is a typed download failure", () => {
+    const missing = path.join(os.tmpdir(), "simgadget-no-such-lock-file.json");
+    assert.equal(fs.existsSync(missing), false, "the fixture path must not exist");
+
+    try {
+      readLock(missing);
+      assert.fail("expected a throw");
+    } catch (error) {
+      assert.ok(error instanceof CompanionDownloadError, `got ${(error as Error).name}`);
+      assert.equal(error.code, "companion-download-failed");
+      // The prose is the remedy, and it must survive being given a code.
+      assert.match(error.message, /SIMGADGET_COMPANION_PATH/);
+      assert.match(error.message, /companion\.lock\.json/);
+    }
+  });
+
+  await t.test("an unreadable lock file is the same failure, one step later", () => {
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "simgadget-lock-"));
+    const lockPath = path.join(scratch, "companion.lock.json");
+    fs.writeFileSync(lockPath, "{ this is not json");
+    try {
+      readLock(lockPath);
+      assert.fail("expected a throw");
+    } catch (error) {
+      assert.ok(error instanceof CompanionDownloadError, `got ${(error as Error).name}`);
+      assert.equal(error.code, "companion-download-failed");
+      assert.match(error.message, /not readable JSON/);
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });
 

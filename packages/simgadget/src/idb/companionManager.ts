@@ -18,7 +18,7 @@ import fs from "fs";
 import path from "path";
 import { IdbClient, IdbError } from "./client.ts";
 import { resolveCompanion } from "./companionBinary.ts";
-import { CompanionStartError } from "../errors.ts";
+import { CompanionStartError, SimulatorNotFoundError } from "../errors.ts";
 
 /** Companions take ~0.5s to bind; a cold simulator can take considerably longer. */
 const READY_TIMEOUT_MS = 30_000;
@@ -168,8 +168,17 @@ export class CompanionManager {
 
   /** Live companion for `udid`, spawning or replacing a dead one as needed. */
   private async companionFor(udid: string): Promise<Companion> {
+    // Typed, not an `IdbError`: `delete()` is the only thing that closes a
+    // udid, so a call arriving here is a call racing a teardown, and the
+    // caller's remedy is the same one the stale-handle check gives it a moment
+    // later — stop using this simulator. An `IdbError` said so in prose only,
+    // and is not exported, so nothing downstream could even `instanceof` it.
+    // The one case this overstates is a `delete()` that then fails and
+    // reopens the udid; that caller asked for the deletion, and a momentary
+    // "gone" is a better answer than an unbranchable one.
     if (this.closed.has(udid)) {
-      throw new IdbError(
+      throw new SimulatorNotFoundError(
+        udid,
         `Simulator ${udid} is being shut down, so no companion will be started for it.`
       );
     }

@@ -132,11 +132,25 @@ function locallyBuiltCompanion(): string | undefined {
   return found && isUsable(found) ? found : undefined;
 }
 
-/** Reads the lock file shipped alongside the compiled server. */
-export function readLock(): CompanionLock {
-  const lockPath = path.join(packageRoot(), "companion.lock.json");
+/**
+ * Reads the lock file shipped alongside the compiled server.
+ *
+ * Both failures are `CompanionDownloadError`: the lock file is the thing a
+ * download is made from, so a missing or unreadable one is the download path
+ * failing before it reaches the network, and the caller's remedy — point
+ * `SIMGADGET_COMPANION_PATH` at a binary — is the same either way. They were
+ * `IdbError`s, which no caller could branch on because it is not exported.
+ *
+ * `lockPath` is injected the way `findVendorCompanion`'s `exists` is, and for
+ * the same reason: the shipped lock file is always present in this repository,
+ * so neither failure is reachable in a test without it.
+ */
+export function readLock(
+  lockPath: string = path.join(packageRoot(), "companion.lock.json")
+): CompanionLock {
   if (!fs.existsSync(lockPath)) {
-    throw new IdbError(
+    throw new CompanionDownloadError(
+      `no companion.lock.json at ${lockPath}`,
       `No companion.lock.json found at ${lockPath}, so there is no pinned ` +
         `idb_companion to download. Point SIMGADGET_COMPANION_PATH at ` +
         `an idb_companion binary, or build one with the build-companion workflow.`
@@ -145,7 +159,8 @@ export function readLock(): CompanionLock {
   try {
     return JSON.parse(fs.readFileSync(lockPath, "utf-8")) as CompanionLock;
   } catch (error) {
-    throw new IdbError(
+    throw new CompanionDownloadError(
+      `unreadable companion.lock.json at ${lockPath}`,
       `companion.lock.json at ${lockPath} is not readable JSON: ${(error as Error).message}`
     );
   }
@@ -169,6 +184,12 @@ function localCompanion(log: (message: string) => void): string | undefined {
   if (override) {
     const expanded = expandTilde(override);
     if (!fs.existsSync(expanded)) {
+      // Deliberately still an untyped `IdbError` (TODO #82). Nothing in the
+      // frozen `ErrorCode` union is honest about it: no download was wanted —
+      // avoiding one is what the override is for — and nothing was spawned, so
+      // neither companion code fits. A caller reads the message, and the
+      // message is the whole remedy. Giving it a code means adding one, which
+      // is a spec change rather than a tidy-up.
       throw new IdbError(
         `SIMGADGET_COMPANION_PATH points at a file that does not exist: ${expanded}`
       );

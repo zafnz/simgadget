@@ -404,12 +404,37 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   unreachable on a working macOS box, but it was the only unguarded spawn in
   the library — `awaitReadiness` and `waitForRecordingStart` both handle it.
 
-- [ ] **#82 A few untyped errors are reachable by callers**, against design
-  rule 2's spirit: the closed-udid refusal (`companionManager.ts:172` — a
-  concurrent read during `delete()` sees `IdbError`, which is not exported so
-  cannot even be instanceof-checked) and `readLock`'s missing-lockfile
-  `IdbError` (`companionBinary.ts:139`), which is arguably a
-  companion-download/start condition. Decide codes or accept and document.
+- [x] **#82 DONE 2026-08-20. Both named sites carry codes; one further site is
+  deliberately left untyped and now says so.**
+  - **The closed-udid refusal is `SimulatorNotFoundError`.** `delete()` is the
+    only thing that closes a udid, so a call arriving at the refusal is a call
+    racing a teardown, and the caller's remedy is the one the stale-handle
+    check gives it a moment later. The prose is kept as an override, so
+    "being shut down" still distinguishes it from a udid that was never there.
+    Overstated only by a `delete()` that then fails and reopens — a caller who
+    asked for the deletion, getting a momentary "gone" instead of an
+    unbranchable error.
+  - **The window this closes is narrow and was the whole bug.** `withClient`
+    resolves a companion failure by asking simctl, so a udid already gone came
+    back typed anyway; between `closeCompanion` and the end of `simctl delete`
+    the device is *still listed*, so the raw error was rethrown as caught.
+    That path now has its own test.
+  - **`readLock`'s two failures are `CompanionDownloadError`.** The lock file
+    is what a download is made from, so missing or unparseable is the download
+    path failing before the network, with the same remedy. The code's gloss
+    widened to "HTTP failure, checksum mismatch, or no readable pin to fetch"
+    in both `errors.ts` and SIMGADGET.md. `readLock` takes an optional path now
+    — the shipped file always exists, so neither branch was reachable in a test
+    otherwise.
+  - **Left untyped on purpose, with a comment saying why:
+    `SIMGADGET_COMPANION_PATH` pointing at a missing file**
+    (`companionBinary.ts`). Nothing in the frozen `ErrorCode` union is honest
+    about it: no download was wanted — avoiding one is what the override is for
+    — and nothing was spawned. Typing it means *adding* a code, which is a spec
+    change and your call, not a tidy-up. Same reasoning covers the three
+    remaining `IdbError`s in `companionManager.ts` (socket dir not ours, uid
+    mismatch, sun_path overrun), which are environment pathologies a caller can
+    only read.
 
 ## Spec / plan deviations needing sign-off or a doc fix
 
@@ -421,13 +446,19 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   records it. Same story as `(string & {})` replacing the spec's `| string`.
   Both are probably right; both are currently unverifiable — see #74.
 
-- [ ] **#84 `decideTapVerb` contradicts the `TapOptions` doc for toggles.**
-  `TapOptions.durationSeconds` (`simulator.ts:122`) says a sub-floor duration
-  "changes nothing", but `decideTapVerb` (`ax/tap.ts:100`) treats *any*
-  explicit duration on a toggle as a hold → `ToggleGestureError`. So
-  `tap({label}, {durationSeconds: 0.1})` throws where omitting the option
-  activates. tap.ts defends the reading; the public-type doc should carry the
-  caveat, since it is the one callers see.
+- [x] **#84 DONE 2026-08-20. The doc carries the caveat; the behaviour is
+  unchanged.** `TapOptions.durationSeconds` now says that passing less than the
+  floor changes nothing *about the touch*, and that setting it at all makes a
+  `{label}` tap at a toggle a hold — refused with `ToggleGestureError` even
+  below the floor, because asking for a duration is what marks a caller as
+  wanting a real press. SIMGADGET.md's copy of the type says the same in one
+  sentence.
+  - **Not fixed the other way round on purpose.** Treating a sub-floor duration
+    as plain would hand a caller who asked for a press an activation instead —
+    a different verb, quietly. The refusal is the honest answer.
+  - The pure layer already pinned it (`tap.test.mts`, "a switch, held for less
+    than the floor"); the public layer now does too, at the exact call in this
+    entry.
 
 - [ ] **#85 Plan step 5's `describeObstruction(atPoint)` pure extraction does
   not exist.** The behaviour lives in `TapObstructedError`'s constructor and

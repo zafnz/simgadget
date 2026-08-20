@@ -37,7 +37,7 @@ import type { AXElement } from "./ax/tree.ts";
 export type ErrorCode =
   // environment / companion
   | "unsupported-architecture" // not Apple Silicon; message names the arch
-  | "companion-download-failed" // HTTP failure or checksum mismatch
+  | "companion-download-failed" // HTTP failure, checksum mismatch, or no readable pin to fetch
   | "companion-start-failed" // spawned but never bound / never ready
   // simulator lifecycle
   | "simulator-not-found" // bad udid on attach, or a stale handle after delete()
@@ -108,10 +108,12 @@ export class UnsupportedArchitectureError extends SimGadgetError {
 }
 
 /**
- * The pinned companion could not be fetched or did not verify. Also carries
- * no payload field, for the same reason as above: `reason` is prose ("HTTP
- * 404", "checksum mismatch"), not a value a caller would match on — `code`
- * already is that value.
+ * The pinned companion could not be fetched or did not verify — including the
+ * cases where the fetch never starts because `companion.lock.json` is missing
+ * or unreadable, which is the same failure one step earlier and has the same
+ * remedy. Also carries no payload field, for the same reason as above:
+ * `reason` is prose ("HTTP 404", "checksum mismatch"), not a value a caller
+ * would match on — `code` already is that value.
  */
 export class CompanionDownloadError extends SimGadgetError {
   constructor(reason: string, message?: string) {

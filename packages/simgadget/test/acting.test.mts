@@ -467,6 +467,28 @@ test("tap({label}) on a toggle", async (t) => {
     assert.deepEqual(client.activations, [], "a hold is not silently downgraded either");
   });
 
+  await t.test("a sub-floor duration is still a hold, and still refused", async () => {
+    // The caveat `TapOptions.durationSeconds` now carries, pinned where a
+    // caller meets it. Below the floor the touch delivered would have been
+    // byte-identical to the default one, so this refusal is the *asking*
+    // being read, not the number -- and the doc said "passing less changes
+    // nothing" while this threw, which is what TODO #84 was.
+    const { sim, client } = harness({
+      screen: () => screenTree(390, 844, [SWITCH]),
+      marker: markerIn([SWITCH]),
+      point: hitTest(SWITCH),
+    });
+
+    const error = await caught(() =>
+      sim.tap({ label: "Plain Switch" }, { durationSeconds: MIN_TAP_HOLD_SECONDS / 2 })
+    );
+
+    assert.ok(error instanceof ToggleGestureError);
+    assert.equal(error.gesture, "hold");
+    assert.deepEqual(client.taps, []);
+    assert.deepEqual(client.activations, [], "not downgraded to the activation either");
+  });
+
   await t.test("a multi-tap aimed at a toggle is refused as a multi-tap", async () => {
     const { sim, client } = harness({
       screen: () => screenTree(390, 844, [SWITCH]),

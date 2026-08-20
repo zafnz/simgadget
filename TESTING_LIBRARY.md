@@ -14,7 +14,7 @@ npm run test:e2e -w simgadget
 Roughly 110 seconds, unattended, from a cold start. It creates two throwaway
 simulators, deletes them, and leaves nothing behind.
 
-## Why it exists, given there are already 509 unit tests
+## Why it exists, given there are already 518 unit tests
 
 The unit suite proves the library calls the right things in the right order,
 against a fake `idb_companion` that answers instantly and always agrees with

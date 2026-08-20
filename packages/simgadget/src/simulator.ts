@@ -124,8 +124,17 @@ export type TapTarget = { x: number; y: number } | { label: string };
 export interface TapOptions {
   /** Press duration in seconds. A floor of 0.1s is always applied — an
    * instantaneous touch actuates a control about half the time (measured
-   * 5/12; with the floor 12/12) — so passing less changes nothing. Above
-   * ~0.5s UIKit reads it as a long press. */
+   * 5/12; with the floor 12/12) — so passing less changes nothing about the
+   * touch itself. Above ~0.5s UIKit reads it as a long press.
+   *
+   * One thing it does change, and the one place the number and the asking
+   * come apart: on a `{label}` tap at a **toggle**, setting this at all makes
+   * the gesture a hold, and a hold at a toggle is refused with
+   * `ToggleGestureError` — including at a value under the floor, where the
+   * touch delivered would have been identical to the default one. Asking for
+   * a duration is what marks a caller as wanting a real press, and a real
+   * press at a toggle's centre lands in the gap beside the control. Omit it
+   * to get the activation that works. */
   durationSeconds?: number;
   /** Number of taps; 2 = double-tap. Default 1. */
   count?: number;
@@ -464,8 +473,10 @@ export class Simulator {
    * a companion spawned for a udid that no longer exists cannot resolve its
    * target and exits (`CompanionStartError`), while a udid that already had
    * one fails somewhere else entirely — including the manager's own refusal
-   * to start a companion for a udid `delete()` has closed. Chasing the shapes
-   * is how half of this went missing the first time.
+   * to start a companion for a udid `delete()` has closed, which arrives
+   * already typed and is rethrown as it stands, since simctl still lists a
+   * device that is mid-deletion. Chasing the shapes is how half of this went
+   * missing the first time.
    *
    * So the question is asked of the only thing that can answer it: a failed
    * companion call consults simctl, and only a udid that is genuinely gone is

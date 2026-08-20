@@ -238,7 +238,7 @@ export class SimGadgetError extends Error {
 export type ErrorCode =
   // environment / companion
   | "unsupported-architecture"   // not Apple Silicon; message names the arch
-  | "companion-download-failed"  // HTTP failure or checksum mismatch
+  | "companion-download-failed"  // HTTP failure, checksum mismatch, or no readable pin to fetch
   | "companion-start-failed"     // spawned but never bound / never ready
   // simulator lifecycle
   | "simulator-not-found"        // bad udid on attach, or a stale handle after delete()
@@ -405,8 +405,11 @@ export type TapTarget = { x: number; y: number } | { label: string };
 export interface TapOptions {
   /** Press duration in seconds. A floor of 0.1s is always applied — an
    * instantaneous touch actuates a control about half the time (measured
-   * 5/12; with the floor 12/12) — so passing less changes nothing. Above
-   * ~0.5s UIKit reads it as a long press. */
+   * 5/12; with the floor 12/12) — so passing less changes nothing about the
+   * touch itself. Above ~0.5s UIKit reads it as a long press. Setting it at
+   * all makes a `{label}` tap at a toggle a hold, which is refused with
+   * `ToggleGestureError` even below the floor: asking for a duration is what
+   * marks the caller as wanting a real press. */
   durationSeconds?: number;
   /** Number of taps; 2 = double-tap. Default 1. */
   count?: number;
