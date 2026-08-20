@@ -114,6 +114,42 @@ So the resume mapping in step 3.4 is `sim.state()` → if `"Booted"`,
 `sim.showWindow()` and render "Resumed existing simulator…"; anything else
 drops the stale entry and creates.
 
+### A second gap, found at 3.2 — the device type's friendly name
+
+**`start_simulator`'s success message cannot be reproduced from the public
+API.** Today it reads:
+
+> `Simulator started: "qa-a_iphone" (iPhone 16 Pro, ABC-123). Ready after 41s.`
+
+The middle field is `deviceType.name` from the old server's own
+`findDeviceType` (index.ts:1249). In the library, `createSimulatorWith`
+resolves exactly that value at lifecycle.ts:616 and **does not hand it back**:
+the returned `Simulator` carries `udid`, `name` and `lastBoot`, and nothing
+about the model. `listSimulators()` is no substitute — it yields
+`deviceTypeIdentifier`
+(`com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro`), not the name, and
+costs a `simctl list` to learn something the create call already knew.
+
+Found while writing `render.ts`, which is why it is recorded here rather than
+acted on: this is agent C's step, and the fix touches the library's frozen
+surface. `renderStarted` takes `deviceTypeName` as an argument, so the renderer
+and its tests are complete either way, and the decision is where that argument
+comes from. Three options, cheapest first:
+
+1. **Add `readonly deviceType?: DeviceTypeInfo` to the handle**, set by
+   `createSimulatorWith` and left undefined on `attachSimulator` (which never
+   resolves one). Additive, no existing signature changes, and it names a fact
+   about the device that other callers will want too. The `?` is honest rather
+   than awkward: an attached handle genuinely does not know.
+2. **Return it from `createSimulator`** as `{simulator, deviceType}`. A
+   breaking change to a published-shaped signature, for one string.
+3. **Drop the field from the message.** Free, and a real loss: the keyword an
+   agent passes is `"iPhone"`, and the answer is the only place it learns
+   which iPhone it got.
+
+Option 1 unless the owner says otherwise; either way it is a library commit
+with its own unit test, not a reach into internals from the server.
+
 ## Testing: what the server can own, and what it cannot
 
 The server has never had a single test. That is the gap this plan closes while
@@ -235,8 +271,64 @@ human with npm credentials.
 
 ### Where the tree stands
 
-Each agent appends one entry, as its final commit. Nothing here yet — agent A
-starts it.
+Each agent appends one entry, as its final commit.
+
+#### Agent A — steps 3.0, 3.1, 3.2 (2026-08-20)
+
+**Landed.** The parity baseline
+(`packages/simgadget-mcp/test/fixtures/tools-list.baseline.json`, **17** tools
+verified rather than assumed, taken with every `IOS_SIMULATOR_MCP_*` and
+`SIMGADGET_*` variable stripped, with a README beside it saying it must never
+be regenerated). The package: dependencies, both tsconfigs and the four scripts
+copied from `packages/simgadget`. `env.ts`, `paths.ts`, `render.ts`, and 221
+tests over the three. Both packages green on `npm test` and `npm run
+typecheck`; the root frozen-legacy check still passes and nothing under the
+repo-root `src/` or `test/` was touched.
+
+**Deviations, all recorded above rather than buried here:** three wording
+changes (rows 9–11 of "Deliberate behaviour changes"), and the enforcement note
+plus `RenderContext` under step 3.2.
+
+Two smaller ones, here because they belong to nobody else's step:
+
+- **`package.json` has no `bin` and `build` is a bare `tsc`**, where the
+  library's build also chmods its entry point. Both wait for `src/index.ts` at
+  3.5 — a `bin` pointing at a missing file breaks the package the moment it is
+  linked, and `chmodSync` on one fails the build. `PORT.md` says so; **agent D
+  adds both together.**
+- **The `IDB_PATH` tombstone is a function, not a module-load throw.** The old
+  server threw at import (index.ts:71). A module that throws on import cannot
+  be unit tested, and what needs protecting is a server *run*. **Agent D must
+  call `assertIdbPathUnset()` from `index.ts` at startup**, or the variable
+  silently stops being a tombstone.
+
+**What agent B (`sessions.ts`) needs to know.**
+
+1. **The prose you need already exists, in `render.ts`.** `renderNoSession(id)`
+   is `getManagedSim`'s refusal verbatim; `renderAlreadyStarting(id)` is the
+   concurrency guard's; `renderAlreadyAttached`, `renderNotBooted`,
+   `renderDestroyed(name, udid, owned)` and `renderResumed` are the lifecycle
+   answers. Do not re-type any of them — they are covered by tests that assert
+   the exact string, so a second copy will drift silently.
+2. **`renderError` takes a `RenderContext`**, and so does `handleToolError`.
+   Pass `{sessionId: id}` from every tool body: two rows (`simulator-not-found`,
+   `no-active-recording`) render a materially better message with it and fall
+   back to the library's when it is absent. This is how a session id reaches an
+   error without being smuggled into a library payload.
+3. **`SimulatorNotFoundError` is what a stale handle throws from *every*
+   method**, not just from lifecycle calls — `Simulator.delete()` marks the
+   handle and every method checks it first. So a session whose simulator was
+   deleted underneath it surfaces as that error from `ui_tap` as readily as
+   from `destroy_simulator`, and the registry should treat it as "drop this
+   session" wherever it appears, not only where it is expected.
+4. `activeRecordings` is gone as a map, per your step — but note that the
+   library throws `no-active-recording` as a bare `SimGadgetError` with a
+   handle-flavoured message ("for this simulator handle"). The session-flavoured
+   wording comes from the `RenderContext`, so shutdown's "tolerate none active"
+   is a `catch` on the code, not on the message.
+5. **A second library gap is open**, and it is agent C's to close, not yours:
+   the device-type name is not on the handle. See "A second gap, found at 3.2"
+   above; nothing in `sessions.ts` depends on it.
 
 ## Implementation order
 
@@ -326,6 +418,34 @@ exported union, which fails when a new code is added and not rendered; an
 unknown error still renders with the link; no rendered message contains a
 `simgadget` GitHub URL when it came from the library (design rule 5 runs the
 other way too — the URLs are the *server's* to add).
+
+**How the exhaustiveness is actually enforced, as built.** `ERROR_RENDERERS`
+is a `Record<ErrorCode, Renderer>` and the test's `SAMPLES` is a
+`Record<ErrorCode, SimGadgetError>`, so a new code fails `npm run typecheck` in
+*both* files before any test runs — verified by adding a code and watching it
+fail, not assumed. The runtime table then walks the same object, which catches
+the other half: a row that exists but renders nothing an agent could act on.
+
+**Three places the wording deviates from today's, deliberately.** Each is a row
+in "Deliberate behaviour changes" below; recorded here because a
+TESTING_TOOLS.md run will otherwise read them as regressions.
+
+- The wedge message's second half branches on `recoveryTried`. `clarify()`
+  asserted "restarting it was already attempted and did not help" in *both*
+  cases, including the one where the cooldown refused to attempt anything — a
+  sentence that sent a reader looking for a restart that never happened. The
+  first half is verbatim.
+- `simulator-not-found` gains one sentence naming the session and the way back
+  (`destroy_simulator`, then `start_simulator`), when a session id is in
+  context. The library cannot name a tool; this is precisely the remediation
+  design rule 5 puts in the host.
+- `device-type-not-found` with an *empty* available list falls through to the
+  library's sentence rather than rendering today's `Available types: ` followed
+  by nothing.
+
+The renderer takes a small `RenderContext` (`sessionId`, `label`) for the rows
+whose old wording named something the library has no concept of. It is
+deliberately two fields; anything more and the errors are under-typed.
 
 ### Step 3.3 — `sessions.ts`
 
@@ -565,6 +685,9 @@ strings are updated from this table and nowhere else.
 | 6 | `ui_tap` results carry what happened (`acted`, state read back) | library design rule 1 |
 | 7 | the companion cache directory is renamed, orphaning a 19 MB download | rename scope; harmless, re-downloads |
 | 8 | the socket directory becomes `/tmp/simgadget-<uid>/` | rename scope |
+| 9 | `screenshot` answers `Wrote screenshot to: <path>` composed by the server, rather than echoing simctl's stderr | the library returns a `Screenshot`, not simctl's output; the path said back is the absolute one we resolved, which is strictly more useful |
+| 10 | the wedge message says whether a bridge restart was *actually* attempted | `clarify()` claimed one had been in both cases; the typed `recoveryTried` knows |
+| 11 | a simulator that is gone adds a sentence naming the session and the way back | design rule 5: the library cannot name a tool, so the host does |
 
 ## Open items — need your call
 
