@@ -1,5 +1,13 @@
 # TODO — SimGadget library, 2026-08-16
 
+- [ ] **#89 `pressButton` is in the library and not on the MCP.** The handle
+  has `pressButton(name, {durationSeconds})` and the e2e drives it (`home`
+  leaves the app); no tool exposes it, and none did before the split, so
+  parity kept it out of the port — see SIMGADGET_PLAN_SERVER.md's open items.
+  Worth adding as a tool on its own merits afterwards: "press home" is
+  something an agent asks for and can currently only fake by other means.
+
+
 - [ ] **#68 Implement a toggle set-to-state call in the JS library.** Cut from
   the v1 API in SIMGADGET.md as its one speculative addition (no MCP consumer;
   `tap({label})` already flips a toggle and reads the state back). Open
