@@ -133,6 +133,7 @@ describe("simgadget lifecycle against a real simulator", { skip: SKIP }, () => {
     const calls: [string, () => Promise<unknown>][] = [
       ["state", () => sim.state()],
       ["boot", () => sim.boot()],
+      ["showWindow", () => sim.showWindow()],
       ["waitReady", () => sim.waitReady()],
       ["shutdown", () => sim.shutdown()],
       ["delete", () => sim.delete()],

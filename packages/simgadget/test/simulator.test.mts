@@ -59,6 +59,37 @@ test("Simulator.state()", async (t) => {
   });
 });
 
+// ---- showWindow() -------------------------------------------------------
+
+test("Simulator.showWindow()", async (t) => {
+  await t.test("opens Simulator.app and does nothing else", async () => {
+    const deps = createFakeDeps();
+    const sim = new Simulator("UDID", "iPhone", deps);
+
+    await sim.showWindow();
+
+    assert.deepEqual(deps.calls.run, [{ cmd: "open", args: ["-a", "Simulator.app"] }]);
+    // The whole reason this exists rather than the MCP's resume path calling
+    // `boot()`: no simctl, no companion, and above all no driveability wait,
+    // whose settle is unconditional and costs eight seconds on a simulator
+    // that is already up and answering.
+    assert.deepEqual(deps.calls.withClient, []);
+  });
+
+  await t.test("is stale after delete(), like every other method", async () => {
+    const deps = createFakeDeps();
+    const sim = new Simulator("UDID", "iPhone", deps);
+    await sim.delete();
+    deps.calls.run.length = 0;
+
+    await assert.rejects(sim.showWindow(), (error: unknown) => {
+      assert.ok(error instanceof SimulatorNotFoundError, `got ${(error as Error).name}`);
+      return true;
+    });
+    assert.deepEqual(deps.calls.run, [], "refused before running anything");
+  });
+});
+
 // ---- boot() -------------------------------------------------------------
 
 test("Simulator.boot()", async (t) => {

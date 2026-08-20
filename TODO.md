@@ -502,11 +502,17 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
 ## Housekeeping
 
 - [ ] **#88 Repo hygiene.** `.DS_Store` is untracked and not in `.gitignore`.
-  `packages/simgadget/build/` is committed alongside `src/` — if deliberate
-  (the exports test builds into it), note it; otherwise gitignore it, since
-  its stale `.d.ts` files will drift. (`companion.lock.json` and
-  `package.json` still pointing at the old repo path is **correct** for this
-  phase — plan Risks says so; do not "fix" it.)
+  (`companion.lock.json` and `package.json` still pointing at the old repo
+  path is **correct** for this phase — plan Risks says so; do not "fix" it.)
+  - **Corrected 2026-08-20:** this entry also claimed
+    `packages/simgadget/build/` was committed alongside `src/`. It is not —
+    `git ls-files` returns nothing under it and `.gitignore` has `build/`.
+    The real hazard is the opposite one: `exports.test.mts` does
+    `require("simgadget")`, which resolves through `build/index.js`, so the
+    exports assertions run against **whatever was last compiled**. Change the
+    public surface without rebuilding and that test passes on yesterday's
+    output. Worth wiring a build into `npm test` for the library, or having
+    that test fail loudly when `build/` is older than `src/`.
 
 # TODO — Production bug, reported 2026-08-15
 

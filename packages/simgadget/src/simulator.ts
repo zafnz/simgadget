@@ -545,11 +545,34 @@ export class Simulator {
       if (!isAlreadyBootedError(message)) throw error;
     }
 
-    await this.deps.run("open", ["-a", "Simulator.app"]);
+    await this.showWindow();
 
     const ready = await waitUntilDriveable(this.deps, this.udid, budgetMs);
     this.recordBoot(ready);
     return ready;
+  }
+
+  /**
+   * Brings the Simulator.app window to the front for this simulator, without
+   * booting or waiting for anything.
+   *
+   * Separate from `boot()` because the MCP's resume path wants exactly this
+   * and nothing else: a session reconnecting to a simulator that is already
+   * up needs its window visible again, and `boot()` — the only other place
+   * that opens the app (DECISIONS.md #1) — would charge it the whole
+   * driveability ladder, whose settle is unconditional. Sub-second here,
+   * eight seconds and change there, on the call an agent makes most often
+   * after a disconnect.
+   *
+   * `open -a` raises whatever Simulator.app is showing rather than choosing a
+   * device, which is why this takes no argument and promises no more than it
+   * does: with several simulators booted, the frontmost window is not
+   * necessarily this one. Booting is what makes a device frontmost, and this
+   * method is deliberately not that.
+   */
+  async showWindow(): Promise<void> {
+    this.assertNotDeleted();
+    await this.deps.run("open", ["-a", "Simulator.app"]);
   }
 
   /** Waits (without booting) until an accessibility read answers with a real

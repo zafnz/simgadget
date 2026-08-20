@@ -505,6 +505,13 @@ export class Simulator {
    * what the MCP's attach_simulator does after adopting. */
   waitReady(opts?: { budgetMs?: number }): Promise<ReadyResult>;
 
+  /** Brings Simulator.app to the front. No boot, no wait — this is what a
+   * session resuming an already-running simulator needs, and `boot()` is
+   * the only other thing that opens the app. Raises whatever window is
+   * showing rather than choosing a device: with several booted, the
+   * frontmost one is not necessarily this handle's. */
+  showWindow(): Promise<void>;
+
   shutdown(): Promise<void>;
 
   /** Shuts down and deletes the simulator. Internally: stops the companion
@@ -719,7 +726,7 @@ equivalent (TESTING_TOOLS.md is the arbiter). The mapping:
 
 | tool | library calls |
 |---|---|
-| `start_simulator` | resume: `sim.state()`; create: `createSimulator({deviceType, name})`, message from `sim.lastBoot` |
+| `start_simulator` | resume: `sim.state()` + `sim.showWindow()`; create: `createSimulator({deviceType, name})`, message from `sim.lastBoot` |
 | `destroy_simulator` | owned: `sim.delete()`; attached: `sim.releaseCompanion()` + drop from registry |
 | `attach_simulator` | `attachSimulator(udid)` + `sim.state()` check + `sim.waitReady()` |
 | `rotate` | `sim.rotate(o)` → message from `requested` vs `adopted` |
@@ -964,3 +971,14 @@ phase-by-phase sequencing — is deliberately gone; git has it.
 - **Portrait point dimensions come from `describe`** (decided 2026-08-16) —
   the one piece of the coordinate contract that is new code rather than a
   port. See the contract section; contract check #9 is its gate.
+- **`showWindow()` is on the handle** (decided 2026-08-20, from the step-3
+  planning pass). The MCP's resume path raises the window of a simulator that
+  is already up; before this, the only thing in the library that ran `open -a
+  Simulator.app` was `boot()`, which then charges the full driveability
+  ladder — and `BOOT_SETTLE_MS` is unconditional, so a sub-second resume
+  became an eight-second one on the call an agent makes most after a
+  disconnect. The two alternatives were rejected on the same ground: a fast
+  path in the boot ladder means retiming a wait that sits underneath
+  BOOT_BUG.md's unexplained wedge, and accepting the eight seconds is wrong
+  where users feel it. `boot()` now calls `showWindow()` rather than
+  repeating the line.

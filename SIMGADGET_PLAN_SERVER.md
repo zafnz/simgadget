@@ -7,7 +7,7 @@ has been reviewed. This file is its sibling, written in the same shape and to
 the same standard — every step names what is ported, from which lines, which
 quirks must survive, and what test would catch it going wrong.
 
-Written 2026-08-20, against `simgadget-impl` at 518 unit tests green.
+Written 2026-08-20, against `simgadget-impl` at 521 unit tests green.
 
 ## The one rule that governs everything else
 
@@ -89,37 +89,30 @@ One correction to CLAUDE.md while we are counting: its Design Principles
 section says "the 16 tool registrations". There are **17**; its own tool list
 above it names all seventeen.
 
-## The library gap this port needs
+## The library gap this port needed — closed 2026-08-20
 
-**`start_simulator`'s resume path has no public equivalent, and the obvious
-substitute costs 8 seconds.** Today, resuming a session whose simulator is
-still booted does `findDevice` then `open -a Simulator.app` (index.ts:1219–
-1232) — sub-second, and it raises the window for the returning agent, which is
-the point. In the library, `open -a Simulator.app` is run in exactly one place:
-`Simulator.boot()` (simulator.ts:548). Calling `boot()` on a live simulator is
+**`start_simulator`'s resume path had no public equivalent, and the obvious
+substitute cost 8 seconds.** Today's server resumes a session whose simulator
+is still booted with `findDevice` then `open -a Simulator.app`
+(index.ts:1219–1232) — sub-second, and it raises the window for the returning
+agent, which is the point. In the library, `open -a Simulator.app` ran in
+exactly one place: `Simulator.boot()`. Calling `boot()` on a live simulator is
 correct — it swallows the already-booted failure — but it then runs
 `waitUntilDriveable`, whose `BOOT_SETTLE_MS` sleep of 8s is **unconditional**
-(lifecycle.ts:470–471). So the natural mapping turns a sub-second resume into
-an 8-second one, on the call an agent makes most often after a disconnect.
+(lifecycle.ts:470–471). The natural mapping turned a sub-second resume into an
+8-second one, on the call an agent makes most often after a disconnect.
 
-Three ways out, in the order I would take them:
+**Resolved by adding `showWindow(): Promise<void>` to the handle** — the
+smallest of the three options considered, and the one that names what the
+server actually wants. `boot()` now calls it rather than repeating the line.
+The two rejected alternatives are recorded in SIMGADGET.md's Decisions
+register: a fast path in the boot ladder means retiming a wait that sits
+underneath BOOT_BUG.md's unexplained wedge, and accepting the 8s is wrong in
+the place users feel it.
 
-1. **A small public method on the handle** — `sim.showWindow()`, or `focus()`,
-   doing just the `open -a Simulator.app`. Smallest, most honest, and it names
-   the thing the server actually wants. Costs one addition to the frozen public
-   surface, so it is a spec amendment.
-2. **A fast path in the boot ladder**: skip the settle when the device is
-   already `Booted` and the recovery registry says this udid has answered a
-   read before. Defensible on its own merits — the settle is for a device that
-   just came up — but it changes a load-bearing timing under a bug
-   ([BOOT_BUG.md](BOOT_BUG.md)) whose cause is still unknown, on evidence the
-   settle's own comment already calls weak. Not the change to make while
-   porting something else.
-3. **Accept the 8s and document it.** Cheapest, and wrong in the place users
-   feel it.
-
-**This is the one decision the port cannot route around**, so it is first in
-"Open items" below.
+So the resume mapping in step 3.4 is `sim.state()` → if `"Booted"`,
+`sim.showWindow()` and render "Resumed existing simulator…"; anything else
+drops the stale entry and creates.
 
 ## Testing: what the server can own, and what it cannot
 
@@ -296,8 +289,8 @@ of the old single-file rule. Four commits so each is reviewable, in dependency
 order:
 
 1. **Lifecycle** — `start_simulator` (:1201), `destroy_simulator` (:1329),
-   `attach_simulator` (:1370). The resume path is where the library gap bites;
-   whatever is decided in "Open items" lands here.
+   `attach_simulator` (:1370). The resume path uses `state()` + `showWindow()`,
+   per the section above.
 2. **Reads** — `ui_describe_all` (:1538), `ui_find` (:1579),
    `ui_describe_point` (:2098), `rotate` (:1445), `detect_rotation` (:1506).
    `ui_find` renders `null` as "No element found whose label contains…" — the
@@ -495,15 +488,10 @@ strings are updated from this table and nowhere else.
 
 ## Open items — need your call
 
-1. **The resume-path gap** (see above). My recommendation: option 1, a small
-   `showWindow()` on the handle, as a library commit with its own test before
-   step 3.4 starts. It is a public-surface addition, so it is a spec amendment
-   and yours to make.
-2. **The `ErrorCode` addition left over from TODO #82** — a code for
+1. **The `ErrorCode` addition left over from TODO #82** — a code for
    "`SIMGADGET_COMPANION_PATH` points at nothing", which today is an untyped
-   `IdbError`. If you want it, it is cheapest to add in the same amendment as
-   item 1, since both touch the frozen surface and the server's renderer has
-   to know about it either way.
+   `IdbError`. It touches the frozen surface, and the server's renderer has to
+   know either way, so it wants deciding before step 3.2 rather than after.
 
 Decided while planning, and easy to reverse if you disagree — flagged rather
 than buried:
