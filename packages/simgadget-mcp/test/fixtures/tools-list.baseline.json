@@ -1,0 +1,623 @@
+{
+  "capturedFrom": "src/index.ts at e97deedb0f905819b566b194f33fa12d04c8de05, over stdio with a clean environment (no IOS_SIMULATOR_MCP_*/SIMGADGET_* set)",
+  "capturedAt": "2026-08-20",
+  "serverInfo": {
+    "name": "ios-simulator",
+    "version": "2.2.0"
+  },
+  "instructions": "iOS Simulator MCP server. Every tool takes an `id` identifying your session, which owns one simulator. Choose a distinctive id for yourself (e.g. \"qa-login-flow\", not \"test\") and reuse it for every call — other agents may be driving their own simulators on this same server, and sharing an id means taking over each other's. Calling start_simulator again with the same id resumes your existing simulator. Call destroy_simulator when finished.\nDo not use `xcrun simctl`, `idb`, or other shell commands to control simulators; this server owns their lifecycle and cannot see changes made behind its back.\nNavigation: if you know what you want, tap it by name — ui_tap {label} resolves the element on the simulator and operates it, costing a few hundred bytes and no coordinate handling. ui_find {label} locates an element, or reports it absent as a normal answer. Only use ui_describe_all when you do not know what is on screen: it returns the whole tree and is several kilobytes. Labels match by case-sensitive substring, against an element's label, its visible text or its accessibility identifier, and curly quotes, apostrophes and dashes are treated as their plain equivalents — ask for what you see on screen. The first match wins, so name things precisely; ui_tap tells you which element it acted on.\nui_tap can refuse, and the refusal is the useful answer: it checks the touch will reach the element before sending it, so a control that is covered, scrolled out of view or disabled is reported instead of silently missed. Scroll it into view, or read its real position from ui_view and use ui_tap {x, y}. A switch is switched rather than touched, and ui_tap answers with the state it read back — so if it says the state did not change, it did not.\nstart_simulator does not return until the simulator answers, so you can use it immediately; it says so if it gave up waiting.\nui_describe_all reads the app's real view hierarchy, so it includes controls in tab bars, nav bars and toolbars, and is pruned to elements you can act on. It and a failed ui_find each cost ~300ms, so do not poll either in a tight loop.\nCoordinates are logical screen space. ui_describe_all frames feed directly into ui_tap, ui_swipe and ui_describe_point.\nVisual checks: if asked whether something looks right — layout, colour, alignment, anything about appearance — call ui_view and look at the screenshot. The accessibility tree shows what exists, not how it renders; an element can be present and correctly labelled while looking completely wrong. Do not derive tap coordinates from a screenshot: those are pixel space and stop matching logical space once the device is rotated.",
+  "toolCount": 17,
+  "tools": [
+    {
+      "name": "attach_simulator",
+      "description": "Attaches to an existing, already-booted iOS simulator by UDID. Use this instead of start_simulator when you want to control a simulator that was created externally.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "udid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "UDID of the simulator to attach to"
+          }
+        },
+        "required": [
+          "id",
+          "udid"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Attach Simulator",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "destroy_simulator",
+      "description": "Shuts down and deletes the simulator for the given session. Call start_simulator afterwards to create a new one.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Destroy Simulator",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "detect_rotation",
+      "description": "Detects the current device rotation by probing the simulator's accessibility tree. Call this after the device has been rotated to update the coordinate mapping. Returns the detected orientation (portrait, landscape_right, landscape_left, or upside_down).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Detect Rotation",
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "install_app",
+      "description": "Installs an app bundle (.app or .ipa) on the iOS Simulator",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "app_path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Path to the app bundle (.app directory or .ipa file) to install"
+          }
+        },
+        "required": [
+          "id",
+          "app_path"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Install App",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "launch_app",
+      "description": "Launches an app on the iOS Simulator by bundle identifier",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "bundle_id": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Bundle identifier of the app to launch (e.g., com.apple.mobilesafari)"
+          },
+          "terminate_running": {
+            "type": "boolean",
+            "description": "Terminate the app if it is already running before launching"
+          }
+        },
+        "required": [
+          "id",
+          "bundle_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Launch App",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "record_video",
+      "description": "Records a video of the iOS Simulator using simctl directly",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "output_path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Optional output path. If not provided, a default name will be used. The file will be saved in the directory specified by `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` or in `~/Downloads` if the environment variable is not set."
+          },
+          "codec": {
+            "type": "string",
+            "enum": [
+              "h264",
+              "hevc"
+            ],
+            "description": "Specifies the codec type: \"h264\" or \"hevc\". Default is \"hevc\"."
+          },
+          "display": {
+            "type": "string",
+            "enum": [
+              "internal",
+              "external"
+            ],
+            "description": "Display to capture: \"internal\" or \"external\". Default depends on device type."
+          },
+          "mask": {
+            "type": "string",
+            "enum": [
+              "ignored",
+              "alpha",
+              "black"
+            ],
+            "description": "For non-rectangular displays, handle the mask by policy: \"ignored\", \"alpha\", or \"black\"."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Force the output file to be written to, even if the file already exists."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Record Video",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "rotate",
+      "description": "Rotates the simulated device. Orientation names follow the device, exactly as the Simulator's own Device > Orientation menu does: rotating the device left is `landscape_left`. Note that UIKit's *interface* orientation names are the mirror of these for the two landscapes, so an app reporting `UIInterfaceOrientationLandscapeRight` is in `landscape_left` here — both are correct. Reads the orientation back afterwards and reports what the interface actually adopted, which is not always what was asked for.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "orientation": {
+            "type": "string",
+            "enum": [
+              "portrait",
+              "upside_down",
+              "landscape_left",
+              "landscape_right"
+            ],
+            "description": "The orientation to rotate the device to"
+          }
+        },
+        "required": [
+          "id",
+          "orientation"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Rotate Device",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "screenshot",
+      "description": "Takes a screenshot of the iOS Simulator",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "output_path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "File path where the screenshot will be saved. If relative, it uses the directory specified by the `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` env var, or `~/Downloads` if not set."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "png",
+              "tiff",
+              "bmp",
+              "gif",
+              "jpeg"
+            ],
+            "description": "Image format (png, tiff, bmp, gif, or jpeg). Default is png."
+          },
+          "display": {
+            "type": "string",
+            "enum": [
+              "internal",
+              "external"
+            ],
+            "description": "Display to capture (internal or external). Default depends on device type."
+          },
+          "mask": {
+            "type": "string",
+            "enum": [
+              "ignored",
+              "alpha",
+              "black"
+            ],
+            "description": "For non-rectangular displays, handle the mask by policy (ignored, alpha, or black)"
+          }
+        },
+        "required": [
+          "id",
+          "output_path"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Take Screenshot",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "start_simulator",
+      "description": "Creates, boots, and opens an iOS simulator for the given session. Each session can have one simulator — call destroy_simulator first to switch types.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "type": {
+            "type": "string",
+            "description": "Device type keyword (e.g. \"iPhone\", \"iPad\", \"iPhone 16 Pro\"). Defaults to the latest iPhone."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Start Simulator",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "stop_recording",
+      "description": "Stops the simulator video recording",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Stop Recording",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ui_describe_all",
+      "description": "Describes accessibility information for the entire screen in the iOS Simulator",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Describe All UI Elements",
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ui_describe_point",
+      "description": "Returns the accessibility element at given co-ordinates on the iOS Simulator's screen",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "x": {
+            "type": "number",
+            "description": "The x-coordinate"
+          },
+          "y": {
+            "type": "number",
+            "description": "The y-coordinate"
+          }
+        },
+        "required": [
+          "id",
+          "x",
+          "y"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Describe UI Point",
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ui_find",
+      "description": "Find a single UI element by its accessibility label, without fetching the whole screen. Matches any element whose label contains the given text. Much cheaper than ui_describe_all when you already know what you are looking for.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Label text to look for (substring match, case sensitive)"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Find UI Element",
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ui_swipe",
+      "description": "Swipe on the screen in the iOS Simulator",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "duration": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)?$",
+            "default": "1",
+            "description": "Swipe duration in seconds. Longer duration is a more controlled swipe."
+          },
+          "x_start": {
+            "type": "number",
+            "description": "The starting x-coordinate"
+          },
+          "y_start": {
+            "type": "number",
+            "description": "The starting y-coordinate"
+          },
+          "x_end": {
+            "type": "number",
+            "description": "The ending x-coordinate"
+          },
+          "y_end": {
+            "type": "number",
+            "description": "The ending y-coordinate"
+          },
+          "delta": {
+            "type": "number",
+            "description": "The size of each step in the swipe (default is 1)",
+            "default": 1
+          }
+        },
+        "required": [
+          "id",
+          "x_start",
+          "y_start",
+          "x_end",
+          "y_end"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "UI Swipe",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ui_tap",
+      "description": "Tap on the screen in the iOS Simulator. Give either a label to tap the element with that accessibility label, or explicit x and y coordinates.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "duration": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d+)?$",
+            "description": "Press duration in seconds. Every tap is held for at least 0.1s, which is what makes it land; raise this for a long press."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Accessibility label of the element to tap (substring match). Resolves to the centre of that element. Use instead of x and y."
+          },
+          "x": {
+            "type": "number",
+            "description": "The x-coordinate (omit if using label)"
+          },
+          "y": {
+            "type": "number",
+            "description": "The y-coordinate (omit if using label)"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 1,
+            "description": "Number of taps to perform (default 1). Use 2 for double-tap."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "UI Tap",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ui_type",
+      "description": "Input text into the iOS Simulator",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[\\x20-\\x7E]+$",
+            "description": "Text to input"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "UI Type",
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "ui_view",
+      "description": "Get the image content of a compressed screenshot of the current simulator view",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for your session"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "View Screenshot",
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}
