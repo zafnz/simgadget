@@ -180,6 +180,64 @@ defaulting to the library's `createSimulator`/`attachSimulator` — the same way
 lets a test hand back a fake handle instead of booting a simulator. `tools.ts`
 takes the registry as a parameter rather than importing a module-global.
 
+## How this is split between agents
+
+Five agents, serial. The boundary is **one agent per group of steps that can
+be finished, verified green and committed without re-reading a different
+region of `src/index.ts`** — not one per numbered step, which pays a full
+re-orientation for `env.ts`, and not one for the whole of step 3, which runs
+out of context somewhere inside seventeen tool registrations, which is the
+worst possible place to hand over.
+
+| agent | steps | why the boundary is here |
+|---|---|---|
+| **A** | 3.0, 3.1, 3.2 | Pure code: no library calls, no simulator, no MCP. Ends with a complete pure-unit suite and the parity baseline captured. |
+| **B** | 3.3 | Sessions, plus the fake-handle infrastructure every later agent uses. The ownership rules deserve undivided attention: `owned` backwards deletes a simulator someone was using. |
+| **C** | 3.4 | Seventeen registrations, four commits, **one file** — so this cannot be parallelised. Two agents in `tools.ts` is a merge conflict per tool. |
+| **D** | 3.5, 3.6, 3.7 | The deletion commit wants the same hands that just wired the entry point, because it is what redirects `imsmd.sh`, CI and the daemon at it. |
+| **E** | none — review | Fresh eyes over all of step 3, against this plan and SIMGADGET.md, writing findings to TODO.md and changing no code. |
+
+**Agent E is not optional.** The equivalent pass over the library
+(2026-08-18) produced TODO #74–#88, including two real bugs and a recovered
+decisions document. A fresh agent reviewing four agents' work finds more than
+a fifth agent writing more code.
+
+Steps 4–7 do not split this way. Step 4 starts with a human renaming the
+GitHub repo; only then can an agent do the lockfile, the in-code strings and
+`verify:download`. Step 5 is the one place with real parallelism — the docs
+are independent files — but one agent is still right, because the failure mode
+is three documents each describing a slightly different architecture. Step 6
+is a driving job: an agent can drive TESTING_TOOLS.md through the MCP, while
+TESTING_SERVER.md's transport and multi-agent cases want a human. Step 7 is a
+human with npm credentials.
+
+### What every agent is told, and owes
+
+1. **Read your region, not the file.** `src/index.ts` is 3038 lines. The table
+   above says which lines your steps own; an agent that reads all of it has
+   spent its context before writing a line.
+2. **Finish green.** `npm test` and `npm run typecheck` pass in both packages
+   at every commit, not just the last one.
+3. **A deviation is a doc change, never a quiet choice.** Every deviation in
+   step 2 — `internal/deps.ts`, `env.ts`, copies-not-moves — was written down
+   and reviewed, which is what let the review check the code *against*
+   something. If this plan is wrong, say so in the plan and then proceed; do
+   not silently improve on it.
+4. **The last commit updates "Where the tree stands" below**: what landed,
+   what deviated and why, what you found that the next agent needs. An agent's
+   closing summary evaporates when its session ends; this file does not.
+5. **A newly registered MCP tool is invisible to your own session** — clients
+   bind their tool list at connect time. Restart the daemon
+   (`scripts/imsmd.sh restart`) and drive the new tool over HTTP to
+   `127.0.0.1:8008/mcp`. Do not conclude the tool is missing. And never signal
+   a server on any other port: they are other people's, and they are
+   production (CLAUDE.md).
+
+### Where the tree stands
+
+Each agent appends one entry, as its final commit. Nothing here yet — agent A
+starts it.
+
 ## Implementation order
 
 Every commit compiles and passes `npm test` in both packages. When the manual
@@ -240,6 +298,15 @@ The mapping, which is the substance of this step:
 | `SimulatorNotFoundError` | "No simulator with udid…" / the stale-session answer | attach/destroy bodies |
 | `CompanionDownloadError` / `CompanionStartError` / `UnsupportedArchitectureError` | the companion-acquisition messages | companionBinary prose |
 | anything else | `toError().message`, plus the troubleshooting link | `handleToolError` |
+
+**The one untyped error that stays untyped** is a
+`SIMGADGET_COMPANION_PATH` pointing at a file that does not exist (TODO #82,
+and open item 1 below). It renders through the fallback row, which is
+adequate — the message names the variable and the path, which is the whole
+remedy. **Do not invent a code for it**: adding to `ErrorCode` is a change to
+the library's frozen public surface and is the owner's call, not a
+renderer's. If a code is added later, it is one row in this table and one case
+in its test.
 
 *Tests:* **every `ErrorCode` has a rendering** — a table-driven test over the
 exported union, which fails when a new code is added and not rendered; an
