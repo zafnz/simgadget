@@ -258,7 +258,20 @@ connect time.
 - Do it **now**, in its own commit, because at step 3.6 the old server stops
   existing and this becomes a thing that can only be reconstructed from memory.
 
-### Step 3.1 — `env.ts` and `paths.ts`
+### Step 3.1 — the package itself, then `env.ts` and `paths.ts`
+
+`packages/simgadget-mcp/package.json` today is a placeholder: `private: true`,
+no dependencies, no scripts. Before any source file it needs the shape its
+sibling already has — dependencies (`simgadget` at the workspace version,
+`@modelcontextprotocol/sdk`, `zod`), `build`/`watch`/`typecheck`/`test`
+scripts copied from `packages/simgadget/package.json` so both packages are
+driven identically, `tsconfig.json` and `tsconfig.test.json`, and the `bin`
+entry. `private: true` **stays** until step 7; PORT.md says why, and a `bin`
+pointing at a file that does not exist yet is the other half of that (add the
+`bin` when `src/index.ts` exists, at 3.5, for the same reason the library's
+was held back to step 7 of its own plan).
+
+Then the two files:
 
 The eight server variables (`ALLOWED_HOSTS`, `CLEANUP_ON_EXIT`,
 `DEFAULT_OUTPUT_DIR`, `FILTERED_TOOLS`, `HTTP_HOST`, `HTTP_PORT`, `TRANSPORT`,
