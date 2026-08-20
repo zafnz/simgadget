@@ -127,7 +127,8 @@ Concretely, out of today's `src/index.ts`:
   `waitUntilDriveable`, `restartSimulatorBridge`,
   `diagnoseEmptyAccessibilityTree`) **and the udid-keyed state that binds
   them** (`hasAnsweredAccessibility`, `lastRecoveryAt`, `recoveryInFlight` —
-  these move into the `Simulator` handle, their one honest home),
+  these move into a udid-keyed registry internal to the library, reached
+  through the handle; see the Decisions register for why not per-handle),
   `detectOrientation`, the coordinate transforms' call sites, the tap/swipe/
   type/toggle semantics currently inlined in tool bodies, and the simctl
   lifecycle helpers (`findDevice`, `findDeviceType`, `findLatestRuntime`).
@@ -361,10 +362,14 @@ export function prefetchCompanion(
 
 One handle per simulator. Not a bag of udid-taking functions (a repeated
 first argument on twenty functions is an object spelled worse) and not a
-god-object facade; the handle is also the one honest home for per-simulator
-state — the orientation hint, the cached portrait point dimensions, and the
-recovery bookkeeping (`hasAnsweredAccessibility`, cooldown timestamps) that
-today live in module-global maps.
+god-object facade; the handle is also the honest home for per-*handle* state:
+the orientation hint, the cached portrait point dimensions, the recording in
+progress. The recovery bookkeeping (`hasAnsweredAccessibility`, cooldown
+timestamps, in-flight recovery dedup) is deliberately **not** per-handle: it
+describes the *simulator*, and two handles on one udid must share one
+recovery attempt — "a wedge looks like several things failing at once" is
+the reason the dedup exists. It lives in a udid-keyed registry internal to
+the library, reached through the handle, cleared by `delete()`.
 
 Handles are deliberately **not deduplicated per udid**: recording state and
 the orientation hint are per-handle, and the MCP's sessions depend on that
@@ -660,8 +665,12 @@ thing it cannot. Three classes of state:
 
 - **Portrait point dimensions: cached forever, safely.** A udid's device
   type is fixed at creation; the dimensions are a property of the model.
-  Sourced from the companion's `describe` call (pixels *and* points — cheaper
-  and more direct than deriving them from an accessibility read).
+  Sourced from the companion's `describe` call (pixels *and* points) —
+  **confirmed as deliberate new code**, not a port: today they come from the
+  accessibility root frame. `describe` is cheaper, and it answers from
+  target metadata while the bridge is still silent, so dimensions are
+  available before the simulator is driveable — the accessibility-read
+  source never was. Contract check #9 pins the both-units belief.
 - **Orientation aspect (portrait-family vs landscape-family): re-derived per
   describe, for free.** Every describe returns the root frame; its aspect
   refreshes the hint as a side effect. `rotate()` refreshes it
@@ -940,3 +949,15 @@ phase-by-phase sequencing — is deliberately gone; git has it.
   55s honest-return behaviour (return the UDID, say "poll") is built on
   exactly this, and it predates the library for a measured reason: an MCP
   client cancels a long call, and a cancelled call tells the caller nothing.
+- **Recovery state is udid-keyed, not per-handle** (decided 2026-08-16,
+  resolving a contradiction between "state moves into the handle" and
+  "handles are not deduplicated"). `hasAnsweredAccessibility`, the recovery
+  cooldown and the in-flight dedup are facts about a simulator; per-handle
+  copies would let two handles on one udid each order a bridge restart —
+  losing the dedup that exists because a wedge presents as several
+  simultaneous failures. Internal registry, reached through the handle,
+  behind the deps seam (so tests drive the cooldown via a fake clock),
+  cleared by `delete()`.
+- **Portrait point dimensions come from `describe`** (decided 2026-08-16) —
+  the one piece of the coordinate contract that is new code rather than a
+  port. See the contract section; contract check #9 is its gate.

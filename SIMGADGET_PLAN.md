@@ -260,11 +260,52 @@ returns a handle whose `lastBoot` reflects a timeout without throwing;
 `attachSimulator` throws `SimulatorNotFoundError` for an unknown udid and does
 not boot or probe.
 
+### Step 2b — `simulator.ts`, handle lifecycle
+
+The methods no other step owns: `boot()` and `waitReady()` (public wrappers
+over the step-2 ladder, returning `ReadyResult` and setting `lastBoot`),
+`state()` (over `findDevice`), `shutdown()`, `delete()`, `installApp` (:2584),
+`launchApp` (:2632), `restartBridge()` (:813), `releaseCompanion()` (over
+`companions.shutdown`).
+
+Quirks that must survive:
+
+- **`delete()`'s companion race dance.** `companions.close(udid)` *before*
+  `simctl shutdown`/`delete`: the close blocks respawn, because
+  shutdown/delete takes seconds and a concurrent call would otherwise see its
+  channel die and helpfully spawn a replacement against a simulator that is
+  about to stop existing. `companions.reopen(udid)` on create/attach for a
+  previously closed udid — today's `start_simulator` and `attach_simulator`
+  both do this. `delete()` also clears the udid-keyed recovery registry
+  (today's `forgetSimulator`).
+- **Stale-handle mechanics are new code, not a port.** `delete()` sets a
+  flag; every method checks it first and throws `SimulatorNotFoundError`
+  before touching simctl or the companion. *External* deletion is mapped at
+  the deps boundary: simctl "Invalid device"-shaped failures and a companion
+  that cannot resolve a vanished udid both become `SimulatorNotFoundError` —
+  the spec's "a clear error, never a gRPC timeout".
+- `installApp`: `existsSync` first → `app-bundle-not-found` before simctl
+  runs; simctl does **not** support `--` as an option terminator (the
+  existing comment says why the existsSync makes that safe).
+- `launchApp`: the pid is the first token of stdout and may be absent →
+  `{pid: number | null}`; `--terminate-running-process` goes before the udid.
+- `shutdown()` tolerates an already-shut-down simulator, as today's cleanup
+  does.
+
+*Fake tests:* `delete()` closes the companion before any simctl call and
+blocks respawn while they run; any method after `delete()` throws
+`SimulatorNotFoundError` without invoking simctl; `launchApp` parses the pid
+and returns `null` when there is none; `installApp` on a missing path throws
+before simctl is invoked; a simctl "Invalid device" failure surfaces as
+`SimulatorNotFoundError`, not a raw stderr string.
+
 ### Step 3 — `simulator.ts`, reading
 
 Ports `describeAll` (:94, internal), `describeScreen` (:144), `findByIdentifier`
 (:180), `findByLabel` (:232), `describePoint` (:305), and the recovery machinery
-(:877–1055) with its state.
+(:877–1055) with its state — which goes into the **udid-keyed registry**
+(resolved item 1 below), behind the deps seam so the fake clock drives the
+cooldown, never per-handle.
 
 Quirks that must survive, each already load-bearing:
 
@@ -301,7 +342,39 @@ returns `null` (not throws) on "found no element" and falls through marker →
 identifier → tree in that order; `describePoint` returns `null` for an empty
 point while a genuine wedge still throws.
 
-### Step 4 — `simulator.ts`, acting
+### Step 4 — Orientation
+
+Ports `HID_ORIENTATION` (:507 — **the landscapes are crossed on purpose**; a
+name-for-name map was written first and the fixture caught it immediately),
+`ROTATION_SETTLE_MS` (1.5s, because the tree reports the old geometry until the
+animation finishes), `detectOrientation` (:542) and the cached-dimensions
+handling (`getScreenDimensions` :603, `cacheScreenDims` :618).
+
+Before acting (step 5), not after: `tap` needs `getEffectiveOrientation`, the
+portrait transform's call sites and the dimensions cache, so this ordering is
+a dependency, not a preference.
+
+`rotate()` sends the request, settles, invalidates the cached dimensions,
+**detects** what the interface adopted, and returns `{requested, adopted}`. It
+never assumes the request took: no Face ID iPhone adopts upside-down.
+
+The coordinate contract from the spec is implemented as three distinct
+lifetimes: portrait point dimensions cached forever (a property of the model,
+sourced from the companion's `describe` — resolved item 2 below); orientation
+aspect re-derived free on every describe; chirality riding on the hint,
+refreshed only by `rotate()` and `detectOrientation()`. `Orientation`'s
+internal `"auto"` must not escape — `getEffectiveOrientation` resolves it at
+every boundary.
+
+*Pure tests:* the existing `orientation.test.mts` already covers
+`transformPointToPortrait` and `getEffectiveOrientation`; add the crossed
+device→HID map as a table, and a round-trip property (logical → portrait →
+back) for all four orientations at both aspect ratios. *Fake tests:* `rotate`
+settles before reading; a declined orientation reports `adopted ≠ requested`
+rather than throwing; the cached dimensions are invalidated by `rotate` and
+`detectOrientation` and not by an ordinary read.
+
+### Step 5 — `simulator.ts`, acting
 
 Ports the semantics currently inlined in the `ui_tap` tool body (:1798–1981),
 `toggleElement` (:1649), `ui_type` (:1998), `ui_swipe` (:2040), plus
@@ -334,33 +407,6 @@ a label re-read — this is a real bug that was found and fixed); `count: 2` sen
 two taps within one exclusive lock; `typeText` throws `UntypeableTextError`
 listing distinct offending characters **before any event goes out**; swipe
 transforms both endpoints with the same orientation.
-
-### Step 5 — Orientation
-
-Ports `HID_ORIENTATION` (:507 — **the landscapes are crossed on purpose**; a
-name-for-name map was written first and the fixture caught it immediately),
-`ROTATION_SETTLE_MS` (1.5s, because the tree reports the old geometry until the
-animation finishes), `detectOrientation` (:542) and the cached-dimensions
-handling (`getScreenDimensions` :603, `cacheScreenDims` :618).
-
-`rotate()` sends the request, settles, invalidates the cached dimensions,
-**detects** what the interface adopted, and returns `{requested, adopted}`. It
-never assumes the request took: no Face ID iPhone adopts upside-down.
-
-The coordinate contract from the spec is implemented as three distinct
-lifetimes: portrait point dimensions cached forever (a property of the model,
-sourced from the companion's `describe`); orientation aspect re-derived free on
-every describe; chirality riding on the hint, refreshed only by `rotate()` and
-`detectOrientation()`. `Orientation`'s internal `"auto"` must not escape —
-`getEffectiveOrientation` resolves it at every boundary.
-
-*Pure tests:* the existing `orientation.test.mts` already covers
-`transformPointToPortrait` and `getEffectiveOrientation`; add the crossed
-device→HID map as a table, and a round-trip property (logical → portrait →
-back) for all four orientations at both aspect ratios. *Fake tests:* `rotate`
-settles before reading; a declined orientation reports `adopted ≠ requested`
-rather than throwing; the cached dimensions are invalidated by `rotate` and
-`detectOrientation` and not by an ordinary read.
 
 ### Step 6 — `capture.ts`
 
@@ -434,7 +480,10 @@ cross that boundary:
   `describeScreen` (assert the toolbar's contents are present, which is the
   AXBridge fallback working) → `findByLabel` on the marker path (`Plain Button`)
   → on the tree-walk path (`Toolbar Switch`, invisible to the default backend)
-  → by identifier (`PlainStepper`) → by value where there is no label
+  → by identifier, using the **exact** id read from the fixture's source
+  (`findByIdentifier` is exact-match in both paths — e.g.
+  `PlainStepper-Increment`, not `PlainStepper`; verify against `testapp/main.m`
+  when writing the test, not from memory) → by value where there is no label
   (`Search Bar`) → a miss returns `null` → `tap({label: "Plain Button"})`
   returns `acted: "touch"` with the element → `tap({label: "Plain Switch"})`
   returns `acted: "activation"` with `before ≠ after` → `tap({label: "Toolbar
@@ -446,7 +495,11 @@ cross that boundary:
   `UntypeableTextError` → `swipe` scrolls and the tree changes →
   `pressButton("home")` leaves the app → `rotate("landscape_left")` returns
   `adopted` and a tap computed from the *landscape* tree lands →
-  `rotate("upside_down")` on an iPhone reports `adopted: "portrait"` →
+  `rotate("portrait")` back → `rotate("upside_down")` on an iPhone reports
+  `adopted: "portrait"` — the interface **stays where it was** when iOS
+  refuses an orientation (measured in TODO #26: after landscape it stays
+  landscape), so the preceding rotate back to portrait is what makes a
+  specific expected value assertable at all →
   `screenshot({resizeTo: "points"})` dimensions match the logical screen and the
   orientation field follows → `startRecording`/`stopRecording` leaves a
   non-empty file.
@@ -485,29 +538,23 @@ Everything here is mandated by the spec. Nothing else changes.
 | 7 | cache dir, socket dir, log prefix, user-agent renamed | rename scope |
 | 8 | arch gate throws at resolve time | standing rule; today it is a gRPC timeout |
 
-## Open items needing your signoff
+## Open items — all resolved, 2026-08-16
 
-1. **Where the recovery state lives.** The spec says `hasAnsweredAccessibility`,
-   `lastRecoveryAt` and `recoveryInFlight` move into the `Simulator` handle —
-   "their one honest home". But the spec also says handles are deliberately
-   **not** deduplicated per udid, and all three are facts about a *simulator*,
-   not about a handle. Per-handle state means two handles on one udid can each
-   order a bridge restart, losing the dedup that exists precisely because "a
-   wedge looks like several things failing at once". **Recommendation: keep the
-   three in a udid-keyed registry internal to the library, reached through the
-   handle** — the handle is the API, the udid is the key. This preserves the
-   existing behaviour exactly, which is the porting rule. Confirm before step 3.
-2. **`ScreenRead.screen` for a handle that has never described.** The spec has
-   `screenSize()` refreshing the aspect hint as a side effect. Sourcing the
-   *cached portrait point dimensions* from the companion's `describe` (per the
-   coordinate contract) is new code, not a port — today they come from the
-   accessibility root frame. Confirm that `describe` is the intended source; it
-   is cheaper and more direct, but it is the one place in this phase where the
-   spec asks for something the old code does not do.
-3. **Two boots per e2e run** (~80s) rather than one, because `node --test`
-   isolates files by process. The alternative is a runner script that boots
-   once, exports the udid, and runs both files against it. Recommendation: start
-   with two boots; add the runner only if the suite grows enough to notice.
+1. **Where the recovery state lives: udid-keyed registry, as recommended.**
+   The plan caught a genuine contradiction in the spec ("moves into the
+   handle" vs "handles are not deduplicated"); the spec has been amended and
+   carries the decision in its register, so the two documents agree. The
+   registry is internal, reached through the handle, behind the deps seam
+   (fake clock drives the cooldown), and cleared by `delete()`.
+2. **`describe`-sourced portrait dimensions: confirmed.** The one deliberate
+   piece of new code in this phase; contract check #9 is its gate. A bonus
+   the recommendation missed: `describe` answers from target metadata while
+   the bridge is still silent, so dimensions are available before the
+   simulator is driveable — the accessibility-read source never was. Spec
+   amended to say "confirmed".
+3. **Two boots per e2e run: approved.** ~80s of honest process isolation
+   beats a shared-udid runner script; revisit only if the suite grows enough
+   to notice.
 
 ## Risks
 
@@ -521,4 +568,4 @@ Everything here is mandated by the spec. Nothing else changes.
   into `packages/simgadget`, never to update the manifest.
 - **e2e flakiness is a real signal.** A tap that lands 11 times in 12 is the
   0.1s-floor bug wearing a different hat. Re-running until green is how that
-  gets shipped; investigate instead.
+  gets shipped; investigate instead. To be clear -- flakiness is not acceptable.
