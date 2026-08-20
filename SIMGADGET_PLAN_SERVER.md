@@ -597,7 +597,11 @@ exist first.
    sha256 is unchanged, which is the check that the move was a move.
 3. `npm run verify:download` from a clean cache, because a lockfile URL is
    exactly the kind of thing that is fine until somebody needs it.
-4. The in-code strings from the spec's rename scope that are not already done:
+4. The in-code strings from the spec's rename scope that are not already done.
+   **The URLs are no longer where the spec says they are**: the spec points at
+   `index.ts:664, 706, 1313, 1433` on the old server, and since step 3.2 the
+   issue URL and both troubleshooting URLs live at the top of
+   `packages/simgadget-mcp/src/render.ts`, as three named constants. Also:
    the companion download `user-agent`, the `[ios-simulator-mcp]` stderr log
    prefix, the tmpdir prefix, the socket dir `/tmp/imsm-<uid>` →
    `/tmp/simgadget-<uid>` (**re-run the 104-byte `sun_path` check against the

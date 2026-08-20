@@ -11,7 +11,7 @@
  * shared behaviour is pinned by a test on each side.
  *
  * The split of variables is the split of responsibilities. The library owns
- * `COMPANION_PATH` and `COMPANION_CACHE_DIR` — facts about how a companion is
+ * `COMPANION_PATH` and `COMPANION_CACHE` — facts about how a companion is
  * found — and this file owns the eight that are facts about *a server*:
  *
  *   ALLOWED_HOSTS  CLEANUP_ON_EXIT  DEFAULT_OUTPUT_DIR  FILTERED_TOOLS
