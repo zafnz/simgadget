@@ -27,6 +27,7 @@ import {
   isInvalidDeviceError,
   restartSimulatorBridge,
   waitUntilDriveable,
+  type DeviceTypeInfo,
   type Orientation,
   type ReadyResult,
   type SimulatorState,
@@ -336,6 +337,24 @@ export class Simulator {
   readonly udid: string;
   readonly name: string;
 
+  /**
+   * The device type this simulator was created as — `{identifier, name}`,
+   * where `name` is the model a person says ("iPhone 16 Pro") and
+   * `identifier` is what `simctl create` takes.
+   *
+   * **`undefined` on an attached handle, honestly rather than awkwardly.**
+   * `createSimulator` resolves the device type on its way to `simctl create`
+   * and so knows it for free; `attachSimulator` adopts a udid and never looks
+   * one up. A caller that needs it for an attached simulator can pay a
+   * `listSimulators()` for the identifier — which is why this is a field a
+   * creator fills rather than a lookup the handle performs.
+   *
+   * Exists because the answer to `start_simulator` names the model: an agent
+   * asks for "iPhone" and the reply is the only place it learns *which*
+   * iPhone it got.
+   */
+  readonly deviceType?: DeviceTypeInfo;
+
   private _lastBoot?: ReadyResult;
 
   /**
@@ -418,10 +437,16 @@ export class Simulator {
    * caller from writing `new Simulator(...)` themselves, so this is a
    * documentation boundary, not an enforced one.
    */
-  constructor(udid: string, name: string, deps: SimulatorDeps) {
+  constructor(
+    udid: string,
+    name: string,
+    deps: SimulatorDeps,
+    deviceType?: DeviceTypeInfo
+  ) {
     this.udid = udid;
     this.name = name;
     this.deps = deps;
+    this.deviceType = deviceType;
   }
 
   /** The one writer for `_lastBoot`. Private: `boot()` and `waitReady()` are

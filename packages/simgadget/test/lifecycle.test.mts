@@ -534,6 +534,23 @@ test("createSimulatorWith", async (t) => {
     assert.equal(sim.lastBoot?.ready, true);
   });
 
+  await t.test("keeps the device type it resolved, name as well as identifier", async () => {
+    // The create call is the only place the *name* is known for free: it
+    // resolves the model to pass an identifier to `simctl create`, and no
+    // later lookup can recover "iPhone 16 Pro" from a udid -- `SimInfo`
+    // carries the identifier only. The MCP's start_simulator answer names the
+    // model, which is where an agent that asked for "iPhone" learns which one
+    // it got.
+    const deps = createFakeCreateDeps([]);
+
+    const sim = await createSimulatorWith({ deviceType: "iPhone" }, deps);
+
+    assert.deepEqual(sim.deviceType, {
+      name: "iPhone 16 Pro",
+      identifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro",
+    });
+  });
+
   await t.test("boot:false skips simctl boot, opening the window, and the wait entirely", async () => {
     const order: string[] = [];
     const deps = createFakeCreateDeps(order);
@@ -603,6 +620,24 @@ test("attachSimulatorWith", async (t) => {
       (c) => c.args[1] === "boot" || c.cmd === "open"
     );
     assert.deepEqual(bootOrOpenCalls, []);
+  });
+
+  await t.test("leaves deviceType undefined, because attaching never resolves one", async () => {
+    // Undefined rather than guessed. A udid's device type is knowable from
+    // `listSimulators()` as an identifier, at the cost of a `simctl list`, and
+    // the model name is not knowable at all without a second one -- so the
+    // handle says it does not know instead of paying for a half-answer nobody
+    // asked for.
+    const deps = createFakeDeps({
+      run: () => devicesJson([{ udid: "UDID-1", name: "iPhone 16 Pro", state: "Booted" }]),
+    });
+
+    const sim = await attachSimulatorWith("UDID-1", deps);
+
+    assert.equal(sim.deviceType, undefined);
+    // The *device* name is still there: that is the simulator's own name, not
+    // its model, and the two are only equal by coincidence of this fixture.
+    assert.equal(sim.name, "iPhone 16 Pro");
   });
 
   await t.test("adopts a known udid without probing or waiting -- lastBoot stays undefined", async () => {

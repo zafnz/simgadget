@@ -571,10 +571,15 @@ export async function findDevice(deps: SimulatorDeps, udid: string): Promise<Sim
  * udid-keyed recovery registry wanting a hook at construction time) changes
  * this function and nothing that calls it.
  */
-export type HandleFactory = (udid: string, name: string, deps: SimulatorDeps) => Simulator;
+export type HandleFactory = (
+  udid: string,
+  name: string,
+  deps: SimulatorDeps,
+  deviceType?: DeviceTypeInfo
+) => Simulator;
 
-export const defaultHandleFactory: HandleFactory = (udid, name, deps) =>
-  new Simulator(udid, name, deps);
+export const defaultHandleFactory: HandleFactory = (udid, name, deps, deviceType) =>
+  new Simulator(udid, name, deps, deviceType);
 
 // ---- createSimulator / attachSimulator -------------------------------------
 
@@ -635,7 +640,11 @@ export async function createSimulatorWith(
   // accessibility read and needs a companion to reach the device with.
   deps.reopenCompanion(udid);
 
-  const handle = makeHandle(udid, deviceName, deps);
+  // The device type is passed on rather than dropped: this call resolved it to
+  // create the simulator, and nothing downstream can recover the model *name*
+  // from a udid without another `simctl list` (`SimInfo` carries the
+  // identifier, not the name).
+  const handle = makeHandle(udid, deviceName, deps, deviceType);
 
   // `boot: true` (the default) both boots the device and opens Simulator.app
   // — DECISIONS.md #1, settled with the owner: `simctl boot` alone leaves no

@@ -486,6 +486,11 @@ export interface RecordingOptions {
 export class Simulator {
   readonly udid: string;
   readonly name: string;
+  /** The model this was created as — `{identifier, name}`, where `name` is
+   * what a person says ("iPhone 16 Pro"). Undefined on an attached handle,
+   * which never resolves one; `listSimulators()` has the identifier at the
+   * cost of a `simctl list`, and the name at no price at all. */
+  readonly deviceType?: DeviceTypeInfo;
   /** How the last boot/waitReady went; set by createSimulator, boot() and
    * waitReady(). Undefined on a fresh attach. */
   readonly lastBoot?: ReadyResult;
@@ -726,7 +731,7 @@ equivalent (TESTING_TOOLS.md is the arbiter). The mapping:
 
 | tool | library calls |
 |---|---|
-| `start_simulator` | resume: `sim.state()` + `sim.showWindow()`; create: `createSimulator({deviceType, name})`, message from `sim.lastBoot` |
+| `start_simulator` | resume: `sim.state()` + `sim.showWindow()`; create: `createSimulator({deviceType, name})`, message from `sim.lastBoot` and `sim.deviceType` |
 | `destroy_simulator` | owned: `sim.delete()`; attached: `sim.releaseCompanion()` + drop from registry |
 | `attach_simulator` | `attachSimulator(udid)` + `sim.state()` check + `sim.waitReady()` |
 | `rotate` | `sim.rotate(o)` → message from `requested` vs `adopted` |
@@ -971,6 +976,15 @@ phase-by-phase sequencing — is deliberately gone; git has it.
 - **Portrait point dimensions come from `describe`** (decided 2026-08-16) —
   the one piece of the coordinate contract that is new code rather than a
   port. See the contract section; contract check #9 is its gate.
+- **`deviceType` is a field on the handle, not a lookup** (decided
+  2026-08-21, found by agent A while writing `render.ts`). `start_simulator`'s
+  answer names the model — an agent asks for `"iPhone"` and the reply is where
+  it learns which iPhone it got — and `createSimulator` resolves exactly that
+  on its way to `simctl create` and used to drop it. Nothing downstream can
+  recover the *name* from a udid: `SimInfo` carries `deviceTypeIdentifier`
+  only, and at the cost of a `simctl list`. So the creator keeps what it
+  already knew, and an attached handle says `undefined` rather than paying for
+  a half-answer nobody asked for. Additive: no existing signature changed.
 - **`showWindow()` is on the handle** (decided 2026-08-20, from the step-3
   planning pass). The MCP's resume path raises the window of a simulator that
   is already up; before this, the only thing in the library that ran `open -a

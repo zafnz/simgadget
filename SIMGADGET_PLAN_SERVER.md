@@ -114,9 +114,9 @@ So the resume mapping in step 3.4 is `sim.state()` → if `"Booted"`,
 `sim.showWindow()` and render "Resumed existing simulator…"; anything else
 drops the stale entry and creates.
 
-### A second gap, found at 3.2 — the device type's friendly name
+### A second gap, found at 3.2 — closed 2026-08-21
 
-**`start_simulator`'s success message cannot be reproduced from the public
+**`start_simulator`'s success message could not be reproduced from the public
 API.** Today it reads:
 
 > `Simulator started: "qa-a_iphone" (iPhone 16 Pro, ABC-123). Ready after 41s.`
@@ -147,8 +147,18 @@ comes from. Three options, cheapest first:
    agent passes is `"iPhone"`, and the answer is the only place it learns
    which iPhone it got.
 
-Option 1 unless the owner says otherwise; either way it is a library commit
-with its own unit test, not a reach into internals from the server.
+**Resolved as option 1**, signed off by the owner: `readonly deviceType?:
+DeviceTypeInfo` on the handle, set by `createSimulatorWith`, `undefined` on
+attach, with `DeviceTypeInfo` added to the library's public type exports (it
+was already `{identifier, name}` and already exported from `lifecycle.ts`, so
+the change is additive in every direction). Pinned by two unit tests and by
+the lifecycle e2e, which now checks the handle's identifier against the one
+`listSimulators()` reports for the same udid — the two sources agreeing is
+what makes the kept value trustworthy rather than merely present.
+
+So `renderStarted`'s `deviceTypeName` argument comes from
+`sim.deviceType?.name` in agent C's `start_simulator` body. Nothing in
+`render.ts` changes.
 
 ## Testing: what the server can own, and what it cannot
 
@@ -326,9 +336,10 @@ Two smaller ones, here because they belong to nobody else's step:
    handle-flavoured message ("for this simulator handle"). The session-flavoured
    wording comes from the `RenderContext`, so shutdown's "tolerate none active"
    is a `catch` on the code, not on the message.
-5. **A second library gap is open**, and it is agent C's to close, not yours:
-   the device-type name is not on the handle. See "A second gap, found at 3.2"
-   above; nothing in `sessions.ts` depends on it.
+5. **A second library gap was open when agent A wrote this** — the device-type
+   name was not on the handle. **Closed 2026-08-21**, before agent B started:
+   `sim.deviceType?.name`. See "A second gap, found at 3.2" above. Nothing in
+   `sessions.ts` depended on it either way.
 
 ## Implementation order
 

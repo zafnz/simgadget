@@ -50,6 +50,7 @@ export type {
   Orientation,
   SimulatorState,
   SimInfo,
+  DeviceTypeInfo,
   ReadyResult,
   CreateOptions,
 } from "./lifecycle.ts";

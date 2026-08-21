@@ -95,6 +95,13 @@ describe("simgadget lifecycle against a real simulator", { skip: SKIP }, () => {
     // reached simctl at all, not which iPhone came back.
     assert.match(listed.deviceTypeIdentifier, /SimDeviceType\.iPhone/);
     assert.match(listed.runtimeIdentifier, /SimRuntime\.iOS-/);
+
+    // The handle knows the same device type, and knows it by *name* as well —
+    // which is the half `listSimulators()` cannot answer and the MCP's
+    // start_simulator reply is built from. Against the real simctl, so this
+    // also pins that what we kept is what simctl actually said.
+    assert.equal(sim.deviceType?.identifier, listed.deviceTypeIdentifier);
+    assert.match(sim.deviceType!.name, /iPhone/);
   });
 
   it("gives a second, working handle for the same udid", async () => {
