@@ -306,6 +306,41 @@ test("start_simulator", async (t) => {
     }
   });
 
+  await t.test("a simulator deleted underneath the session is dropped and recreated", async () => {
+    // The other half of the stale branch, and the one that used to escape as an
+    // error (TODO #91). `state()` throws for a device that no longer exists —
+    // deleted by another agent, or by hand at a terminal — where a shut-down
+    // one merely answers "Shutdown". The old server could not tell them apart
+    // and did not need to: `findDevice` returned `null` for both.
+    const gone = createdFake({ fails: { state: new SimulatorNotFoundError("ABC-123") } });
+    const fresh = createdFake({ udid: "DEF-456" });
+    let creates = 0;
+    const registry = new SessionRegistry({
+      create: async () => {
+        creates += 1;
+        return creates === 1 ? asSimulator(gone) : asSimulator(fresh);
+      },
+      attach: async () => asSimulator(gone),
+    });
+    await registry.create("qa");
+
+    const harness = await connect(registry);
+    try {
+      const { text, isError } = await harness.call("start_simulator", { id: "qa" });
+
+      assert.equal(isError, false, "a deleted simulator is not a failure to start a new one");
+      assert.equal(creates, 2, "the dead entry was replaced, not resumed");
+      assert.equal(gone.calls.includes("showWindow"), false, "no window for a device that is gone");
+      assert.match(text, /DEF-456/);
+      // The old refusal advised calling destroy_simulator, which by then has no
+      // session to destroy -- the tool telling the agent to call the tool that
+      // just failed.
+      assert.doesNotMatch(text, /destroy_simulator/);
+    } finally {
+      await harness.close();
+    }
+  });
+
   await t.test("a failure renders with the troubleshooting guide", async () => {
     const registry = new SessionRegistry({
       create: async () => {

@@ -81,7 +81,7 @@ import {
 } from "./render.ts";
 import type { SessionRegistry } from "./sessions.ts";
 
-import type { ReadyResult, TapTarget } from "simgadget";
+import { SimulatorNotFoundError, type ReadyResult, type TapTarget } from "simgadget";
 
 /**
  * Sent to every client at handshake, so it is the only guidance most agents
@@ -180,7 +180,18 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
             // Neither is a failure, so neither can be a refusal.
             const existing = sessions.get(id);
             if (existing) {
-              const state = await existing.sim.state();
+              // `state()` throws for a simulator that no longer exists, and
+              // "no longer exists" is one of the two stale cases this branch
+              // is here to absorb — the old server asked `findDevice`, which
+              // answered `null` for a deleted device and for a shut-down one
+              // alike (index.ts:1219-1235). Letting the throw out would refuse
+              // to start a simulator *because* the last one was deleted, and
+              // the refusal would advise calling destroy_simulator, which has
+              // no session left to destroy. TODO #91.
+              const state = await existing.sim.state().catch((error: unknown) => {
+                if (error instanceof SimulatorNotFoundError) return "Gone" as const;
+                throw error;
+              });
               if (state === "Booted") {
                 // Raise the window for the returning agent. `showWindow()`
                 // exists for exactly this: `boot()` would be correct too and
@@ -191,9 +202,9 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
                   renderResumed(id, existing.sim.name, existing.sim.udid)
                 );
               }
-              // Stale: the simulator is shut down or gone. Drop it and create
-              // below — `create` deliberately does not check for an existing
-              // session, so resolving this one is the caller's job.
+              // Stale: the simulator is shut down, or gone entirely. Drop it
+              // and create below — `create` deliberately does not check for an
+              // existing session, so resolving this one is the caller's job.
               sessions.drop(id);
             }
 

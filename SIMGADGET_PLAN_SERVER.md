@@ -961,6 +961,12 @@ whichever package owns the rule.
 
 ## Step 7 — publish
 
+0. **Build before packing.** `simgadget-mcp` has no `prepare` script and
+   cannot safely have one — npm does not order workspace lifecycle scripts by
+   dependency, and its `tsc` needs the library's declarations to exist (TODO
+   #90). The root's `npm run build` states that order; `smoke-packed.sh`
+   already calls it, and the publish workflow must too, or the server's tarball
+   ships whatever `build/` happened to contain.
 1. `simgadget`, then `simgadget-mcp` — dependency order, same version number,
    `simgadget-mcp` depending on `simgadget@^<that version>`. Remove
    `"private": true` from `simgadget-mcp/package.json` (its own PORT.md says

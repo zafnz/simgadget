@@ -290,7 +290,7 @@ the library.
 
 ## Bugs
 
-- [ ] **#90 A clean checkout is red: nothing builds `packages/simgadget` before
+- [x] **#90 FIXED 2026-08-23. A clean checkout is red: nothing builds `packages/simgadget` before
   `npm test` and `npm run typecheck` run against it.** The 3.6 commit correctly
   stripped `"prepare": "npm run build"` from the root `package.json` — the root
   builds nothing now — but **neither package gained one**, and the workspace
@@ -340,7 +340,29 @@ the library.
   it, and that section currently promises "No simulator, **no build step**, well
   under a second" — the exact claim this falsifies for `simgadget-mcp`.
 
-- [ ] **#91 `start_simulator` no longer recovers a session whose simulator was
+
+  **Fixed, and the fix is not the obvious one.** Adding `prepare` to both
+  packages does *not* work: npm does not order workspace lifecycle scripts by
+  dependency, and in a clean room it ran `simgadget-mcp`'s build first — three
+  `TS2307`s, and `tsc` emitted anyway, so the failure left a `build/index.js`
+  that looked like success. The ordering belongs where it can be stated:
+
+  - the root gains `"build": "npm run build --workspace=simgadget && npm run
+    build --workspace=simgadget-mcp"` and a `prepare` that runs it, so `npm ci`
+    alone leaves a usable tree and CI needs no new step;
+  - `simgadget` keeps its own `prepare` — it has no workspace dependency, so it
+    is always safe, and it covers `npm publish -w simgadget`;
+  - `simgadget-mcp` deliberately has **no** `prepare`, because a standalone one
+    cannot be made correct. **Step 7's publish workflow must therefore build
+    before packing**, exactly as `smoke-packed.sh` does.
+  - `smoke-packed.sh` stopped using `npm run build --workspaces`, which had the
+    same unordered hazard and only ever passed because `build/` already existed.
+
+  **Verified the way the finding was**: a clean room built from `git ls-files`
+  only, `npm ci` from nothing, then typecheck, 523 + 415 tests and the packed
+  smoke — all green, none of it on a pre-built tree.
+
+- [x] **#91 FIXED 2026-08-23. `start_simulator` no longer recovers a session whose simulator was
   deleted out from under it; it refuses, and its advice loops.** The old resume
   branch called `findDevice(existing.udid)` and treated **both** "gone" and
   "not booted" as stale: *"Stale entry — the simulator is gone or shut down.
@@ -404,6 +426,18 @@ the library.
   again. **Expected:** a new simulator with a new udid, not an error.
 
 ## Spec / plan deviations needing sign-off or a doc fix
+
+
+  **Fixed** in `tools.ts`: the `state()` call in the resume branch catches
+  `SimulatorNotFoundError` and treats it as the stale case, which is what
+  `findDevice` returning `null` did for both causes in the old server. The
+  comment that claimed both cases were handled is now true.
+
+  The regression test drives the real `registerTools` through the in-memory
+  client: a session whose fake throws `SimulatorNotFoundError` from `state()`
+  is dropped, a second simulator is created, no window is raised for the dead
+  one, and the answer does not mention `destroy_simulator`. **Proved
+  non-vacuous** — reverting the catch turns it red.
 
 - [ ] **#92 `ui_describe_point` on empty space answers the four characters
   `null`, where the spec asks for a sentence.** SIMGADGET.md's "The MCP on top"

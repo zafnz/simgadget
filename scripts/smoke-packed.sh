@@ -27,7 +27,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-npm run build --workspaces >/dev/null
+# The root build, not `--workspaces`: the server's `tsc` needs the library's
+# declarations to exist, and npm does not order workspace scripts by
+# dependency (TODO #90 -- it ran them the other way round in a clean room).
+npm run build >/dev/null
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
