@@ -36,7 +36,7 @@
  * real class actually has.
  */
 
-import type { Simulator, SimulatorState } from "simgadget";
+import type { DeviceTypeInfo, ReadyResult, Simulator, SimulatorState } from "simgadget";
 import { SimGadgetError } from "simgadget";
 
 /**
@@ -46,8 +46,25 @@ import { SimGadgetError } from "simgadget";
  */
 export type SimulatorSurface = Pick<
   Simulator,
-  "udid" | "name" | "state" | "delete" | "releaseCompanion" | "stopRecording"
+  | "udid"
+  | "name"
+  | "state"
+  | "delete"
+  | "releaseCompanion"
+  | "stopRecording"
+  // ---- added for tools.ts's lifecycle tools (step 3.4) ----
+  | "deviceType"
+  | "lastBoot"
+  | "showWindow"
+  | "waitReady"
 >;
+
+/**
+ * Every method the fake can be told to fail, and every name that lands in the
+ * call log. A union rather than `string` so a test that misspells one is a
+ * compile error instead of a failure that never arms.
+ */
+export type FakeMethod = Extract<keyof SimulatorSurface, string>;
 
 export interface FakeSimulatorOptions {
   udid?: string;
@@ -59,7 +76,13 @@ export interface FakeSimulatorOptions {
   recording?: boolean;
   /** Errors to throw from a given method instead of succeeding. The values are
    * thrown as-is, so a test picks the exact shape it wants to exercise. */
-  fails?: Partial<Record<"state" | "delete" | "releaseCompanion" | "stopRecording", unknown>>;
+  fails?: Partial<Record<FakeMethod, unknown>>;
+  /** What the handle says it was created as. `undefined` is the honest value
+   * for an attached handle, which never resolved a device type. */
+  deviceType?: DeviceTypeInfo;
+  /** The boot outcome the handle is carrying, as `createSimulator` would leave
+   * it. Also what `waitReady()` answers, since both report the same thing. */
+  boot?: ReadyResult;
 }
 
 export class FakeSimulator implements SimulatorSurface {
@@ -71,8 +94,20 @@ export class FakeSimulator implements SimulatorSurface {
    * deleted. */
   readonly calls: string[] = [];
 
+  /** Every call with the arguments it was made with. `calls` says *what* was
+   * called and this says *how* — which is half of what a tool test asserts,
+   * since a tool that calls the right method with the wrong arguments fails
+   * in exactly the way a name-only log cannot see. */
+  readonly invocations: { method: FakeMethod; args: unknown[] }[] = [];
+
+  readonly deviceType?: DeviceTypeInfo;
+  // Not `?`: the real one is a getter returning `ReadyResult | undefined`, so
+  // the property is required and its *type* is what carries the absence.
+  readonly lastBoot: ReadyResult | undefined;
+
   private readonly stateValue: SimulatorState;
   private readonly fails: FakeSimulatorOptions["fails"];
+  private readonly boot: ReadyResult;
   private recording: boolean;
 
   constructor(options: FakeSimulatorOptions = {}) {
@@ -81,6 +116,14 @@ export class FakeSimulator implements SimulatorSurface {
     this.stateValue = options.state ?? "Booted";
     this.recording = options.recording ?? false;
     this.fails = options.fails;
+    this.deviceType = options.deviceType;
+    this.boot = options.boot ?? {
+      ready: true,
+      waitedMs: 41_000,
+      recoveryTried: false,
+      recovered: false,
+    };
+    this.lastBoot = options.boot === undefined ? undefined : options.boot;
   }
 
   /** True once `delete()` has succeeded, so a test can tell a deleted handle
@@ -89,10 +132,17 @@ export class FakeSimulator implements SimulatorSurface {
   /** True once `releaseCompanion()` has succeeded. */
   released = false;
 
-  private record(method: keyof NonNullable<FakeSimulatorOptions["fails"]>): void {
+  private record(method: FakeMethod, ...args: unknown[]): void {
     this.calls.push(method);
+    this.invocations.push({ method, args });
     const failure = this.fails?.[method];
     if (failure !== undefined) throw failure;
+  }
+
+  /** The arguments one method was called with, or `undefined` if it was not.
+   * First call wins — every tool here makes at most one of each. */
+  argsFor(method: FakeMethod): unknown[] | undefined {
+    return this.invocations.find((call) => call.method === method)?.args;
   }
 
   async state(): Promise<SimulatorState> {
@@ -103,6 +153,15 @@ export class FakeSimulator implements SimulatorSurface {
   async delete(): Promise<void> {
     this.record("delete");
     this.deleted = true;
+  }
+
+  async showWindow(): Promise<void> {
+    this.record("showWindow");
+  }
+
+  async waitReady(opts?: { budgetMs?: number }): Promise<ReadyResult> {
+    this.record("waitReady", opts);
+    return this.boot;
   }
 
   async releaseCompanion(): Promise<void> {

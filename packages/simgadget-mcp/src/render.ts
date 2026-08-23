@@ -367,18 +367,28 @@ export function renderedErrorCodes(): ErrorCode[] {
 
 // ---- the MCP result shapes -------------------------------------------------
 
-/** A tool result carrying one block of text. Structural, so `render.ts` stays
- * free of the MCP SDK and testable without it; the SDK accepts it as-is. */
-export interface TextResult {
+/**
+ * A tool result carrying one block of text. Structural, so `render.ts` stays
+ * free of the MCP SDK and testable without it; the SDK accepts it as-is.
+ *
+ * **A type alias and not an `interface`, and that is load-bearing.** The SDK's
+ * `CallToolResult` carries an index signature (`[x: string]: unknown`, from the
+ * Zod schema it is inferred from), and TypeScript gives an implicit index
+ * signature to a type alias but never to an interface. Declared as interfaces
+ * these are rejected where a tool handler returns them — which is every tool
+ * body in `tools.ts` — with an error about a missing index signature that
+ * sounds like a problem with the SDK and is not.
+ */
+export type TextResult = {
   isError: false;
   content: { type: "text"; text: string }[];
-}
+};
 
-/** A failed tool call. */
-export interface ErrorResult {
+/** A failed tool call. Same shape, same reason for being a type alias. */
+export type ErrorResult = {
   isError: true;
   content: { type: "text"; text: string }[];
-}
+};
 
 /** Wraps a string as a successful tool result. */
 export function textResult(text: string): TextResult {
