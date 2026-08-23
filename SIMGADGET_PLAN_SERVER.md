@@ -341,6 +341,82 @@ Two smaller ones, here because they belong to nobody else's step:
    `sim.deviceType?.name`. See "A second gap, found at 3.2" above. Nothing in
    `sessions.ts` depended on it either way.
 
+#### Agent B — step 3.3 (2026-08-23)
+
+**Landed.** `packages/simgadget-mcp/src/sessions.ts` — `SimSession`
+(`{sim, owned}`, and nothing about the device), `SessionRegistry` over an
+injected `{create, attach}`, and `stopRecordingIfActive`. Plus
+`test/fakes/simulator.ts` and 37 tests in `test/sessions.test.mts`; the package
+is at **258**, the library still at 523, both `typecheck` clean, and the root
+frozen-legacy check still passing. Nothing under the repo-root `src/` or
+`test/` was touched.
+
+**The fake is tethered, and the tether was tested rather than assumed.**
+`Simulator` has private fields, so nothing can be structurally assignable to it
+and some assertion is unavoidable; it is confined to `asSimulator()`, one
+function, with `SimulatorSurface = Pick<Simulator, …>` and `FakeSimulator
+implements SimulatorSurface` above it. Three drifts were simulated against the
+library's built `.d.ts` and each one went red: a **renamed** method (red in
+`sessions.ts`), a **changed argument list** (red in `sessions.ts`), and a
+**changed return type** (red in the fake, which is the half the source misses
+because it ignores `stopRecording`'s result). A removed member is red too — a
+`Pick` over a name that is not `keyof Simulator` does not compile.
+
+**Deviations.**
+
+1. **The not-booted refusal moved into the registry.** Amended into step 3.3
+   above, with the reasoning; it is the one deviation that changes what agent C
+   writes.
+2. **`withSession(id, fn)` exists, and is the accessor a tool body should
+   use.** Not in the plan. It is what makes agent A's note 3 — a
+   `SimulatorNotFoundError` can arrive from *any* method — a rule enforced in
+   one place instead of a thing seventeen tool bodies each have to remember.
+   It requires the session (or gives the "call start_simulator first" answer),
+   runs the body, and drops the session on a `SimulatorNotFoundError` before
+   rethrowing.
+3. **`stopRecordingIfActive` is exported and takes `Pick<Simulator,
+   "stopRecording">`** rather than being a private method over a whole handle.
+   That is what lets the "tolerate on `code`, never on the message" rule be
+   tested from both sides — a `no-active-recording` with *different* wording is
+   swallowed, and a *different code* wearing the library's exact sentence is
+   not — with no cast in sight.
+4. **`shutdown()` releases the companion for every session it does not
+   delete.** The old `shutdown` called `companions.shutdownAll()`
+   (index.ts:3025), which is library-internal now and unreachable;
+   `releaseCompanion()` per handle is its public equivalent. It matters for
+   attached sessions and for `CLEANUP_ON_EXIT=false`, neither of which any
+   delete would cover. `CompanionManager`'s own exit hook remains the backstop.
+
+**What agent C needs to know before writing seventeen tool bodies.**
+
+1. **Use `withSession` for the fourteen non-lifecycle tools**, not `require`.
+   Same refusal for an unknown id, and it is what drops a stale session.
+   `handleToolError` still wraps the whole body — the registry rethrows.
+2. **`start_simulator` owns its resume branch; the registry deliberately does
+   not.** The shape is `sessions.get(id)` → if present, `await sim.state()`; if
+   `"Booted"`, `sim.showWindow()` + `renderResumed(...)`; otherwise
+   `sessions.drop(id)` and fall through to `sessions.create(id, opts)`.
+   `create` reserves the id synchronously and does **not** check for an
+   existing session, exactly as index.ts:1272 set unconditionally — so
+   resolving the old entry first is the caller's job, and skipping it silently
+   replaces a live handle.
+3. **`create` takes `CreateOptions` straight through**, so the device name
+   (`${id}_${keyword…}`, index.ts:1253) is composed in the tool body and passed
+   as `{deviceType, name}`. `renderStarted`'s `deviceTypeName` then comes off
+   the returned session as `session.sim.deviceType?.name`.
+4. **`destroy(id)` returns `{name, udid, owned}`, read before the teardown** —
+   after a successful `delete()` the handle is stale, and only its plain fields
+   are safe to touch. Feed them straight to `renderDestroyed`.
+5. **`attach(id, udid)` already refuses an occupied id and a non-booted
+   simulator** with `renderAlreadyAttached`/`renderNotBooted`. The tool body is
+   `const {sim} = await sessions.attach(id, udid)`, then `sim.waitReady()`, then
+   `renderAttached`.
+6. **Extending the fake is two lines**: add the member's name to
+   `SimulatorSurface`'s `Pick` and an implementation to `FakeSimulator`. It
+   deliberately covers only what `sessions.ts` calls — `tap`, `screenshot`,
+   `rotate` and the rest are yours to add as you need them, and adding them
+   through the `Pick` is what keeps them honest. Never widen it with `any`.
+
 ## Implementation order
 
 Every commit compiles and passes `npm test` in both packages. When the manual
@@ -485,6 +561,20 @@ Quirks that must survive:
 - `companions.reopen(udid)` on create and attach is now inside the library
   (`delete()`/create paths), so the server must **not** try to do it and has no
   way to.
+
+**Amended at 3.3, by agent B: `attach_simulator`'s "not booted" refusal lives
+in the registry, not in the tool body.** The mapping table gives
+`attach_simulator` an `attachSimulator(udid)` + `sim.state()` check + a
+`waitReady()`, and the obvious split puts the whole sequence in `tools.ts`.
+It cannot go there: the registry is what calls `attachSimulator` (that is what
+the injected `{create, attach}` seam *is*), so a state check in the tool body
+would run **after** the session was registered, and refusing then needs an
+un-register on the failure path — one more place to get ownership wrong, in the
+one file where getting ownership wrong deletes somebody's simulator. So
+`SessionRegistry.attach` refuses a non-booted simulator itself and registers
+nothing, and the invariant is stateable: **the registry never holds a session
+whose simulator was not booted when it was adopted.** `waitReady()` stays in
+the tool body, where the numbers it returns are rendered.
 
 *Fake tests:* the concurrency guard refuses the second creation and the first
 still wins; an attached session's `destroy` releases and does not delete; an
