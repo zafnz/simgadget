@@ -41,6 +41,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { connectTools } from "./harness/mcp.ts";
 import { SERVER_INSTRUCTIONS } from "../src/tools.ts";
@@ -55,6 +56,12 @@ import {
   renderResumed,
   renderRotate,
   renderScreen,
+  renderAppInstalled,
+  renderAppLaunched,
+  renderRecordingStarted,
+  renderRecordingStopped,
+  renderScreenshotCaptured,
+  renderScreenshotSaved,
   renderStarted,
   renderSwiped,
   renderTap,
@@ -66,6 +73,7 @@ import {
   AccessibilityUnreadableError,
   ElementDisabledError,
   ElementNotFoundError,
+  SimGadgetError,
   SimulatorNotFoundError,
   TapObstructedError,
   ToggleGestureError,
@@ -1017,4 +1025,327 @@ test("ui_swipe", async (t) => {
       await harness.close();
     }
   });
+});
+
+// ---- ui_view ---------------------------------------------------------------
+
+test("ui_view", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("ui_view"));
+
+  await t.test("asks for a compressed, point-sized JPEG and returns it as an image block", async () => {
+    const bytes = Buffer.from("pretend this is a jpeg");
+    const fake = createdFake({ imageData: bytes });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { content, isError } = await harness.call("ui_view", { id: "qa" });
+      assert.equal(isError, false);
+      // The three options are what make this the compressed *view* rather than
+      // a file: JPEG at 80, resized to the space an agent's coordinates live in.
+      assert.deepEqual(fake.argsFor("screenshot"), [
+        { format: "jpeg", quality: 80, resizeTo: "points" },
+      ]);
+      assert.deepEqual(content, [
+        { type: "image", data: bytes.toString("base64"), mimeType: "image/jpeg" },
+        { type: "text", text: renderScreenshotCaptured() },
+      ]);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("a simulator that cannot be read renders the typed error", async () => {
+    const fake = createdFake({
+      fails: { screenshot: new AccessibilityUnreadableError("booting", "empty") },
+    });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("ui_view", { id: "qa" });
+      assert.equal(isError, true);
+      assert.match(text, /^Error capturing screenshot: Simulator is still booting\./);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- screenshot ------------------------------------------------------------
+
+test("screenshot", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("screenshot"));
+
+  await t.test("resolves a relative path before the library sees it", async () => {
+    // The library takes absolute paths only, on purpose: `~/Downloads` is host
+    // policy, and a relative path must never land in the server process's
+    // working directory, which belongs to whoever launched the daemon.
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    const previous = process.env.SIMGADGET_DEFAULT_OUTPUT_DIR;
+    process.env.SIMGADGET_DEFAULT_OUTPUT_DIR = "/tmp/shots";
+    try {
+      const { text } = await harness.call("screenshot", {
+        id: "qa",
+        output_path: "login.png",
+      });
+      assert.deepEqual(fake.argsFor("screenshot"), [
+        { format: undefined, display: undefined, mask: undefined, path: "/tmp/shots/login.png" },
+      ]);
+      assert.equal(text, renderScreenshotSaved("/tmp/shots/login.png"));
+    } finally {
+      if (previous === undefined) delete process.env.SIMGADGET_DEFAULT_OUTPUT_DIR;
+      else process.env.SIMGADGET_DEFAULT_OUTPUT_DIR = previous;
+      await harness.close();
+    }
+  });
+
+  await t.test("passes format, display and mask through", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      await harness.call("screenshot", {
+        id: "qa",
+        output_path: "/tmp/a.jpg",
+        type: "jpeg",
+        display: "internal",
+        mask: "black",
+      });
+      assert.deepEqual(fake.argsFor("screenshot"), [
+        { format: "jpeg", display: "internal", mask: "black", path: "/tmp/a.jpg" },
+      ]);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("the schema rejects a format simctl does not have", async () => {
+    const harness = await connect(await startedRegistry(createdFake(), "qa"));
+    try {
+      await assert.rejects(() =>
+        harness.callRaw("screenshot", { id: "qa", output_path: "/tmp/a.webp", type: "webp" })
+      );
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- record_video ----------------------------------------------------------
+
+test("record_video", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("record_video"));
+
+  await t.test("starts a recording at the resolved path, naming the tool that ends it", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("record_video", {
+        id: "qa",
+        output_path: "/tmp/run.mp4",
+        codec: "h264",
+        force: true,
+      });
+      assert.deepEqual(fake.argsFor("startRecording"), [
+        "/tmp/run.mp4",
+        { codec: "h264", display: undefined, mask: undefined, force: true },
+      ]);
+      assert.equal(text, renderRecordingStarted("/tmp/run.mp4"));
+      assert.match(text, /To stop recording, use the stop_recording command\./);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("invents a name when none is given, in the default directory", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    const previous = process.env.SIMGADGET_DEFAULT_OUTPUT_DIR;
+    process.env.SIMGADGET_DEFAULT_OUTPUT_DIR = "/tmp/videos";
+    try {
+      await harness.call("record_video", { id: "qa" });
+      const [outputPath] = fake.argsFor("startRecording") ?? [];
+      assert.match(String(outputPath), /^\/tmp\/videos\/simulator_recording_\d+\.mp4$/);
+    } finally {
+      if (previous === undefined) delete process.env.SIMGADGET_DEFAULT_OUTPUT_DIR;
+      else process.env.SIMGADGET_DEFAULT_OUTPUT_DIR = previous;
+      await harness.close();
+    }
+  });
+
+  await t.test("a second recording is refused, and the refusal names the session", async () => {
+    const fake = createdFake({
+      fails: {
+        startRecording: new SimGadgetError(
+          "recording-already-active",
+          "A recording is already in progress for this simulator handle. Stop it first."
+        ),
+      },
+    });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("record_video", { id: "qa" });
+      assert.equal(isError, true);
+      // The handle-flavoured wording is replaced by the session-flavoured one,
+      // which is the whole reason every body passes a RenderContext.
+      assert.match(text, /A recording is already in progress for session "qa"\. Call stop_recording first\./);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- stop_recording --------------------------------------------------------
+
+test("stop_recording", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("stop_recording"));
+
+  await t.test("stops the handle's recording", async () => {
+    const fake = createdFake({ recording: true });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("stop_recording", { id: "qa" });
+      assert.equal(fake.calls.includes("stopRecording"), true);
+      assert.equal(text, renderRecordingStopped());
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("no recording is an error that names the session", async () => {
+    const fake = createdFake({ recording: false });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("stop_recording", { id: "qa" });
+      assert.equal(isError, true);
+      assert.match(text, /No active recording for session "qa"\./);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- install_app -----------------------------------------------------------
+
+test("install_app", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("install_app"));
+
+  await t.test("installs the resolved path, and says the same path back", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("install_app", {
+        id: "qa",
+        app_path: "/tmp/Fixture.app",
+      });
+      assert.deepEqual(fake.argsFor("installApp"), ["/tmp/Fixture.app"]);
+      assert.equal(text, renderAppInstalled("/tmp/Fixture.app"));
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("a relative bundle path resolves against the working directory", async () => {
+    // Not `~/Downloads`: an app bundle is something the caller built, so a
+    // relative path means "from here". This is the old server's behaviour and
+    // the library's own rule, so the two provably agree.
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    const previous = process.env.SIMGADGET_DEFAULT_OUTPUT_DIR;
+    process.env.SIMGADGET_DEFAULT_OUTPUT_DIR = "/tmp/elsewhere";
+    try {
+      await harness.call("install_app", { id: "qa", app_path: "build/Fixture.app" });
+      assert.deepEqual(fake.argsFor("installApp"), [
+        path.resolve("build/Fixture.app"),
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env.SIMGADGET_DEFAULT_OUTPUT_DIR;
+      else process.env.SIMGADGET_DEFAULT_OUTPUT_DIR = previous;
+      await harness.close();
+    }
+  });
+
+  await t.test("a bundle that is not there renders the typed error", async () => {
+    const fake = createdFake({
+      fails: {
+        installApp: new SimGadgetError(
+          "app-bundle-not-found",
+          "App bundle not found at: /tmp/Missing.app"
+        ),
+      },
+    });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("install_app", {
+        id: "qa",
+        app_path: "/tmp/Missing.app",
+      });
+      assert.equal(isError, true);
+      assert.match(text, /^Error installing app: App bundle not found at: \/tmp\/Missing\.app/);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- launch_app ------------------------------------------------------------
+
+test("launch_app", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("launch_app"));
+
+  await t.test("launches by bundle id and reports the pid", async () => {
+    const fake = createdFake({ pid: 18900 });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("launch_app", {
+        id: "qa",
+        bundle_id: "com.example.app",
+      });
+      assert.deepEqual(fake.argsFor("launchApp"), [
+        "com.example.app",
+        { terminateRunning: undefined },
+      ]);
+      assert.equal(text, renderAppLaunched("com.example.app", 18900));
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("terminate_running passes through under its library spelling", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      await harness.call("launch_app", {
+        id: "qa",
+        bundle_id: "com.example.app",
+        terminate_running: true,
+      });
+      assert.deepEqual(fake.argsFor("launchApp")?.[1], { terminateRunning: true });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("a launch that reported no pid still says it launched", async () => {
+    const fake = createdFake({ pid: null });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("launch_app", {
+        id: "qa",
+        bundle_id: "com.example.app",
+      });
+      assert.equal(text, "App com.example.app launched successfully");
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- the whole surface -----------------------------------------------------
+
+test("every tool in the baseline is registered, and nothing else is", async () => {
+  // The connect-time surface, whole. Individually each tool is diffed above;
+  // this is what catches the seventeenth going missing, or an eighteenth
+  // arriving that no agent was ever told about.
+  const registered = [...(await listedTools()).keys()].sort();
+  const expected = BASELINE.tools.map((tool) => tool.name).sort();
+  assert.deepEqual(registered, expected);
+  assert.equal(registered.length, 17);
 });

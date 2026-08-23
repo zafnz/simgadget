@@ -38,6 +38,9 @@
 
 import type {
   AXElement,
+  Screenshot,
+  ScreenshotOptions,
+  RecordingOptions,
   TapResult,
   TapTarget,
   TapOptions,
@@ -79,6 +82,11 @@ export type SimulatorSurface = Pick<
   | "tap"
   | "typeText"
   | "swipe"
+  // ---- added for tools.ts's capture and app tools (step 3.4) ----
+  | "screenshot"
+  | "startRecording"
+  | "installApp"
+  | "launchApp"
 >;
 
 /**
@@ -121,6 +129,11 @@ export interface FakeSimulatorOptions {
   /** What `tap()` answers. Defaults to a plain touch at the origin, so a test
    * that cares about the result has to say what it is. */
   tapResult?: TapResult;
+  /** The image bytes `screenshot()` hands back. */
+  imageData?: Buffer;
+  /** What `launchApp()` reports. `null` is a real answer: not every launch
+   * reports a pid. */
+  pid?: number | null;
 }
 
 export class FakeSimulator implements SimulatorSurface {
@@ -152,6 +165,8 @@ export class FakeSimulator implements SimulatorSurface {
   private readonly adopted?: Orientation;
   private readonly orientation: Orientation;
   private readonly tapResult: TapResult;
+  private readonly imageData: Buffer;
+  private readonly pid: number | null;
   private recording: boolean;
 
   constructor(options: FakeSimulatorOptions = {}) {
@@ -183,6 +198,8 @@ export class FakeSimulator implements SimulatorSurface {
       count: 1,
       durationSeconds: 0.1,
     };
+    this.imageData = options.imageData ?? Buffer.from("fake-jpeg-bytes");
+    this.pid = options.pid ?? null;
   }
 
   /** True once `delete()` has succeeded, so a test can tell a deleted handle
@@ -212,6 +229,34 @@ export class FakeSimulator implements SimulatorSurface {
   async delete(): Promise<void> {
     this.record("delete");
     this.deleted = true;
+  }
+
+  async screenshot(opts?: ScreenshotOptions): Promise<Screenshot> {
+    this.record("screenshot", opts);
+    return {
+      data: this.imageData,
+      format: opts?.format ?? "png",
+      width: 393,
+      height: 852,
+      orientation: this.orientation,
+    };
+  }
+
+  async startRecording(outputPath: string, opts?: RecordingOptions): Promise<void> {
+    this.record("startRecording", outputPath, opts);
+    this.recording = true;
+  }
+
+  async installApp(appPath: string): Promise<void> {
+    this.record("installApp", appPath);
+  }
+
+  async launchApp(
+    bundleId: string,
+    opts?: { terminateRunning?: boolean }
+  ): Promise<{ pid: number | null }> {
+    this.record("launchApp", bundleId, opts);
+    return { pid: this.pid };
   }
 
   async tap(target: TapTarget, opts?: TapOptions): Promise<TapResult> {

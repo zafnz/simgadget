@@ -586,5 +586,262 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
     );
   }
 
+  // ---- capture and apps ----------------------------------------------------
+
+  if (!isToolFiltered("ui_view")) {
+    server.tool(
+      "ui_view",
+      "Get the image content of a compressed screenshot of the current simulator view",
+      {
+        id: sessionIdSchema,
+      },
+      { title: "View Screenshot", readOnlyHint: true, openWorldHint: true },
+      async ({ id }) =>
+        handleToolError(
+          "Error capturing screenshot",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // The whole pipeline — capture in physical portrait, resize to
+              // the screen's logical point dimensions, compress, and rotate to
+              // match the interface — is `screenshot()`. These three options
+              // are what made it the *compressed view* rather than a file:
+              // JPEG at 80, and point dimensions so that what a model sees is
+              // the space its coordinates live in.
+              const shot = await sim.screenshot({
+                format: "jpeg",
+                quality: 80,
+                resizeTo: "points",
+              });
+
+              // The one MCP wire format in this server with no JavaScript use
+              // at all, which is exactly why it is here and not in the
+              // library: a base64 image block is a thing an agent's transport
+              // understands, and a `Buffer` is what every other caller wants.
+              return {
+                isError: false as const,
+                content: [
+                  {
+                    type: "image" as const,
+                    data: shot.data.toString("base64"),
+                    mimeType: "image/jpeg",
+                  },
+                  { type: "text" as const, text: renderScreenshotCaptured() },
+                ],
+              };
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("screenshot")) {
+    server.tool(
+      "screenshot",
+      "Takes a screenshot of the iOS Simulator",
+      {
+        id: sessionIdSchema,
+        output_path: z
+          .string()
+          .max(1024)
+          .describe(
+            "File path where the screenshot will be saved. If relative, it uses the directory specified by the `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` env var, or `~/Downloads` if not set."
+          ),
+        type: z
+          .enum(["png", "tiff", "bmp", "gif", "jpeg"])
+          .optional()
+          .describe(
+            "Image format (png, tiff, bmp, gif, or jpeg). Default is png."
+          ),
+        display: z
+          .enum(["internal", "external"])
+          .optional()
+          .describe(
+            "Display to capture (internal or external). Default depends on device type."
+          ),
+        mask: z
+          .enum(["ignored", "alpha", "black"])
+          .optional()
+          .describe(
+            "For non-rectangular displays, handle the mask by policy (ignored, alpha, or black)"
+          ),
+      },
+      { title: "Take Screenshot", readOnlyHint: false, openWorldHint: true },
+      async ({ id, output_path, type, display, mask }) =>
+        handleToolError(
+          "Error taking screenshot",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // Resolved here and nowhere else: the library takes absolute
+              // paths only, on purpose, because guessing at a caller's home
+              // directory is host policy (DECISIONS.md #12). What crosses into
+              // `simgadget` is always already absolute.
+              const absolutePath = ensureAbsolutePath(output_path);
+              await sim.screenshot({ format: type, display, mask, path: absolutePath });
+              // Composed rather than echoed. The old server read simctl's own
+              // "Wrote screenshot to:" line off *stderr*, where simctl reports
+              // success; the path said back here is the one we resolved, which
+              // is the same path and a more useful one to have said.
+              return textResult(renderScreenshotSaved(absolutePath));
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("record_video")) {
+    server.tool(
+      "record_video",
+      "Records a video of the iOS Simulator using simctl directly",
+      {
+        id: sessionIdSchema,
+        output_path: z
+          .string()
+          .max(1024)
+          .optional()
+          .describe(
+            `Optional output path. If not provided, a default name will be used. The file will be saved in the directory specified by \`IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR\` or in \`~/Downloads\` if the environment variable is not set.`
+          ),
+        codec: z
+          .enum(["h264", "hevc"])
+          .optional()
+          .describe(
+            'Specifies the codec type: "h264" or "hevc". Default is "hevc".'
+          ),
+        display: z
+          .enum(["internal", "external"])
+          .optional()
+          .describe(
+            'Display to capture: "internal" or "external". Default depends on device type.'
+          ),
+        mask: z
+          .enum(["ignored", "alpha", "black"])
+          .optional()
+          .describe(
+            'For non-rectangular displays, handle the mask by policy: "ignored", "alpha", or "black".'
+          ),
+        force: z
+          .boolean()
+          .optional()
+          .describe(
+            "Force the output file to be written to, even if the file already exists."
+          ),
+      },
+      { title: "Record Video", readOnlyHint: false, openWorldHint: true },
+      async ({ id, output_path, codec, display, mask, force }) =>
+        handleToolError(
+          "Error starting recording",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // One recording per handle is the library's rule now, and it is
+              // the same rule the `activeRecordings` map enforced per session,
+              // because a session owns exactly one simulator. The refusal
+              // still names the session, which is what an agent driving
+              // several needs to hear — that comes from the RenderContext.
+              const outputFile = ensureAbsolutePath(
+                output_path ?? `simulator_recording_${Date.now()}.mp4`
+              );
+              await sim.startRecording(outputFile, { codec, display, mask, force });
+              return textResult(renderRecordingStarted(outputFile));
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("stop_recording")) {
+    server.tool(
+      "stop_recording",
+      "Stops the simulator video recording",
+      {
+        id: sessionIdSchema,
+      },
+      { title: "Stop Recording", readOnlyHint: false, openWorldHint: true },
+      async ({ id }) =>
+        handleToolError(
+          "Error stopping recording",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // SIGINT rather than SIGKILL, and the wait for the file to
+              // finalize, are the handle's — a killed `simctl io recordVideo`
+              // leaves a file that exists, has a plausible size, and will not
+              // play.
+              await sim.stopRecording();
+              return textResult(renderRecordingStopped());
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("install_app")) {
+    server.tool(
+      "install_app",
+      "Installs an app bundle (.app or .ipa) on the iOS Simulator",
+      {
+        id: sessionIdSchema,
+        app_path: z
+          .string()
+          .max(1024)
+          .describe(
+            "Path to the app bundle (.app directory or .ipa file) to install"
+          ),
+      },
+      { title: "Install App", readOnlyHint: false, openWorldHint: true },
+      async ({ id, app_path }) =>
+        handleToolError(
+          "Error installing app",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // `path.resolve` and **not** `ensureAbsolutePath`, which is the
+              // old server's behaviour and deliberate: an app bundle is
+              // something the caller built, so a relative path means "from
+              // here", where a relative *output* path means "somewhere I will
+              // find it later". Resolving here rather than leaving it to the
+              // library — which resolves identically — is what makes the path
+              // in the answer provably the path that was installed.
+              const absolutePath = path.resolve(app_path);
+              await sim.installApp(absolutePath);
+              return textResult(renderAppInstalled(absolutePath));
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("launch_app")) {
+    server.tool(
+      "launch_app",
+      "Launches an app on the iOS Simulator by bundle identifier",
+      {
+        id: sessionIdSchema,
+        bundle_id: z
+          .string()
+          .max(256)
+          .describe(
+            "Bundle identifier of the app to launch (e.g., com.apple.mobilesafari)"
+          ),
+        terminate_running: z
+          .boolean()
+          .optional()
+          .describe(
+            "Terminate the app if it is already running before launching"
+          ),
+      },
+      { title: "Launch App", readOnlyHint: false, openWorldHint: true },
+      async ({ id, bundle_id, terminate_running }) =>
+        handleToolError(
+          "Error launching app",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              const { pid } = await sim.launchApp(bundle_id, {
+                terminateRunning: terminate_running,
+              });
+              return textResult(renderAppLaunched(bundle_id, pid));
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
   // ---- end of registrations -------------------------------------------------
 }

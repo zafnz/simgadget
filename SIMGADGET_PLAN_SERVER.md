@@ -417,6 +417,83 @@ because it ignores `stopRecording`'s result). A removed member is red too — a
    `rotate` and the rest are yours to add as you need them, and adding them
    through the `Pick` is what keeps them honest. Never widen it with `any`.
 
+#### Agent C — step 3.4 (2026-08-23)
+
+**Landed.** `packages/simgadget-mcp/src/tools.ts` — all **17** registrations in
+one file, `SERVER_INSTRUCTIONS`, `sessionIdSchema` and the filtering pattern —
+in the plan's four commits: lifecycle, reads, actions, capture and apps. Plus
+`test/tools.test.mts` and `test/harness/mcp.ts`; the package is at **361**
+tests, the library still at 523, both `typecheck` clean, and the root
+frozen-legacy check still passing. Nothing under the repo-root `src/` or
+`test/` was touched, and nothing imports a deep library path.
+
+**Every tool is diffed against the baseline, and every one matched.** Name,
+description, `inputSchema` and `annotations`, per tool, plus a whole-surface
+check that exactly the baseline's seventeen names are registered. That was
+worth doing here rather than only at 3.7: it means a Zod shape copied verbatim
+demonstrably produces the JSON Schema an agent was already seeing, defaults and
+all, and it did so from the first commit rather than after the last. **It does
+not replace 3.7** — that runs against the *built* server over stdio and so also
+proves the entry point, the transport and the `initialize` handshake.
+
+**Deviations.**
+
+1. **The tests drive a real `Client` over `InMemoryTransport`**, not exported
+   handlers — the plan offered both and left the choice open. The schema is
+   half of what an agent meets, and only this route exercises it: `ui_tap`'s
+   `count` arrives defaulted to 1 and its `duration` as the *string* `"1"`,
+   neither of which a directly-called handler would ever see.
+2. **`render.ts`'s `TextResult`/`ErrorResult` became type aliases** (commit 1).
+   Its own comment says "the SDK accepts it as-is", and as `interface`s it did
+   not: `CallToolResult` carries an index signature, and TypeScript gives an
+   implicit one to a type alias but never to an interface. No behaviour, no
+   string, and no test changed.
+3. **Row 12 of "Deliberate behaviour changes"** — `launch_app` now reports a
+   pid. The old regex could not match simctl's reply, so every successful
+   launch answered without one; the library fixed it and the message follows.
+   Users notice, so it is in the table.
+
+**What agent D needs before writing `index.ts` and the transports.**
+
+1. **The MCP SDK ships two builds with two sets of declarations, and its
+   classes have private fields.** This package has no `"type": "module"`, so
+   everything in `src/` resolves the **CJS** declarations while any `.mts` test
+   resolves the **ESM** ones — and the two `McpServer`s are not
+   interchangeable. The error names a private `_serverInfo` and reads like an
+   SDK bug. Everything SDK-typed is therefore confined to `test/harness/mcp.ts`,
+   a `.ts` file that resolves it exactly as `src/` does. **You will hit this
+   again**, because `index.ts` and `transport.ts` both import the SDK and their
+   tests are `.mts`: either put the SDK-typed part behind a `.ts` harness the
+   same way, or set `"type": "module"` on the package — which resolves it from
+   the other end, changes what `tsc` emits for the published server, and is
+   your call, not a test helper's. `simgadget` itself is immune: it ships one
+   `types` for both conditions.
+2. **`registerTools(server, sessions)` takes both as parameters**, and
+   `SERVER_INSTRUCTIONS` is exported from `tools.ts`. In HTTP mode, pass the
+   **same** registry to each per-request `McpServer` — that is what makes a
+   session outlive the connection that created it, and it is the whole reason
+   the registry is a parameter.
+3. **`filteredTools()` is read once per `registerTools` call**, not at module
+   load. So a filtered tool is absent from every server instance built after
+   the variable changes, and a test can set it without a fresh process.
+4. **`assertIdbPathUnset()` is still uncalled** — agent A's note, still
+   outstanding, and not mine to place: it belongs at startup in `index.ts`.
+5. **One wrinkle for the TESTING_TOOLS run, flagged rather than fixed.**
+   `attach_simulator` passes `{sessionId: id}` like every other tool, so a udid
+   that does not exist renders row 11's sentence: *"…Session "qa" can no longer
+   use it — call destroy_simulator, then start_simulator for a fresh one."* On
+   **attach** that is inapt — the session never held that simulator, and
+   `destroy_simulator` would answer "no simulator is running". The instruction
+   to pass the context from every tool is followed as written and the first
+   sentence is still the actionable one; whether this path deserves different
+   prose is an owner's call, and it is the kind of thing a human reading a
+   screen at step 6 should decide.
+6. **`install_app` resolves with `path.resolve`, not `ensureAbsolutePath`**,
+   and that is deliberate: it is the old server's behaviour and the library's
+   own rule. An app bundle is something the caller built, so a relative path
+   means "from here"; only `screenshot` and `record_video` mean "somewhere I
+   will find it later" and go through `paths.ts`. Do not tidy these into one.
+
 ## Implementation order
 
 Every commit compiles and passes `npm test` in both packages. When the manual
@@ -793,6 +870,7 @@ strings are updated from this table and nowhere else.
 | 9 | `screenshot` answers `Wrote screenshot to: <path>` composed by the server, rather than echoing simctl's stderr | the library returns a `Screenshot`, not simctl's output; the path said back is the absolute one we resolved, which is strictly more useful |
 | 10 | the wedge message says whether a bridge restart was *actually* attempted | `clarify()` claimed one had been in both cases; the typed `recoveryTried` knows |
 | 11 | a simulator that is gone adds a sentence naming the session and the way back | design rule 5: the library cannot name a tool, so the host does |
+| 12 | `launch_app` now reports the pid it was given | the old regex was anchored at the start of the line and simctl prints the bundle id first, so it matched nothing and *every* successful launch answered without a pid. Fixed in the library (`parseLaunchPid`, found by the e2e 2026-08-17); the server's message was always able to say it |
 
 ## Open items — need your call
 
