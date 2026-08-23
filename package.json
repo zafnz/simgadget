@@ -1,63 +1,31 @@
 {
-  "name": "ios-multi-simulator-mcp",
-  "version": "2.2.0",
-  "description": "MCP server for session-based iOS simulator lifecycle management, enabling multi-agent parallel control",
-  "bin": {
-    "ios-multi-simulator-mcp": "build/index.js"
-  },
+  "name": "simgadget-workspace",
+  "private": true,
+  "description": "Workspace root for the simgadget library and the simgadget-mcp server. Publishes nothing; see packages/.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zafnz/ios-multi-simulator-mcp.git"
   },
-  "files": [
-    "build",
-    "companion.lock.json"
-  ],
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "prepare": "npm run build",
-    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
-    "gen:proto": "mkdir -p src/idb/generated && protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=src/idb/generated --ts_proto_opt=outputServices=grpc-js,env=node,esModuleInterop=true,useOptionals=messages,outputJsonMethods=false --proto_path=vendor/idb/proto vendor/idb/proto/idb.proto",
-    "gen:keymap": "node scripts/gen-keymap.mjs",
-    "build:companion": "cd vendor/idb && XCODEGEN_STRIP_XATTRS=false ./build.sh build",
-    "verify:download": "node scripts/verify-companion-download.mjs",
-    "check:companion": "node scripts/check-companion-contract.mjs",
-    "gen": "npm run gen:proto && npm run gen:keymap",
-    "start": "node build/index.js",
-    "watch": "tsc --watch",
-    "predev": "npm run build",
-    "dev": "npx @modelcontextprotocol/inspector node build/index.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "test": "node --test \"test/*.test.mts\" && node scripts/check-frozen-legacy.mjs",
-    "smoke": "bash scripts/smoke-packed.sh"
-  },
-  "keywords": [
-    "ios",
-    "simulator",
-    "mcp",
-    "modelcontextprotocol"
-  ],
-  "author": {
-    "name": "Nick Clifford",
-    "url": "https://nickclifford.com/"
-  },
-  "contributors": [
-    {
-      "name": "Joshua Yoes",
-      "url": "https://joshuayoes.com"
-    }
-  ],
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT",
-  "dependencies": {
-    "@bufbuild/protobuf": "^2.13.0",
-    "@grpc/grpc-js": "^1.14.4",
-    "@modelcontextprotocol/sdk": "1.18.2",
-    "zod": "^3.23.8"
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace=simgadget",
+    "smoke": "bash scripts/smoke-packed.sh",
+    "gen:proto": "mkdir -p packages/simgadget/src/idb/generated && protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=packages/simgadget/src/idb/generated --ts_proto_opt=outputServices=grpc-js,env=node,esModuleInterop=true,useOptionals=messages,outputJsonMethods=false --proto_path=vendor/idb/proto vendor/idb/proto/idb.proto",
+    "gen:keymap": "node scripts/gen-keymap.mjs",
+    "gen": "npm run gen:proto && npm run gen:keymap",
+    "build:companion": "cd vendor/idb && XCODEGEN_STRIP_XATTRS=false ./build.sh build",
+    "verify:download": "node scripts/verify-companion-download.mjs",
+    "check:companion": "node scripts/check-companion-contract.mjs",
+    "predev": "npm run build --workspaces",
+    "dev": "npx @modelcontextprotocol/inspector node packages/simgadget-mcp/build/index.js"
   },
   "devDependencies": {
     "@modelcontextprotocol/inspector": "0.16.8",

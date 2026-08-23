@@ -8,10 +8,11 @@
 #   imsmd.sh status
 set -uo pipefail
 
-PORT=${IOS_SIMULATOR_MCP_HTTP_PORT:-8008}
-PIDFILE=/tmp/imsm-daemon.pid
-LOG=/tmp/imsm-daemon.log
+PORT=${SIMGADGET_HTTP_PORT:-${IOS_SIMULATOR_MCP_HTTP_PORT:-8008}}
+PIDFILE=/tmp/simgadget-daemon.pid
+LOG=/tmp/simgadget-daemon.log
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+SERVER="$ROOT/packages/simgadget-mcp/build/index.js"
 
 # Kills the process in the pidfile and nothing else.
 #
@@ -41,12 +42,16 @@ stop() {
 }
 
 start() {
+  if [ ! -f "$SERVER" ]; then
+    echo "ERROR: $SERVER does not exist; run 'npm run build --workspaces' first" >&2
+    exit 1
+  fi
   if lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
     echo "ERROR: port $PORT already in use; run stop first" >&2
     exit 1
   fi
   : > "$LOG"
-  env "$@" nohup node "$ROOT/build/index.js" -v >>"$LOG" 2>&1 &
+  env "$@" nohup node "$SERVER" -v >>"$LOG" 2>&1 &
   echo $! > "$PIDFILE"
   for _ in $(seq 1 40); do
     grep -q "listening on" "$LOG" 2>/dev/null && break

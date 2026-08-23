@@ -57,17 +57,17 @@ For additional context and references, see [CONTEXT.md](CONTEXT.md) which contai
    npm install
    ```
 
-3. **Build the project**
+3. **Build the project** — a workspace root, so both packages at once
 
    ```bash
-   npm run build
+   npm run build --workspaces
    ```
 
 4. **Test during development**
 
    ```bash
-   # Watch mode for development
-   npm run watch
+   # Watch mode for development, one package at a time
+   npm run watch --workspace=simgadget-mcp
 
    # Test with MCP inspector
    npm run dev
@@ -185,7 +185,7 @@ npm ls --depth=0
 
    ```bash
    npm install
-   npm run build
+   npm run build --workspaces
    npm run dev  # Test with MCP inspector
    ```
 
@@ -285,7 +285,7 @@ for all changes:
 1. **Build your changes**
 
    ```bash
-   npm run build
+   npm run build --workspaces
    ```
 
 2. **Configure your MCP client** (e.g., Cursor) to use your local build:
@@ -293,9 +293,9 @@ for all changes:
    ```json
    {
      "mcpServers": {
-       "ios-simulator": {
+       "simgadget": {
          "command": "node",
-         "args": ["/full/path/to/your/ios-simulator-mcp/build/index.js"]
+         "args": ["/full/path/to/your/checkout/packages/simgadget-mcp/build/index.js"]
        }
      }
    }

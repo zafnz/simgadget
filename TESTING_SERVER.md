@@ -13,7 +13,7 @@ For the tools themselves, see [TESTING_TOOLS.md](TESTING_TOOLS.md) — nothing h
 HTTP is the default transport, so a plain start is a shared server:
 
 ```bash
-node build/index.js --port 8008
+node packages/simgadget-mcp/build/index.js --port 8008
 ```
 
 **Expected:** logs `iOS Simulator MCP server listening on http://127.0.0.1:8008/mcp`.
@@ -71,26 +71,26 @@ An agent that dies mid-task should be able to pick its simulator back up.
 1. **Default is HTTP:**
 
    ```bash
-   node build/index.js
+   node packages/simgadget-mcp/build/index.js
    ```
 
    **Expected:** logs a listening URL.
 2. **`--stdio` selects stdio:**
 
    ```bash
-   node build/index.js --stdio
+   node packages/simgadget-mcp/build/index.js --stdio
    ```
 
    **Expected:** no listening line; the process speaks MCP on stdin/stdout. A client configured with the `command`/`args` form drives it, and `start_simulator`, `ui_describe_all` and `destroy_simulator` all behave as they do over HTTP.
 3. **A flag beats the environment**, both ways:
 
    ```bash
-   IOS_SIMULATOR_MCP_TRANSPORT=stdio node build/index.js --http --port 8009
-   IOS_SIMULATOR_MCP_TRANSPORT=http  node build/index.js --stdio
+   SIMGADGET_TRANSPORT=stdio node packages/simgadget-mcp/build/index.js --http --port 8009
+   SIMGADGET_TRANSPORT=http  node packages/simgadget-mcp/build/index.js --stdio
    ```
 
    **Expected:** HTTP for the first, stdio for the second.
-4. **Port is taken from `--port`, then `IOS_SIMULATOR_MCP_HTTP_PORT`, then 8008.**
+4. **Port is taken from `--port`, then `SIMGADGET_HTTP_PORT`, then 8008.**
 
 ## Cleanup on exit
 
@@ -102,7 +102,7 @@ Simulators the server created are its responsibility; ones it merely attached to
 2. Repeat with cleanup disabled:
 
    ```bash
-   IOS_SIMULATOR_MCP_CLEANUP_ON_EXIT=false node build/index.js
+   SIMGADGET_CLEANUP_ON_EXIT=false node packages/simgadget-mcp/build/index.js
    ```
 
    **Expected:** after Ctrl-C the simulator is **still present and booted**. Delete it by hand afterwards.

@@ -583,7 +583,7 @@ destroy_simulator(id: "toggle-test")
 Everything above tests this server. This part tests the **binary underneath it**, and belongs to a different question: idb is under active development, none of these behaviours is something upstream has promised to keep, and every one of them is load-bearing for a decision in `src/`. They are also all invisible while they hold — a companion that changed its mind would leave this server quietly doing the wrong thing rather than failing.
 
 ```bash
-npm run build && testapp/build.sh
+npm run build --workspaces && testapp/build.sh
 # install and launch the fixture, main screen
 npm run check:companion -- <udid>
 ```

@@ -4,7 +4,7 @@
  *
  * Not a test of our code — `npm test` covers that, and cannot reach a
  * companion. These are behavioural contracts with somebody else's binary, each
- * one load-bearing for a decision in `src/`, and none of them is written down
+ * one load-bearing for a decision in `packages/simgadget/src/`, and none of them is written down
  * anywhere upstream promises to keep. idb is under active development; a change
  * to any of them would leave this server quietly doing the wrong thing rather
  * than failing, because every one of these assumptions is invisible when it
@@ -29,8 +29,11 @@ import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const { companions } = require(path.join(REPO, "build/idb/companionManager.js"));
-const idb = require(path.join(REPO, "build/idb/generated/idb.js"));
+// The library's build, not the server's: the companion and its generated
+// protocol both belong to `simgadget`. Needs `npm run build --workspaces` first.
+const LIB = path.join(REPO, "packages/simgadget");
+const { companions } = require(path.join(LIB, "build/idb/companionManager.js"));
+const idb = require(path.join(LIB, "build/idb/generated/idb.js"));
 
 const Format = idb.AccessibilityInfoRequest_Format;
 const Backend = idb.AccessibilityInfoRequest_Backend;
@@ -361,7 +364,7 @@ await companions.withClient(udid, async (client) => {
   }
 
   // --- 10. A marker query at depth 0 searches only the root. ----------------
-  // This is why `MARKER_DEFAULT_DEPTH` exists (src/idb/client.ts ~150-157): a
+  // This is why `MARKER_DEFAULT_DEPTH` exists (packages/simgadget/src/idb/client.ts): a
   // silent change here makes every deep control "not found". `IdbClient`
   // deliberately rewrites a falsy `depth` on a marker query to
   // `MARKER_DEFAULT_DEPTH`, so this has to bypass that and go to the raw gRPC

@@ -1,6 +1,6 @@
 # Driving the iOS simulator
 
-You control iOS simulators through the `ios-multi-simulator` MCP tools. You do
+You control iOS simulators through the `simgadget` MCP tools. You do
 not need this file to use them — the tool descriptions are usually enough — but
 it covers the things that are easy to get wrong.
 

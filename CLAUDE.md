@@ -9,26 +9,29 @@ This is the iOS Simulator MCP (Model Context Protocol) server - a tool that enab
 ## Build and Development Commands
 
 ```bash
-# Install dependencies
+# Install dependencies (a workspace root: both packages at once)
 npm install
 
-# Build the TypeScript project (compiles to build/)
-npm run build
+# Build both packages (each compiles to its own packages/*/build/)
+npm run build --workspaces
 
-# Development with automatic rebuild on changes
-npm run watch
+# Development with automatic rebuild on changes, one package at a time
+npm run watch --workspace=simgadget-mcp
 
-# Unit tests for the pure logic in src/ax/ (no simulator, well under a second)
+# Unit tests in both packages (no simulator, no companion, seconds)
 npm test
 
-# Type-check the source and the tests
+# Type-check both packages' sources and tests
 npm run typecheck
 
-# Run the MCP inspector for testing
+# Pack both tarballs and prove the server installs and answers from them
+npm run smoke
+
+# Run the MCP inspector against the server
 npm run dev
 
 # Start the compiled server
-npm start
+node packages/simgadget-mcp/build/index.js
 ```
 
 ## Architecture
@@ -37,10 +40,15 @@ npm start
 > authoritative and overrides this section**, including the "no architecture
 > changes" rule below. That branch splits the code into `packages/simgadget`
 > (the library) and `packages/simgadget-mcp` (the server); the order of work is
-> [SIMGADGET_PLAN.md](SIMGADGET_PLAN.md). The description below remains true of
-> `main` and of the still-building server at `src/index.ts`, which the branch
-> leaves untouched until the port. This section is rewritten properly at step 5
-> of the spec.
+> [SIMGADGET_PLAN.md](SIMGADGET_PLAN.md) and, for the server,
+> [SIMGADGET_PLAN_SERVER.md](SIMGADGET_PLAN_SERVER.md).
+>
+> **As of step 3.6 the repo-root `src/` and `test/` are gone.** The server that
+> runs is `packages/simgadget-mcp/build/index.js`; everything the description
+> below says about `src/index.ts` is now true only of `main`. The operational
+> sections — "Running the server during development" and "Testing" — have been
+> corrected in place, because a session that follows them runs commands. This
+> architecture section is rewritten properly at step 5 of the spec.
 
 The MCP surface — every tool, all validation, all session state — lives in
 `src/index.ts`, deliberately as one file. There are exactly two module splits,
@@ -135,9 +143,9 @@ Every one takes an `id` naming the session, which owns one simulator:
 
 Two layers, and they answer different questions.
 
-**`npm test`** — `node --test` over `test/*.test.mts`, covering the pure logic in
-`src/ax/`. No simulator, no companion, no build step; the whole suite is well
-under a second. Run it on every change and add to it whenever a rule in
+**`npm test`** — `node --test` over each package's `test/*.test.mts`, covering
+the library's pure logic and the server's rendering, sessions and tool wiring.
+No simulator and no companion; the suites run in seconds. Run it on every change and add to it whenever a rule in
 `src/ax/` changes. Node ≥ 22.6 is required to run the TypeScript directly (the
 published package still supports Node 18; this is a development-only floor).
 
@@ -148,8 +156,9 @@ drives a simulator. Requires macOS with:
 - An MCP client (like Cursor) configured to use the server
 
 Test changes by:
-1. Building with `npm run build`
-2. Configuring your MCP client to point to `build/index.js`
+1. Building with `npm run build --workspaces`
+2. Configuring your MCP client to point to
+   `packages/simgadget-mcp/build/index.js`
 3. Running through `TESTING_TOOLS.md`, which exercises every tool against the
    `testapp/` fixture (build it with `testapp/build.sh` first)
 4. Running `TESTING_SERVER.md` as well when touching transports, sessions or process
@@ -178,7 +187,7 @@ cost: the simulator is simply gone next time you look.
 To keep them across a restart while iterating (verified, not merely plausible):
 
 ```bash
-scripts/imsmd.sh restart IOS_SIMULATOR_MCP_CLEANUP_ON_EXIT=false
+scripts/imsmd.sh restart SIMGADGET_CLEANUP_ON_EXIT=false
 ```
 
 The simulator survives still booted, with the app installed and the screen where
@@ -191,15 +200,16 @@ false`, so `destroy_simulator` only detaches. The simulator is then yours to
 development loop where you know what you created. See TODO #61 for why the
 proper fix — a persisted, re-adopted registry — was judged not worth its cost.
 
-It manages exactly one server, on port 8008 (`IOS_SIMULATOR_MCP_HTTP_PORT`),
-recorded in a pidfile, logging to `/tmp/imsm-daemon.log`.
+It manages exactly one server — `packages/simgadget-mcp/build/index.js`, on
+port 8008 (`SIMGADGET_HTTP_PORT`) — recorded in `/tmp/simgadget-daemon.pid` and
+logging to `/tmp/simgadget-daemon.log`.
 
 This is not a convenience. **Other people's servers run on this machine, on
 other ports, from this same checkout**, and they are production. So:
 
 - **Never `pkill`, `killall`, or `kill` a PID you did not personally start.** A
   server on another port is not yours, whatever its command line looks like. A
-  Claude once added a `pkill -f build/index.js` to this very script "to catch
+  Claude once added a `pkill -f index.js` to this very script "to catch
   leftovers", and it killed a production server; that is why `stop` now touches
   only the pidfile PID and merely *reports* a port held by anything else.
 - **Never start a server on another port to test something.** Test against the

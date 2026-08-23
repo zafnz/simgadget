@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Regenerates src/idb/keymap.ts from idb's Python client.
+ * Regenerates packages/simgadget/src/idb/keymap.ts from idb's Python client.
  *
  * The text->keycode table is client-side in idb: the `hid` RPC only carries raw
  * key events, so dropping the Python CLI means owning this mapping. Deriving it
@@ -111,7 +111,7 @@ export function unmappedCharacters(text: string): string[] {
 }
 `;
 
-const dest = "src/idb/keymap.ts";
+const dest = "packages/simgadget/src/idb/keymap.ts";
 fs.mkdirSync(path.dirname(dest), { recursive: true });
 fs.writeFileSync(dest, out);
 console.log(`Wrote ${dest}: ${entries.length} characters from ${source}`);
