@@ -11,18 +11,18 @@ still building, still what `scripts/imsmd.sh` runs. It is the reference to port
 from, and it keeps running until step 3.6 deletes it — at which point
 `scripts/imsmd.sh`, CI and `.mcp.json` all redirect here in the same commit.
 
-## Two deliberate omissions, both temporary
+## One deliberate omission, temporary
 
 `private: true` keeps `npm install` and any accidental `npm publish` from doing
 something with a half-built package. **Removed at step 7**, when both packages
 publish in lockstep.
 
-There is **no `bin`**, and `build` is a bare `tsc` where the library's also
-chmods its entry point. Both wait for `src/index.ts` to exist, at step 3.5: a
-`bin` pointing at a file that is not there is a broken package the moment
-anyone links it, and `chmodSync` on a missing file is a build that fails.
-Step 3.5 adds `"bin": { "simgadget-mcp": "build/index.js" }` and the chmod
-together, which is the same reason the library's own `bin` was held back.
+The second omission is closed. There was **no `bin`** and `build` was a bare
+`tsc` while `src/index.ts` did not exist — a `bin` pointing at a missing file
+is a broken package the moment anyone links it, and `chmodSync` on one is a
+build that fails. Step 3.5 added `"bin": { "simgadget-mcp": "build/index.js" }`
+and the chmod together, as the library's own `bin` was held back and then added
+together with its entry point.
 
 ## The rule this package is built to
 

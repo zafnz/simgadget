@@ -81,7 +81,8 @@ registrations whose bodies mostly become one library call each.
 | the 17 `server.tool(...)` registrations | 1198–2665 | server → `tools.ts`, bodies mostly one library call |
 | `describeFrame`, `toggleElement`, `MIN_TAP_HOLD_SECONDS` | 1616–1765 | **library** (done) |
 | `ensureAbsolutePath` | 2293–2318 | server → `paths.ts` |
-| `createServer`, `parseArgs`, `config`, `vlog`, `summarizeRpc`, `CLEANUP_ON_EXIT` | 2671–2791 | server → `index.ts` |
+| `createServer`, `CLEANUP_ON_EXIT` | 2671–2791 | server → `index.ts` (`CLEANUP_ON_EXIT` via `env.ts`) |
+| `parseArgs`, `config`, `vlog`, `summarizeRpc` | 2691–2791 | server → `transport.ts`; see 3.5's deviation |
 | `runStdio`, `readJsonBody`, `CONTAINER_HOST_NAMES`, `allowedHostHeaders`, `runHttp` | 2793–3004 | server → `transport.ts` |
 | `runServer`, `shutdown`, signal handlers | 3006–3038 | server → `index.ts` |
 
@@ -193,10 +194,10 @@ more files, each for a reason that does not generalise:
 packages/simgadget-mcp/
 ├── package.json          bin: { "simgadget-mcp": "build/index.js" }, deps: simgadget, @mcp/sdk, zod
 ├── src/
-│   ├── index.ts          entry: parseArgs, config, transport selection, shutdown, signals
+│   ├── index.ts          entry: the registry, createServer, transport selection, shutdown, signals
 │   ├── tools.ts          ALL 17 registrations + Zod schemas + SERVER_INSTRUCTIONS
 │   ├── sessions.ts       id → handle registry, ownership, cleanup-on-exit
-│   ├── transport.ts      stdio + HTTP, Host allowlist, verbose logging
+│   ├── transport.ts      stdio + HTTP, Host allowlist, verbose logging, parseArgs/resolveConfig
 │   ├── render.ts         (deviation 1) structured results and typed errors → agent-facing text
 │   ├── env.ts            (deviation 2) SIMGADGET_* with the IOS_SIMULATOR_MCP_* shim, the server's eight
 │   └── paths.ts          (deviation 3) ensureAbsolutePath + DEFAULT_OUTPUT_DIR
@@ -738,6 +739,17 @@ container names, and excludes an attacker's; `summarizeRpc` renders a
 `tools/call` as `session "x" ui_tap`, a batch as a list, and a malformed body
 without throwing; `readJsonBody` returns `undefined` for an empty body;
 `parseArgs`/`config` precedence is CLI > env > default for all four.
+
+**Deviation, taken at 3.5: `parseArgs`, `resolveConfig` (the old `config`),
+`createVlog` and `summarizeRpc` live in `transport.ts`, not `index.ts`.** The
+test list above asks for a precedence rule to be checked, and `index.ts` starts
+a server on import — so nothing in it can be imported by a test, which is the
+very property that left the old server's argument parsing and Host allowlist
+untested for its whole life. The four settings answer one question ("which
+transport, bound where"), which is `transport.ts`'s subject; `index.ts` keeps
+the one line that reads the command line and the wiring that follows from it.
+`vlog` becomes `createVlog(verbose)` for the same reason: a closure over a
+module-global `config` is not callable from a test.
 
 ### Step 3.6 — the deletion commit
 
