@@ -430,5 +430,161 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
     );
   }
 
+  // ---- actions -------------------------------------------------------------
+
+  if (!isToolFiltered("ui_tap")) {
+    server.tool(
+      "ui_tap",
+      "Tap on the screen in the iOS Simulator. Give either a label to tap the element with that accessibility label, or explicit x and y coordinates.",
+      {
+        id: sessionIdSchema,
+        duration: z
+          .string()
+          .regex(/^\d+(\.\d+)?$/)
+          .optional()
+          .describe(
+            "Press duration in seconds. Every tap is held for at least 0.1s, which is what makes it land; raise this for a long press."
+          ),
+        label: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe(
+            "Accessibility label of the element to tap (substring match). Resolves to the centre of that element. Use instead of x and y."
+          ),
+        x: z.number().optional().describe("The x-coordinate (omit if using label)"),
+        y: z.number().optional().describe("The y-coordinate (omit if using label)"),
+        count: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .default(1)
+          .describe("Number of taps to perform (default 1). Use 2 for double-tap."),
+      },
+      { title: "UI Tap", readOnlyHint: false, openWorldHint: true },
+      async ({ id, duration, x, y, count, label }) =>
+        handleToolError(
+          "Error tapping on the screen",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // The whole of this tool that is still the server's: choosing
+              // which of the two things a tap can be aimed at was asked for.
+              // A label wins when both are given, as it always has —
+              // resolving a name and then ignoring it would be the worse
+              // surprise.
+              let target: TapTarget;
+              if (label !== undefined) {
+                target = { label };
+              } else if (x !== undefined && y !== undefined) {
+                target = { x, y };
+              } else {
+                // The one refusal that is genuinely about arguments rather
+                // than about the screen: `TapTarget` is a union, so a caller
+                // who names neither has not described a tap at all.
+                throw new Error(
+                  "ui_tap needs either a label, or both x and y coordinates."
+                );
+              }
+
+              // `undefined` and not `0`: asking for a duration *at all* is
+              // what marks a caller as wanting a real press, and a real press
+              // at a toggle is refused because the centre of its row is not
+              // the control. Substituting a zero would silently turn every
+              // plain tap on a switch into that refusal.
+              const result = await sim.tap(target, {
+                durationSeconds: duration !== undefined ? Number(duration) : undefined,
+                count,
+              });
+
+              return textResult(renderTap(result, label));
+            }),
+          { sessionId: id, label }
+        )
+    );
+  }
+
+  if (!isToolFiltered("ui_type")) {
+    server.tool(
+      "ui_type",
+      "Input text into the iOS Simulator",
+      {
+        id: sessionIdSchema,
+        text: z
+          .string()
+          .max(500)
+          .regex(/^[\x20-\x7E]+$/)
+          .describe("Text to input"),
+      },
+      { title: "UI Type", readOnlyHint: false, openWorldHint: true },
+      async ({ id, text }) =>
+        handleToolError(
+          "Error typing text into the iOS Simulator",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // Exclusivity — so another session's taps cannot land mid-string
+              // — is the handle's, along with the keymap and the refusal for
+              // characters the companion cannot send.
+              await sim.typeText(text);
+              return textResult(renderTyped());
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("ui_swipe")) {
+    server.tool(
+      "ui_swipe",
+      "Swipe on the screen in the iOS Simulator",
+      {
+        id: sessionIdSchema,
+        duration: z
+          .string()
+          .regex(/^\d+(\.\d+)?$/)
+          .optional()
+          .default("1")
+          .describe("Swipe duration in seconds. Longer duration is a more controlled swipe."),
+        x_start: z.number().describe("The starting x-coordinate"),
+        y_start: z.number().describe("The starting y-coordinate"),
+        x_end: z.number().describe("The ending x-coordinate"),
+        y_end: z.number().describe("The ending y-coordinate"),
+        delta: z
+          .number()
+          .optional()
+          .describe("The size of each step in the swipe (default is 1)")
+          .default(1),
+      },
+      { title: "UI Swipe", readOnlyHint: false, openWorldHint: true },
+      async ({ id, duration, x_start, y_start, x_end, y_end, delta }) =>
+        handleToolError(
+          "Error swiping on the screen",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // Both endpoints go through one transform inside the handle, so
+              // they cannot end up in different coordinate spaces — which is
+              // exactly the bug two separate conversions here invited.
+              //
+              // The defaults are this host's to choose (DECISIONS.md #15) and
+              // are the schema's, above. `|| undefined` keeps the old body's
+              // shape: a zero delta means "say nothing about it", not "step by
+              // nothing".
+              await sim.swipe(
+                { x: x_start, y: y_start },
+                { x: x_end, y: y_end },
+                {
+                  delta: delta || undefined,
+                  durationSeconds: duration ? Number(duration) : undefined,
+                }
+              );
+              return textResult(renderSwiped());
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
   // ---- end of registrations -------------------------------------------------
 }

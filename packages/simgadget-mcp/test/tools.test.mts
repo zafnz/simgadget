@@ -56,10 +56,20 @@ import {
   renderRotate,
   renderScreen,
   renderStarted,
+  renderSwiped,
+  renderTap,
+  renderTyped,
 } from "../src/render.ts";
 import { asSimulator, FakeSimulator } from "./fakes/simulator.ts";
 
-import { AccessibilityUnreadableError, SimulatorNotFoundError } from "simgadget";
+import {
+  AccessibilityUnreadableError,
+  ElementDisabledError,
+  ElementNotFoundError,
+  SimulatorNotFoundError,
+  TapObstructedError,
+  ToggleGestureError,
+} from "simgadget";
 
 // ---- harness ---------------------------------------------------------------
 
@@ -680,4 +690,331 @@ test("a stale handle drops its session, so the next start_simulator creates", as
   } finally {
     await harness.close();
   }
+});
+
+// ---- ui_tap ----------------------------------------------------------------
+
+test("ui_tap", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("ui_tap"));
+
+  await t.test("aims by label, and says which element it acted on", async () => {
+    const element = { type: "Button", AXLabel: "Sign In" };
+    const result = {
+      acted: "touch" as const,
+      x: 120,
+      y: 340,
+      count: 1,
+      durationSeconds: 0.1,
+      element,
+    };
+    const fake = createdFake({ tapResult: result });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_tap", { id: "qa", label: "Sign In" });
+      // A label target, and `durationSeconds: undefined` — asking for a
+      // duration at all is what turns a plain tap on a toggle into a refusal.
+      assert.deepEqual(fake.argsFor("tap"), [
+        { label: "Sign In" },
+        { durationSeconds: undefined, count: 1 },
+      ]);
+      assert.equal(text, renderTap(result, "Sign In"));
+      assert.match(text, /Tapped "Sign In" \(Button\) at \(120, 340\)\./);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("aims by coordinates when no label is given", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      await harness.call("ui_tap", { id: "qa", x: 50, y: 60 });
+      assert.deepEqual(fake.argsFor("tap"), [
+        { x: 50, y: 60 },
+        { durationSeconds: undefined, count: 1 },
+      ]);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("a label wins when both are given", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      await harness.call("ui_tap", { id: "qa", label: "Sign In", x: 50, y: 60 });
+      assert.deepEqual(fake.argsFor("tap")?.[0], { label: "Sign In" });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("duration arrives as a number, count as the schema's default", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      await harness.call("ui_tap", { id: "qa", x: 1, y: 2, duration: "1.5" });
+      assert.deepEqual(fake.argsFor("tap")?.[1], { durationSeconds: 1.5, count: 1 });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("count passes through for a double-tap", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      await harness.call("ui_tap", { id: "qa", x: 1, y: 2, count: 2 });
+      assert.deepEqual(fake.argsFor("tap")?.[1], { durationSeconds: undefined, count: 2 });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("a switch is switched, and the state is read back", async () => {
+    const result = {
+      acted: "activation" as const,
+      element: { type: "Switch", AXLabel: "Wi-Fi" },
+      before: "0",
+      after: "1",
+    };
+    const fake = createdFake({ tapResult: result });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_tap", { id: "qa", label: "Wi-Fi" });
+      assert.equal(text, renderTap(result, "Wi-Fi"));
+      assert.match(text, /Toggled Wi-Fi off -> on\./);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("an activation that did not take says so", async () => {
+    // The cost of this whole class of bug has been silent success: if it says
+    // the state did not change, it did not.
+    const result = {
+      acted: "activation" as const,
+      element: { type: "Switch", AXLabel: "Wi-Fi" },
+      before: "1",
+      after: "1",
+    };
+    const fake = createdFake({ tapResult: result });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("ui_tap", { id: "qa", label: "Wi-Fi" });
+      assert.equal(isError, false, "it is an answer about what happened");
+      assert.match(text, /but it is still on/);
+      assert.match(text, /scrolled out of view/);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("neither a label nor coordinates is refused before anything is sent", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("ui_tap", { id: "qa" });
+      assert.equal(isError, true);
+      assert.match(
+        text,
+        /^Error tapping on the screen: ui_tap needs either a label, or both x and y coordinates\./
+      );
+      assert.equal(fake.calls.includes("tap"), false, "nothing was sent");
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("one x without a y is not a target", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { isError } = await harness.call("ui_tap", { id: "qa", x: 50 });
+      assert.equal(isError, true);
+      assert.equal(fake.calls.includes("tap"), false);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  // ---- the four refusals, each a typed catch rather than a message match ----
+
+  await t.test("refuses: no element with that label", async () => {
+    const fake = createdFake({ fails: { tap: new ElementNotFoundError("Nope") } });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("ui_tap", { id: "qa", label: "Nope" });
+      assert.equal(isError, true);
+      assert.match(text, /No element found whose label contains "Nope"\./);
+      assert.match(text, /Use ui_describe_all to see what is on screen\./);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("refuses: the element is disabled", async () => {
+    const element = {
+      type: "Button",
+      AXLabel: "Submit",
+      enabled: false,
+      frame: { x: 10, y: 20, width: 100, height: 44 },
+    };
+    const fake = createdFake({ fails: { tap: new ElementDisabledError(element) } });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_tap", { id: "qa", label: "Submit" });
+      assert.match(text, /"Submit" is disabled, so tapping it would do nothing\./);
+      assert.match(text, /\{x:10 y:20 w:100 h:44\}/, "the rectangle, because the remedy needs it");
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("refuses: something else is on top of it", async () => {
+    const element = {
+      type: "Button",
+      AXLabel: "Increment",
+      frame: { x: 10, y: 20, width: 100, height: 44 },
+    };
+    const obstruction = { type: "SearchField", AXLabel: "Search" };
+    const fake = createdFake({
+      fails: {
+        tap: new TapObstructedError(element, obstruction, { x: 60, y: 42 }),
+      },
+    });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_tap", { id: "qa", label: "Increment" });
+      assert.match(text, /"Search" is there instead/);
+      assert.match(text, /covered, off screen, or scrolled out of view/);
+      assert.match(text, /use ui_tap \{x, y\}/, "and the way out");
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("refuses: a hold or a multi-tap aimed at a toggle by name", async () => {
+    const element = { type: "Switch", AXLabel: "Wi-Fi" };
+    const fake = createdFake({
+      fails: { tap: new ToggleGestureError(element, "hold") },
+    });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_tap", {
+        id: "qa",
+        label: "Wi-Fi",
+        duration: "1",
+      });
+      assert.match(text, /"Wi-Fi" is a toggle, and a hold cannot be delivered to one by name/);
+      assert.match(text, /with no duration/, "the argument to drop, not the other one");
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("the label reaches the renderer when the error has no element name", async () => {
+    // `ElementNotFoundError` carries the query, but the two element-bearing
+    // rows fall back to the caller's label — which only arrives because every
+    // body passes it in the RenderContext.
+    const fake = createdFake({
+      fails: { tap: new ElementDisabledError({ type: "Button" }) },
+    });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_tap", { id: "qa", label: "Submit" });
+      assert.match(text, /"Submit" is disabled/);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- ui_type ---------------------------------------------------------------
+
+test("ui_type", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("ui_type"));
+
+  await t.test("passes the text through to the handle", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_type", { id: "qa", text: "hello@example.com" });
+      assert.deepEqual(fake.argsFor("typeText"), ["hello@example.com"]);
+      assert.equal(text, renderTyped());
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("the schema rejects text the companion cannot send", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      // A newline is outside the printable-ASCII range the regex allows, and
+      // is refused before the handle is touched.
+      await assert.rejects(() => harness.callRaw("ui_type", { id: "qa", text: "a\nb" }));
+      assert.equal(fake.calls.includes("typeText"), false);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- ui_swipe --------------------------------------------------------------
+
+test("ui_swipe", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("ui_swipe"));
+
+  await t.test("sends both endpoints as points, with the schema's defaults", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_swipe", {
+        id: "qa",
+        x_start: 100,
+        y_start: 700,
+        x_end: 100,
+        y_end: 200,
+      });
+      assert.deepEqual(fake.argsFor("swipe"), [
+        { x: 100, y: 700 },
+        { x: 100, y: 200 },
+        { delta: 1, durationSeconds: 1 },
+      ]);
+      assert.equal(text, renderSwiped());
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("an explicit duration and delta override the defaults", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      await harness.call("ui_swipe", {
+        id: "qa",
+        x_start: 0,
+        y_start: 0,
+        x_end: 10,
+        y_end: 10,
+        duration: "0.5",
+        delta: 25,
+      });
+      assert.deepEqual(fake.argsFor("swipe")?.[2], { delta: 25, durationSeconds: 0.5 });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("the schema rejects a swipe with no end point", async () => {
+    const harness = await connect(await startedRegistry(createdFake(), "qa"));
+    try {
+      await assert.rejects(() =>
+        harness.callRaw("ui_swipe", { id: "qa", x_start: 0, y_start: 0 })
+      );
+    } finally {
+      await harness.close();
+    }
+  });
 });

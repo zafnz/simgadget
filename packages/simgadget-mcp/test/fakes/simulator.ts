@@ -38,6 +38,9 @@
 
 import type {
   AXElement,
+  TapResult,
+  TapTarget,
+  TapOptions,
   DeviceTypeInfo,
   Orientation,
   ReadyResult,
@@ -72,6 +75,10 @@ export type SimulatorSurface = Pick<
   | "describePoint"
   | "rotate"
   | "detectOrientation"
+  // ---- added for tools.ts's action tools (step 3.4) ----
+  | "tap"
+  | "typeText"
+  | "swipe"
 >;
 
 /**
@@ -111,6 +118,9 @@ export interface FakeSimulatorOptions {
   adopted?: Orientation;
   /** What `detectOrientation()` answers. */
   orientation?: Orientation;
+  /** What `tap()` answers. Defaults to a plain touch at the origin, so a test
+   * that cares about the result has to say what it is. */
+  tapResult?: TapResult;
 }
 
 export class FakeSimulator implements SimulatorSurface {
@@ -141,6 +151,7 @@ export class FakeSimulator implements SimulatorSurface {
   private readonly atPoint: AXElement | null;
   private readonly adopted?: Orientation;
   private readonly orientation: Orientation;
+  private readonly tapResult: TapResult;
   private recording: boolean;
 
   constructor(options: FakeSimulatorOptions = {}) {
@@ -165,6 +176,13 @@ export class FakeSimulator implements SimulatorSurface {
     this.atPoint = options.atPoint ?? options.element ?? null;
     this.adopted = options.adopted;
     this.orientation = options.orientation ?? "portrait";
+    this.tapResult = options.tapResult ?? {
+      acted: "touch",
+      x: 0,
+      y: 0,
+      count: 1,
+      durationSeconds: 0.1,
+    };
   }
 
   /** True once `delete()` has succeeded, so a test can tell a deleted handle
@@ -194,6 +212,23 @@ export class FakeSimulator implements SimulatorSurface {
   async delete(): Promise<void> {
     this.record("delete");
     this.deleted = true;
+  }
+
+  async tap(target: TapTarget, opts?: TapOptions): Promise<TapResult> {
+    this.record("tap", target, opts);
+    return this.tapResult;
+  }
+
+  async typeText(text: string): Promise<void> {
+    this.record("typeText", text);
+  }
+
+  async swipe(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    opts?: { durationSeconds?: number; delta?: number }
+  ): Promise<void> {
+    this.record("swipe", from, to, opts);
   }
 
   async describeScreen(): Promise<ScreenRead> {
