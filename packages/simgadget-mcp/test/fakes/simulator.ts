@@ -36,7 +36,16 @@
  * real class actually has.
  */
 
-import type { DeviceTypeInfo, ReadyResult, Simulator, SimulatorState } from "simgadget";
+import type {
+  AXElement,
+  DeviceTypeInfo,
+  Orientation,
+  ReadyResult,
+  RotateResult,
+  ScreenRead,
+  Simulator,
+  SimulatorState,
+} from "simgadget";
 import { SimGadgetError } from "simgadget";
 
 /**
@@ -57,6 +66,12 @@ export type SimulatorSurface = Pick<
   | "lastBoot"
   | "showWindow"
   | "waitReady"
+  // ---- added for tools.ts's read tools (step 3.4) ----
+  | "describeScreen"
+  | "findByLabel"
+  | "describePoint"
+  | "rotate"
+  | "detectOrientation"
 >;
 
 /**
@@ -83,6 +98,19 @@ export interface FakeSimulatorOptions {
   /** The boot outcome the handle is carrying, as `createSimulator` would leave
    * it. Also what `waitReady()` answers, since both report the same thing. */
   boot?: ReadyResult;
+  /** What `describeScreen()` answers. */
+  screen?: ScreenRead;
+  /** What `findByLabel()` answers. `null` — an element that is not there — is
+   * a normal answer and is the default, so a test has to opt in to finding
+   * something. */
+  element?: AXElement | null;
+  /** What `describePoint()` answers. Defaults to `element`, since most tests
+   * care about one or the other. */
+  atPoint?: AXElement | null;
+  /** What `rotate()` reports the interface adopted. Defaults to obeying. */
+  adopted?: Orientation;
+  /** What `detectOrientation()` answers. */
+  orientation?: Orientation;
 }
 
 export class FakeSimulator implements SimulatorSurface {
@@ -108,6 +136,11 @@ export class FakeSimulator implements SimulatorSurface {
   private readonly stateValue: SimulatorState;
   private readonly fails: FakeSimulatorOptions["fails"];
   private readonly boot: ReadyResult;
+  private readonly screen: ScreenRead;
+  private readonly element: AXElement | null;
+  private readonly atPoint: AXElement | null;
+  private readonly adopted?: Orientation;
+  private readonly orientation: Orientation;
   private recording: boolean;
 
   constructor(options: FakeSimulatorOptions = {}) {
@@ -124,6 +157,14 @@ export class FakeSimulator implements SimulatorSurface {
       recovered: false,
     };
     this.lastBoot = options.boot === undefined ? undefined : options.boot;
+    this.screen = options.screen ?? {
+      elements: [{ type: "Application", frame: { x: 0, y: 0, width: 393, height: 852 } }],
+      screen: { width: 393, height: 852 },
+    };
+    this.element = options.element ?? null;
+    this.atPoint = options.atPoint ?? options.element ?? null;
+    this.adopted = options.adopted;
+    this.orientation = options.orientation ?? "portrait";
   }
 
   /** True once `delete()` has succeeded, so a test can tell a deleted handle
@@ -153,6 +194,31 @@ export class FakeSimulator implements SimulatorSurface {
   async delete(): Promise<void> {
     this.record("delete");
     this.deleted = true;
+  }
+
+  async describeScreen(): Promise<ScreenRead> {
+    this.record("describeScreen");
+    return this.screen;
+  }
+
+  async findByLabel(label: string): Promise<AXElement | null> {
+    this.record("findByLabel", label);
+    return this.element;
+  }
+
+  async describePoint(x: number, y: number): Promise<AXElement | null> {
+    this.record("describePoint", x, y);
+    return this.atPoint;
+  }
+
+  async rotate(to: Orientation): Promise<RotateResult> {
+    this.record("rotate", to);
+    return { requested: to, adopted: this.adopted ?? to };
+  }
+
+  async detectOrientation(): Promise<Orientation> {
+    this.record("detectOrientation");
+    return this.orientation;
   }
 
   async showWindow(): Promise<void> {

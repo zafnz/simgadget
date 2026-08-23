@@ -49,10 +49,17 @@ import {
   errorWithTroubleshooting,
   renderAttached,
   renderDestroyed,
+  renderDetectedOrientation,
+  renderElement,
+  renderNoElementFound,
   renderResumed,
+  renderRotate,
+  renderScreen,
   renderStarted,
 } from "../src/render.ts";
 import { asSimulator, FakeSimulator } from "./fakes/simulator.ts";
+
+import { AccessibilityUnreadableError, SimulatorNotFoundError } from "simgadget";
 
 // ---- harness ---------------------------------------------------------------
 
@@ -423,4 +430,254 @@ test("attach_simulator", async (t) => {
       await harness.close();
     }
   });
+});
+
+// ---- rotate ----------------------------------------------------------------
+
+test("rotate", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("rotate"));
+
+  await t.test("asks the handle to rotate, and names the session", async () => {
+    const fake = createdFake();
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("rotate", {
+        id: "qa",
+        orientation: "landscape_left",
+      });
+      assert.deepEqual(fake.argsFor("rotate"), ["landscape_left"]);
+      assert.equal(
+        text,
+        renderRotate("qa", { requested: "landscape_left", adopted: "landscape_left" })
+      );
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("an orientation the app declined is reported, not hidden", async () => {
+    // The interface is read back rather than assumed, and disagreeing is not
+    // an error: coordinates follow what was adopted either way, and that is
+    // the fact the caller needs.
+    const fake = createdFake({ adopted: "portrait" });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("rotate", {
+        id: "qa",
+        orientation: "upside_down",
+      });
+      assert.equal(isError, false);
+      assert.equal(
+        text,
+        renderRotate("qa", { requested: "upside_down", adopted: "portrait" })
+      );
+      assert.match(text, /Face ID/, "the iPhone explanation, not the generic one");
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("the schema rejects an orientation that is not one of the four", async () => {
+    const harness = await connect(await startedRegistry(createdFake(), "qa"));
+    try {
+      await assert.rejects(() => harness.callRaw("rotate", { id: "qa", orientation: "sideways" }));
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- detect_rotation -------------------------------------------------------
+
+test("detect_rotation", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("detect_rotation"));
+
+  await t.test("probes the handle and reports what it found", async () => {
+    const fake = createdFake({ orientation: "landscape_right" });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("detect_rotation", { id: "qa" });
+      assert.equal(fake.calls.includes("detectOrientation"), true);
+      assert.equal(text, renderDetectedOrientation("qa", "landscape_right"));
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- ui_describe_all -------------------------------------------------------
+
+test("ui_describe_all", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("ui_describe_all"));
+
+  await t.test("returns the elements, and not the screen rectangle beside them", async () => {
+    const screen = {
+      elements: [
+        { type: "Application", frame: { x: 0, y: 0, width: 393, height: 852 } },
+        { type: "Button", AXLabel: "Sign In", frame: { x: 20, y: 100, width: 200, height: 44 } },
+      ],
+      screen: { width: 393, height: 852 },
+    };
+    const fake = createdFake({ screen });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_describe_all", { id: "qa" });
+      assert.equal(fake.calls.includes("describeScreen"), true);
+      assert.equal(text, renderScreen(screen));
+      // The `screen` rectangle is the root element's frame said twice, and
+      // this payload is read by a model on every call.
+      assert.deepEqual(JSON.parse(text), screen.elements);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("a wedged accessibility bridge renders as the typed error", async () => {
+    const fake = createdFake({
+      fails: {
+        describeScreen: new AccessibilityUnreadableError("unrecoverable", "empty tree"),
+      },
+    });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("ui_describe_all", { id: "qa" });
+      assert.equal(isError, true);
+      assert.match(text, /^Error describing all of the ui: /);
+      assert.match(text, /file a bug/, "the unrecoverable verdict asks for a report");
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- ui_find ---------------------------------------------------------------
+
+test("ui_find", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("ui_find"));
+
+  await t.test("resolves by label and returns the element as JSON", async () => {
+    const element = {
+      type: "Button",
+      AXLabel: "Sign In",
+      frame: { x: 20, y: 100, width: 200, height: 44 },
+    };
+    const fake = createdFake({ element });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_find", { id: "qa", label: "Sign In" });
+      assert.deepEqual(fake.argsFor("findByLabel"), ["Sign In"]);
+      assert.equal(text, renderElement(element));
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("nothing found is an answer, not an error", async () => {
+    const fake = createdFake({ element: null });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("ui_find", { id: "qa", label: "Nope" });
+      assert.equal(isError, false, "absent is not a failure");
+      assert.equal(text, renderNoElementFound("Nope"));
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("a failure names the label it was looking for", async () => {
+    const fake = createdFake({ fails: { findByLabel: new Error("companion died") } });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("ui_find", { id: "qa", label: "Sign In" });
+      assert.equal(isError, true);
+      assert.match(text, /^Error finding element labelled "Sign In": companion died/);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("the schema rejects an empty label", async () => {
+    const harness = await connect(await startedRegistry(createdFake(), "qa"));
+    try {
+      await assert.rejects(() => harness.callRaw("ui_find", { id: "qa", label: "" }));
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- ui_describe_point -----------------------------------------------------
+
+test("ui_describe_point", async (t) => {
+  await t.test("matches the captured baseline", () => assertMatchesBaseline("ui_describe_point"));
+
+  await t.test("passes the logical coordinates through and returns the element", async () => {
+    const element = { type: "Button", AXLabel: "Sign In" };
+    const fake = createdFake({ atPoint: element });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_describe_point", { id: "qa", x: 120, y: 340 });
+      // Logical in, logical out: the portrait transform lives in the library,
+      // and a server that applied its own would apply it twice.
+      assert.deepEqual(fake.argsFor("describePoint"), [120, 340]);
+      assert.equal(text, renderElement(element));
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("empty space answers null rather than failing", async () => {
+    const fake = createdFake({ atPoint: null });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text, isError } = await harness.call("ui_describe_point", { id: "qa", x: 1, y: 1 });
+      assert.equal(isError, false);
+      assert.equal(text, "null");
+    } finally {
+      await harness.close();
+    }
+  });
+
+  await t.test("a failure names the point", async () => {
+    const fake = createdFake({ fails: { describePoint: new Error("no answer") } });
+    const harness = await connect(await startedRegistry(fake, "qa"));
+    try {
+      const { text } = await harness.call("ui_describe_point", { id: "qa", x: 12, y: 34 });
+      assert.match(text, /^Error describing point \(12, 34\): no answer/);
+    } finally {
+      await harness.close();
+    }
+  });
+});
+
+// ---- the accessor every non-lifecycle tool shares --------------------------
+
+test("a read against an unknown session refuses with the way back", async () => {
+  const harness = await connect(registryOver(createdFake()));
+  try {
+    const { text, isError } = await harness.call("ui_describe_all", { id: "ghost" });
+    assert.equal(isError, true);
+    assert.match(text, /No simulator is running for session "ghost"\. Call start_simulator first\./);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("a stale handle drops its session, so the next start_simulator creates", async () => {
+  // `SimulatorNotFoundError` arrives from *any* method once the simulator has
+  // been deleted underneath the handle — by this server or by somebody at a
+  // terminal. `withSession` is what makes that one rule rather than fourteen.
+  const fake = createdFake({
+    fails: { describeScreen: new SimulatorNotFoundError("ABC-123") },
+  });
+  const registry = await startedRegistry(fake, "qa");
+  const harness = await connect(registry);
+  try {
+    const { text, isError } = await harness.call("ui_describe_all", { id: "qa" });
+    assert.equal(isError, true);
+    assert.match(text, /Session "qa" can no longer use it/);
+    assert.equal(registry.get("qa"), undefined, "the session was dropped");
+  } finally {
+    await harness.close();
+  }
 });

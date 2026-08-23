@@ -290,5 +290,145 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
     );
   }
 
+  // ---- reads ---------------------------------------------------------------
+
+  if (!isToolFiltered("rotate")) {
+    server.tool(
+      "rotate",
+      "Rotates the simulated device. Orientation names follow the device, exactly as the Simulator's own Device > Orientation menu does: rotating the device left is `landscape_left`. Note that UIKit's *interface* orientation names are the mirror of these for the two landscapes, so an app reporting `UIInterfaceOrientationLandscapeRight` is in `landscape_left` here — both are correct. Reads the orientation back afterwards and reports what the interface actually adopted, which is not always what was asked for.",
+      {
+        id: sessionIdSchema,
+        orientation: z
+          .enum(["portrait", "upside_down", "landscape_left", "landscape_right"])
+          .describe("The orientation to rotate the device to"),
+      },
+      { title: "Rotate Device", readOnlyHint: false, openWorldHint: true },
+      async ({ id, orientation }) =>
+        handleToolError(
+          "Error rotating the device",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // The settle, the probe and the invalidated screen dimensions
+              // are all `rotate()`'s now. What is left here is the one thing
+              // the library cannot know: which session to name.
+              const result = await sim.rotate(orientation);
+              return textResult(renderRotate(id, result));
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("detect_rotation")) {
+    server.tool(
+      "detect_rotation",
+      "Detects the current device rotation by probing the simulator's accessibility tree. Call this after the device has been rotated to update the coordinate mapping. Returns the detected orientation (portrait, landscape_right, landscape_left, or upside_down).",
+      {
+        id: sessionIdSchema,
+      },
+      {
+        title: "Detect Rotation",
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+      async ({ id }) =>
+        handleToolError(
+          "Error detecting rotation",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              const detected = await sim.detectOrientation();
+              return textResult(renderDetectedOrientation(id, detected));
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("ui_describe_all")) {
+    server.tool(
+      "ui_describe_all",
+      "Describes accessibility information for the entire screen in the iOS Simulator",
+      {
+        id: sessionIdSchema,
+      },
+      { title: "Describe All UI Elements", readOnlyHint: true, openWorldHint: true },
+      async ({ id }) =>
+        handleToolError(
+          "Error describing all of the ui",
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // The degenerate-tree ladder — restart the companion, restart the
+              // bridge, ask again, and diagnose if it is still empty — is all
+              // inside `describeScreen()` now, and reaches here as a typed
+              // `AccessibilityUnreadableError` if it fails. What is left is the
+              // read and the elements.
+              const read = await sim.describeScreen();
+              return textResult(renderScreen(read));
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
+  if (!isToolFiltered("ui_find")) {
+    server.tool(
+      "ui_find",
+      "Find a single UI element by its accessibility label, without fetching the whole screen. Matches any element whose label contains the given text. Much cheaper than ui_describe_all when you already know what you are looking for.",
+      {
+        id: sessionIdSchema,
+        label: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("Label text to look for (substring match, case sensitive)"),
+      },
+      { title: "Find UI Element", readOnlyHint: true, openWorldHint: true },
+      async ({ id, label }) =>
+        handleToolError(
+          `Error finding element labelled "${label}"`,
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              const element = await sim.findByLabel(label);
+              // Absent is an answer, not a failure — the library's rule
+              // reaching the agent unchanged. `isError` here would make an
+              // ordinary "it is not on screen yet" indistinguishable from a
+              // simulator that has stopped answering.
+              return textResult(
+                element ? renderElement(element) : renderNoElementFound(label)
+              );
+            }),
+          { sessionId: id, label }
+        )
+    );
+  }
+
+  if (!isToolFiltered("ui_describe_point")) {
+    server.tool(
+      "ui_describe_point",
+      "Returns the accessibility element at given co-ordinates on the iOS Simulator's screen",
+      {
+        id: sessionIdSchema,
+        x: z.number().describe("The x-coordinate"),
+        y: z.number().describe("The y-coordinate"),
+      },
+      { title: "Describe UI Point", readOnlyHint: true, openWorldHint: true },
+      async ({ id, x, y }) =>
+        handleToolError(
+          `Error describing point (${x}, ${y})`,
+          () =>
+            sessions.withSession(id, async ({ sim }) => {
+              // Logical coordinates in, logical coordinates out: the transform
+              // into the companion's portrait space, and the remote-hosted
+              // frame correction that follows it, are both inside
+              // `describePoint()`. Empty space answers `null` rather than
+              // failing, which JSON renders as `null` exactly as before.
+              const element = await sim.describePoint(x, y);
+              return textResult(renderElement(element));
+            }),
+          { sessionId: id }
+        )
+    );
+  }
+
   // ---- end of registrations -------------------------------------------------
 }
