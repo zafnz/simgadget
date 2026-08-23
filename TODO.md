@@ -241,6 +241,348 @@
   re-read, test a predicate, repeat within a budget. Design them together or the
   second will duplicate the first's polling loop.
 
+# TODO — Code review: MCP server port (step 3), 2026-08-23
+
+Full review of step 3 — `a0ceb9c`..`8d3afb0`, seventeen commits, four agents —
+against SIMGADGET_PLAN_SERVER.md, SIMGADGET.md and DECISIONS.md, with every
+tool body read against `git show a0ceb9c^:src/index.ts`.
+
+**Verified clean and not repeated per-item below.** All seventeen tool bodies
+diffed against their originals: **every optional argument reaches the library**
+— `launch_app`'s `terminate_running`→`terminateRunning`, `record_video`'s
+`codec`/`display`/`mask`/`force`, `screenshot`'s `type`→`format` plus
+`display`/`mask`, `ui_view`'s `quality: 80` and `resizeTo: "points"`,
+`ui_swipe`'s `delta`/`duration` including the `|| undefined` that keeps a zero
+meaning "say nothing", and `ui_tap`'s `count`/`duration` including the subtlety
+that `duration: "0"` still makes the gesture a *hold* (`holdSeconds` floors it
+at 0.1s while `decideTapVerb` keys off `!== undefined`, exactly as
+index.ts:1834 and :1899 did). The premise that "nothing proves the arguments
+reach the library" turned out to be false: `tools.test.mts` asserts the
+passthrough per tool with `fake.argsFor(...)`, and the fake records arguments,
+not just names. The `--` separators survived into `screenshotArgs`/
+`recordingArgs`. `index.ts`: one registry constructed once and closed over by
+`createServer`, which `runHttp` calls per request; `shutdown` reachable from
+SIGINT, SIGTERM and stdin close behind a once-latch; `assertIdbPathUnset()`
+called first in `runServer`; `PACKAGE_VERSION` read exactly as index.ts:43 read
+it; the deliberate absence of `capabilities` matches the old constructor.
+`transport.ts` is faithful: the 403 keeps its whole explanation with the new
+variable name, no `allowedOrigins`, the EADDRINUSE listener, the stdin-close
+shutdown, and the `listening on` sentence `imsmd.sh` greps for. Seams: all
+fourteen non-lifecycle tools go through `withSession`; all seventeen pass a
+`RenderContext` except `attach_simulator`, which is documented and has a test
+asserting the sentence is absent; no agent-facing prose is duplicated between
+`tools.ts` and `render.ts`, and `describeFrame` exists only in the server.
+Rules: no deep imports (grep and `imports.test.mts`), no `as any` in `src/`
+(`summarizeRpc`'s `msg: any` is verbatim from index.ts:2776), the fake tethered
+through `Pick<Simulator, …>` with the single cast confined to `asSimulator`,
+and the baseline fixture has exactly one commit in its history (`a0ceb9c`) with
+no diff since. Deletion: every top-level declaration of the 3038-line original
+traces to a destination — `TMP_ROOT_DIR`'s cleanup is now `capture.ts`'s own
+`mkdtemp`/`finally`, the freeze check had nothing left to guard, and
+`verify-companion-download.mjs`, `check-companion-contract.mjs` and
+`gen-keymap.mjs` all point into `packages/`. Suites re-run here: `npm run
+typecheck` clean, `npm test` 523 + 414 green, `npm run smoke` green over both
+tarballs — matching the counts every handoff entry claims. **Not checked:**
+`npm run check:companion` and `npm run test:e2e` (both need a booted simulator;
+I created none), the manual TESTING_TOOLS.md / TESTING_SERVER.md runs, and
+agent B's three simulated fake-drifts, which cannot be re-run without editing
+the library.
+
+## Bugs
+
+- [ ] **#90 A clean checkout is red: nothing builds `packages/simgadget` before
+  `npm test` and `npm run typecheck` run against it.** The 3.6 commit correctly
+  stripped `"prepare": "npm run build"` from the root `package.json` — the root
+  builds nothing now — but **neither package gained one**, and the workspace
+  fan-outs do not build either. So after `npm ci` from a fresh clone,
+  `packages/simgadget/build/index.d.ts` does not exist, and `simgadget-mcp`
+  cannot resolve the library through its `exports` map.
+
+  **Reproduced**, in a clean-room copy of both packages with the third-party
+  `node_modules` linked in and the two `build/` directories removed:
+
+  ```
+  src/render.ts(59,8):  error TS2307: Cannot find module 'simgadget' or its
+                        corresponding type declarations.
+  src/sessions.ts(42,8): error TS2307: ...
+  src/tools.ts(84,45):   error TS2307: ...
+  ```
+
+  and at runtime `ERR_MODULE_NOT_FOUND … node_modules/simgadget/build/index.js`
+  from the first `.mts` test that touches the library.
+
+  **This is invisible to every developer and fatal to CI.** Anyone who has run
+  `npm run build --workspaces` once has a warm tree forever; `npm run smoke` is
+  green because `smoke-packed.sh` builds first. `ci.yml` does `npm ci` →
+  `typecheck` → `test` → `smoke`, so it fails at step two and never reaches the
+  one check that would have passed. `publish.yml` does `npm ci` → `npm test`
+  and fails there too, before the `npm publish` against a private root that
+  agent D deliberately left broken. **The branch has never been pushed**
+  (`origin/simgadget-impl` does not exist), which is why nobody has seen it.
+  It also means exit condition 1 — "`npm test` and `npm run typecheck` green in
+  **both** packages, from the workspace root" — has only ever been demonstrated
+  on a tree that was already built.
+
+  **Fix:** `"prepare": "npm run build"` on `packages/simgadget/package.json`.
+  npm runs `prepare` for linked workspace packages during `npm ci`, `tsc` is a
+  hoisted root devDependency so it is present, and the extra run during
+  `npm pack` is harmless (`smoke-packed.sh` builds explicitly anyway). Adding
+  one to `simgadget-mcp` is optional — `mcp.test.mts` builds that package
+  itself — but is the symmetric choice and costs a second.
+
+  **Test:** the check that catches this cannot live in a suite that runs in the
+  warm tree. A CI step is the honest place: either add `npm run build
+  --workspaces` before Typecheck in `ci.yml` **and** the `prepare` (belt and
+  braces, since a contributor's first `npm test` deserves to work too), or a
+  workflow job that runs `npm ci && npm run typecheck` in a container with no
+  prior build. **TESTING_TOOLS.md:** not applicable — no tool behaviour is
+  involved. CONTRIBUTING.md's "Unit tests" section is where a contributor meets
+  it, and that section currently promises "No simulator, **no build step**, well
+  under a second" — the exact claim this falsifies for `simgadget-mcp`.
+
+- [ ] **#91 `start_simulator` no longer recovers a session whose simulator was
+  deleted out from under it; it refuses, and its advice loops.** The old resume
+  branch called `findDevice(existing.udid)` and treated **both** "gone" and
+  "not booted" as stale: *"Stale entry — the simulator is gone or shut down.
+  Drop it and recreate below"* (index.ts:1234). The port replaced `findDevice`
+  with `sim.state()`, which does not return `null` for a missing device — it
+  throws `SimulatorNotFoundError` (simulator.ts:544), and `start_simulator`
+  deliberately does not use `withSession`, so nothing catches it. Only the
+  "shut down" half of the branch survives. The comment above it still claims
+  both: *"Stale: the simulator is shut down or gone."*
+
+  **Failing case**, driven through the real `registerTools` and
+  `SessionRegistry` against a handle that throws as the library does:
+
+  ```
+  1. start_simulator {id:"qa"} -> Error starting simulator: No simulator found with
+     UDID "AAAA-1111". Session "qa" can no longer use it — call destroy_simulator,
+     then start_simulator for a fresh one.
+  2. destroy_simulator {id:"qa"} -> Error destroying simulator: No simulator found
+     with UDID "AAAA-1111". Session "qa" can no longer use it — call
+     destroy_simulator, then start_simulator for a fresh one.
+  3. start_simulator {id:"qa"} -> Simulator started: "qa_iphone" (…, BBBB-2222).
+  ```
+
+  Three calls and two errors where the old server took one call and none — and
+  step 2's answer tells the agent to call the tool it has just called and which
+  has just failed. (It does work: `destroy` drops the session before rethrowing.
+  But an agent reading that sentence has no way to know the failure was
+  progress.)
+
+  **How it is reached.** Any deletion the server did not perform: a human using
+  Simulator.app's Delete, `xcrun simctl delete`, or — most likely of all — the
+  development loop CLAUDE.md documents, where `SIMGADGET_CLEANUP_ON_EXIT=false`
+  leaves orphans that "accumulate silently until you delete them yourself".
+  The same throw also arrives from `assertNotDeleted()` on a handle this server
+  already deleted, which wants the same answer.
+
+  **Fix:** in `tools.ts`'s resume branch, treat `SimulatorNotFoundError` from
+  the probe as "gone", not as a failure:
+
+  ```ts
+  let state: SimulatorState | undefined;
+  try { state = await existing.sim.state(); }
+  catch (error) { if (!(error instanceof SimulatorNotFoundError)) throw error; }
+  if (state === "Booted") { … } else sessions.drop(id);
+  ```
+
+  Better still, put it in the registry as `resume(id)` so `tools.ts` keeps its
+  one-call shape and the rule lives beside the other stale-handle rule in
+  `withSession`.
+
+  **Unit test** (`packages/simgadget-mcp/test/tools.test.mts`, beside "a
+  shut-down simulator is dropped and recreated"): a fake whose `state` fails
+  with `new SimulatorNotFoundError(udid)`; assert `isError === false`, that
+  `create` was called a second time, and that the answer names the new udid.
+  The fake already supports it — `fails: { state: … }`.
+
+  **TESTING_TOOLS.md step** (Part 1, after the attach/detach pair): start a
+  simulator for id `gone`, note the udid, then — with the user's permission,
+  since this is the one place the "never use simctl" rule is deliberately
+  broken — `xcrun simctl delete <udid>`, then `start_simulator {id: "gone"}`
+  again. **Expected:** a new simulator with a new udid, not an error.
+
+## Spec / plan deviations needing sign-off or a doc fix
+
+- [ ] **#92 `ui_describe_point` on empty space answers the four characters
+  `null`, where the spec asks for a sentence.** SIMGADGET.md's "The MCP on top"
+  mapping table is explicit: *`ui_describe_point` | `sim.describePoint(x, y)`;
+  **null → the "empty or covered" answer**.* SIMGADGET_PLAN.md's deliberate
+  change 3 makes the same split — the *library* stops throwing, *"the wedge
+  disambiguation is unchanged; only the reporting is"* — leaving the reporting
+  to the server. The port renders it as `JSON.stringify(null)`.
+
+  ```
+  ui_describe_point on empty space -> isError: false | text: "null"
+  ui_find with no match            -> isError: false | text: "No element found
+    whose label contains "Sign In". Use ui_describe_all to see what is on screen."
+  ```
+
+  The two "absent is an answer" tools now disagree about what an answer is, and
+  the one that says nothing is the one whose old message told the caller what
+  to do next: *"No accessibility element at (200, 400). The simulator is
+  answering normally, so that point is empty or covered — check the coordinates
+  against ui_describe_all."* (index.ts:341). SIMGADGET_PLAN_SERVER.md row 5
+  authorises "answers rather than erroring" — it does not authorise dropping
+  the sentence, and no row records that it was dropped, which makes this a
+  quiet deviation rather than a decided one (plan rule 3).
+
+  **Not certain it is wrong**, and that is why it is here rather than under
+  Bugs: `null` is a legitimate machine-readable answer, and `ui_describe_point`
+  otherwise returns raw JSON, so a caller parsing it gets a uniform shape. But
+  it is the spec that decides, and the spec says otherwise.
+
+  **Fix:** `renderNoElementAtPoint(x, y)` in `render.ts` carrying index.ts:341's
+  wording, returned as a *successful* text result; `ui_describe_point` uses it
+  when `describePoint` answers `null`. If instead the bare `null` is what is
+  wanted, it needs a row in "Deliberate behaviour changes" and a line in
+  SIMGADGET.md's mapping table, because those two documents currently say
+  something else.
+
+  **Unit test:** `render.test.mts` for the sentence; `tools.test.mts`'s
+  "empty space answers null rather than failing" already has the fake in place
+  (`createdFake({ atPoint: null })`) and currently asserts `text === "null"` —
+  that assertion is the one that changes.
+
+  **TESTING_TOOLS.md step:** #4 already queries a coordinate; add a sibling
+  that queries a deliberately empty patch (the fixture's background) and states
+  the expected sentence. There is no such step today, which is why nothing in
+  the manual plan would have caught this either.
+
+- [ ] **#93 Two tool descriptions still tell agents to set
+  `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`, and following that advice earns a
+  deprecation warning.** `screenshot`'s `output_path` and `record_video`'s
+  `output_path` both name the old variable, verbatim from the baseline — which
+  is correct under the parity rule and wrong under the rename. A user who
+  follows the description gets `[simgadget]
+  IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR is deprecated; use
+  SIMGADGET_DEFAULT_OUTPUT_DIR instead` on stderr. These are the most-read
+  strings in the server: `tools/list` is sent to every agent at connect.
+
+  Agent D's handoff lists README, TROUBLESHOOTING and CAMERA as the stale
+  env-var docs; it does not list these two, and they are not docs — they are
+  the wire surface, pinned by a fixture whose README says it must never be
+  regenerated. So this cannot be quietly fixed at step 5: changing them turns
+  `mcp.test.mts`'s whole-surface `deepEqual` red on purpose.
+
+  **Fix:** a decision, then three small edits together — the two descriptions,
+  a new row in "Deliberate behaviour changes" ("the two output-path
+  descriptions name `SIMGADGET_DEFAULT_OUTPUT_DIR`; the shim keeps the old name
+  working"), and a third entry in `mcp.test.mts`'s `ALLOWED_DIFFERENCES` citing
+  that row. Doing it any other way either leaves the advice wrong or
+  regenerates the baseline.
+
+  **Test:** the allowlist entry *is* the test — it names what changed and
+  fails if anything else does. No TESTING_TOOLS step: nothing behavioural moves.
+
+- [ ] **#94 The wedge message lost idb's own text, and no row records it.**
+  `clarify()` ended with `\n\nOriginal error: ${message}` (index.ts:730), so the
+  underlying idb sentence travelled with the rewritten one. `renderError`'s
+  `"not-answering"` row reproduces the first half verbatim and the second half
+  branches on `recoveryTried` — which is documented, as row 10 — but the
+  `Original error:` tail is simply gone, and no row in "Deliberate behaviour
+  changes" mentions it.
+
+  It is arguably right: design rule 2 exists so idb's vocabulary never leaves
+  the idb client, and pasting its message back in is a way of leaking it. But
+  it is the only text an operator had for distinguishing one wedge from
+  another, and dropping it was not a decision anyone wrote down.
+
+  **Fix:** either a row in the table saying it was dropped and why, or — if it
+  is wanted — `SimulatorNotAnsweringError` carrying a `cause`/`detail` the
+  renderer appends. The second is a library change and therefore the owner's
+  call. **Test:** one `render.test.mts` case either way. **TESTING_TOOLS.md:**
+  the wedge cannot be manufactured on demand (#69), so there is no step to add.
+
+## Risks
+
+- [ ] **#95 A second signal exits the process in the middle of the first
+  signal's cleanup.** `shutdown()` latches on `cleaningUp`, so it runs at most
+  once — that part is right, and is what the handoff asked to be checked. But
+  the *handlers* do not share the latch: a SIGINT arriving while a SIGTERM's
+  `sessions.shutdown()` is still awaiting `simctl delete` finds `cleaningUp`
+  already true, returns immediately, and runs `process.exit(0)` underneath the
+  first pass. Every simulator not yet deleted is orphaned.
+
+  **Pre-existing** — index.ts:3037 had exactly this shape — and unlikely, since
+  `imsmd.sh stop` sends one signal and waits 5s. Listed because the port made
+  `sessions.shutdown()` the *only* thing that deletes simulators, where the old
+  server also had `companions.shutdownAll()` and a synchronous `'exit'` hook
+  covering part of the ground.
+
+  **Fix:** one line — hold the promise rather than a boolean:
+  `let cleanup: Promise<void> | undefined; const shutdown = () => (cleanup ??=
+  sessions.shutdown().catch(() => {}));` — so a second caller awaits the first
+  instead of racing past it. **Test:** `index.ts` has no test by construction,
+  which is the argument for moving the latch into a two-line exported helper
+  (or into `SessionRegistry`) where `sessions.test.mts` can call it twice
+  concurrently and assert one pass and two resolutions. **TESTING_SERVER.md:**
+  its process-lifecycle section is the place — "send SIGTERM, then SIGINT
+  immediately; every owned simulator is gone".
+
+## Comments that do not match the code
+
+- [ ] **#96 Four claims in the new files that the code contradicts.** None
+  changes behaviour; all four would mislead the next reader, and two of them
+  are the kind of thing someone "fixes".
+
+  1. **`paths.ts`'s header and `tools.ts`'s `screenshot` body both say the
+     library "takes absolute paths only" and "resolves nothing".** It does
+     resolve: `Simulator.startRecording` and `captureScreenshot` both call
+     `path.resolve()`, per DECISIONS.md #12 — which is the authority, and which
+     says exactly that. What is true is the useful half: `~/` expansion and the
+     `DEFAULT_OUTPUT_DIR` fallback are host policy and stay in the server. Say
+     that instead. (`install_app`'s comment already gets it right: "the
+     library — which resolves identically".)
+  2. **`env.ts` says the four CLI-overridable settings "are combined with
+     `parseArgs` in `index.ts`, which is the only place that knows a command
+     line exists".** Agent D's own deviation 1 moved `parseArgs` and
+     `resolveConfig` into `transport.ts`; `index.ts` calls them and knows
+     nothing else. Written before that move and not revisited.
+  3. **`test/harness/mcp.ts` says its server is built "the way `index.ts` will
+     build it — same instructions, same `tools` capability".** `index.ts`
+     deliberately passes **no** `capabilities`, with a comment explaining that
+     `server.tool()` declares it and that the baseline came from a server that
+     passed none. The harness passes `capabilities: { tools: {} }`. The
+     practical difference is nil and the parity gate does not compare
+     capabilities — which is precisely why the claim of sameness should either
+     be true or be dropped.
+  4. **`tools.ts`'s header states the rule "One library call and one render"**,
+     and four of its own bodies are not that: `start_simulator` (get, `state`,
+     `showWindow`, `create` and two branches), `attach_simulator` (`attach` +
+     `waitReady`), `ui_tap` (target selection and a refusal), and the two
+     capture tools (path resolution first). Each departure is justified inline
+     and correct; the rule as written is the plan's softer "bodies **mostly**
+     become one library call" (SIMGADGET_PLAN_SERVER.md:81). Restate it as the
+     boundary it actually is — no element resolution, no coordinate maths, no
+     deciding what a toggle is — which is the sentence the rest of that header
+     already argues for.
+
+## Housekeeping
+
+- [ ] **#97 TESTING_TOOLS.md has a dead link and one expected string that
+  predates a deliberate change — both in a document step 6 is about to run.**
+
+  - Line 670 links `[src/ax/tree.ts](src/ax/tree.ts)`, deleted at 3.6. It is
+    now `packages/simgadget/src/ax/tree.ts`, and the surrounding paragraph is
+    the diagnosis for a real regression this row has caught before — so it is
+    the one link in the file worth having work.
+  - Line 95 expects `"App com.example.mcptestapp launched successfully"`. With
+    deliberate change 12 the answer now carries a pid, so a step-6 run reads a
+    mismatch and has to decide on the spot whether it is a regression —
+    exactly what the plan's step 5 says to prevent ("derived from the table
+    **before** the step 6 run, not during it, or the run becomes a negotiation
+    with itself"). Row 12 is in the table; the string was not updated from it.
+  - Lines 189 and 613 still name `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` and
+    `IOS_SIMULATOR_MCP_COMPANION_PATH`. Both still work through the shims —
+    verified, the library's `readEnv` covers `COMPANION_PATH` — so these are
+    stale rather than broken, and are step 5's along with README and
+    TROUBLESHOOTING. Listed so they stay on the list.
+
+  Also still true from the library review: **#88's `.DS_Store`** is untracked
+  and absent from `.gitignore`.
+
 # TODO — Code review: library rewrite, 2026-08-18
 
 Full review of the step-2 library (`packages/simgadget`) against SIMGADGET.md
