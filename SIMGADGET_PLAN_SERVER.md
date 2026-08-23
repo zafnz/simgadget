@@ -560,7 +560,9 @@ and the `SIMGADGET_ALLOWED_HOSTS` remedy.
    owns the rewrite, but "Build and Development Commands", "Testing" and
    "Running the server during development" are commands a session *runs*, and
    they now name the daemon's new pidfile, log, env vars and entry point. The
-   architecture section says explicitly that it describes `main`.
+   Project Overview and Architecture sections say explicitly that they describe
+   `main`; `packages/simgadget-mcp/PORT.md`, which opened by saying the old
+   server was still the one running, says what actually happened to it.
 6. **The root package is `simgadget-workspace`, private, and has no
    `version`.** `ios-multi-simulator-mcp` is the name step 7's deprecated
    wrapper takes and two packages cannot share it; a version on a root that

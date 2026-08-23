@@ -6,10 +6,12 @@ co-developed with it. `simgadget` passed its own exit gate (SIMGADGET.md step
 [SIMGADGET_PLAN_SERVER.md](../../SIMGADGET_PLAN_SERVER.md) sets out, one agent
 per group of steps.
 
-The working MCP server is **still `src/index.ts` at the repository root**,
-still building, still what `scripts/imsmd.sh` runs. It is the reference to port
-from, and it keeps running until step 3.6 deletes it — at which point
-`scripts/imsmd.sh`, CI and `.mcp.json` all redirect here in the same commit.
+The working MCP server **is this package**, as of step 3.6. The repo-root
+`src/index.ts` it was ported from — 3038 lines, the reference for every step
+above — is deleted, and `scripts/imsmd.sh`, CI and `.mcp.json` were redirected
+at `packages/simgadget-mcp/build/index.js` in the same commit. Git has the old
+server; `test/fixtures/tools-list.baseline.json` has the part of it that cannot
+be reconstructed.
 
 ## One deliberate omission, temporary
 

@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the iOS Simulator MCP (Model Context Protocol) server - a tool that enables AI assistants to interact with iOS simulators through MCP. The project follows an **intentionally simple** single-file architecture: the server and every tool live in `src/index.ts`, with two narrow exceptions described under Architecture.
 
+> **On the `simgadget-impl` branch this paragraph describes `main` only.** That
+> branch is two packages — `packages/simgadget` (the library) and
+> `packages/simgadget-mcp` (the server) — and the repo-root `src/` no longer
+> exists. See the note under Architecture, and [SIMGADGET.md](SIMGADGET.md),
+> which is authoritative there.
+
 ## Build and Development Commands
 
 ```bash
