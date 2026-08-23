@@ -507,6 +507,102 @@ proves the entry point, the transport and the `initialize` handshake.
    means "from here"; only `screenshot` and `record_video` mean "somewhere I
    will find it later" and go through `paths.ts`. Do not tidy these into one.
 
+#### Agent D — steps 3.5, 3.6, 3.7 (2026-08-23)
+
+**Landed.** `transport.ts` and `index.ts`, so the server runs; the deletion of
+the repo-root `src/` and `test/`, with every script, workflow, config and
+operational doc redirected in the same commit; and the two gates that replace
+the freeze check. The package is at **414** tests, the library still at 523,
+both `typecheck` clean, `npm run smoke` green over both tarballs.
+
+**The parity gate passed on its first run.** The built server's `initialize`
+and `tools/list` match the captured baseline exactly — instructions to the
+character, all seventeen descriptions, schemas and annotations — but for
+`serverInfo.name` and `serverInfo.version`, which are allowlisted in the test
+with the row of "Deliberate behaviour changes" that authorises each. That is
+agents A–C's work being faithful rather than this test being lenient: a single
+comma removed from one tool description was checked to turn it red.
+
+**The server was driven, not merely built.** `scripts/imsmd.sh restart` runs
+`packages/simgadget-mcp/build/index.js`, and `curl` to
+`http://127.0.0.1:8008/mcp` answers an `initialize` as `simgadget`; a request
+carrying `Host: evil.example.com:8008` gets the 403 with its full explanation
+and the `SIMGADGET_ALLOWED_HOSTS` remedy.
+
+**Deviations.**
+
+1. **`parseArgs`, `resolveConfig`, `createVlog` and `summarizeRpc` are in
+   `transport.ts`, not `index.ts`.** Amended into step 3.5 above with the
+   reasoning: the step's own test list asks for a precedence rule, and
+   `index.ts` starts a server on import — the property that left the old
+   server's argument parsing untested for its whole life. `vlog` became
+   `createVlog(verbose)` for the same reason.
+2. **`scripts/smoke-packed.sh` was rewritten at 3.6, not 3.7.** 3.6 is the
+   commit that makes the root private and deletes its `build`; leaving the
+   one-tarball script for a commit would have left `npm run smoke` and CI red
+   at a commit. Struck through in 3.7 above. It now installs through the
+   package's `bin` — what a client config invokes — and aborts if
+   `node_modules/simgadget` came back a symlink, because a library resolved
+   from the workspace proves nothing about what a user receives.
+3. **A failure to start now exits 1.** The old entry was
+   `runServer().catch(console.error)`, so in HTTP mode a configuration error —
+   `assertIdbPathUnset()` throwing, for instance — logged and then exited *0*
+   as the event loop drained, which is indistinguishable from a clean stop to
+   anything supervising it.
+4. **Four things outside 3.6's list were redirected**, each of which would
+   otherwise have failed silently rather than loudly:
+   `verify-companion-download.mjs` and `check-companion-contract.mjs` required
+   the deleted root `build/`; `gen-keymap.mjs` wrote the keymap where nothing
+   reads it; and `build-companion.yml` wrote `companion.lock.json` at the root
+   and checked the generated client for staleness under a `src/idb` that no
+   longer exists — a `git diff --quiet` over a missing path is always clean.
+5. **CLAUDE.md's operational sections were corrected in place.** Step 5 still
+   owns the rewrite, but "Build and Development Commands", "Testing" and
+   "Running the server during development" are commands a session *runs*, and
+   they now name the daemon's new pidfile, log, env vars and entry point. The
+   architecture section says explicitly that it describes `main`.
+6. **The root package is `simgadget-workspace`, private, and has no
+   `version`.** `ios-multi-simulator-mcp` is the name step 7's deprecated
+   wrapper takes and two packages cannot share it; a version on a root that
+   publishes nothing is a number people would read as the product's. Its
+   `dependencies` are gone entirely — a dependency hoisted from the root is
+   precisely the kind that resolves in this repository and nowhere else, which
+   is what the packed smoke exists to catch.
+
+**An incident worth recording.** Port 8008 was held by an *orphaned* old
+server: `node <repo>/build/index.js -v`, started 2026-08-16, reparented to
+init, with `/tmp/imsm-daemon.pid` gone. `imsmd.sh stop` could not touch it (no
+pidfile) and `start` would refuse the port, which is the script behaving
+correctly — it reports and defers to a human. It was killed with the owner's
+explicit authorisation, not on an agent's judgement. `imsmd.sh` now also
+refuses to start when the server file is missing, rather than `nohup`-ing a
+nonexistent path and reporting a pid.
+
+**What agent E should look hardest at.**
+
+1. **`index.ts` has no test that loads it**, by construction, and that is the
+   one file where a mistake is invisible to `npm test`. Its wiring is covered
+   only by `mcp.test.mts` going through a real process — so read it against
+   index.ts:2671–3038 directly. Specifically: the registry is constructed
+   once and closed over by `createServer`, which HTTP calls per request; and
+   `shutdown` is reachable from SIGINT, SIGTERM and stdin close, at most once.
+2. **`publish.yml` is untouched and will now fail**, deliberately: it ends in
+   `npm publish --access public` against a root that is private. Step 7 owns
+   rewriting it to pack, install and `initialize`-test both packages in
+   dependency order. Worth confirming that failing is what we want in the
+   meantime rather than something that should have been disabled.
+3. **The stderr line the daemon greps for.** `imsmd.sh` waits for `listening
+   on` in the log; the message is now `SimGadget MCP server listening on
+   http://…`. If a later rename touches that sentence, `start` stops waiting
+   and starts reporting success early.
+4. **`.mcp.json` is gitignored**, so its server-key rename to `simgadget` is
+   local to this checkout and will not reach anyone else's. Everything else in
+   that group — `AGENT_INSTRUCTIONS.md`, `.cursor/commands` — is committed.
+5. **The env-var rename is complete in code and partial in docs.** README,
+   TROUBLESHOOTING and CAMERA still document `IOS_SIMULATOR_MCP_*`, which the
+   shim keeps working, so they are stale rather than broken; they are step 5's,
+   and listing them here is how they stay on the list.
+
 ## Implementation order
 
 Every commit compiles and passes `npm test` in both packages. When the manual
@@ -781,8 +877,11 @@ with the new one.
   the parity gate that costs seconds instead of an afternoon.
 - A test asserting `packages/simgadget-mcp/src/**` imports `"simgadget"` and no
   deep path. Cheap, and it is the rule the whole split rests on.
-- `scripts/smoke-packed.sh` packs **both** tarballs and installs the server
-  from them.
+- ~~`scripts/smoke-packed.sh` packs **both** tarballs and installs the server
+  from them.~~ **Moved to 3.6, where it belongs**: that is the commit that
+  makes the root private and deletes its `build`, so leaving the one-tarball
+  script in place for a commit would have left `npm run smoke` — and CI —
+  red at a commit, against the branch's own rule.
 
 ## Step 4 — the rename and the lockfile
 
