@@ -244,11 +244,13 @@ your report rather than implementing something else.
   hides the finding. A test you cannot write from the public surface is an API
   finding worth surfacing, not a reason to import an internal.
 
-- **Never edit anything under the repo-root `src/`.** It is the frozen legacy
-  server, still built and run by `scripts/imsmd.sh`, and
-  `scripts/check-frozen-legacy.mjs` will go red if you do. The fix for a red
-  freeze check is to move your edit into `packages/simgadget/`, never to
-  regenerate the manifest.
+- ~~**Never edit anything under the repo-root `src/`.**~~ **Spent 2026-08-23,
+  at step 3.6.** It was the frozen legacy server, still built and run by
+  `scripts/imsmd.sh`, guarded by `scripts/check-frozen-legacy.mjs`. All three
+  are deleted: the server, the check and its manifest. Kept here because the
+  rule shaped the work recorded below it — a reader meeting a reference to the
+  freeze check further down should know it no longer exists rather than go
+  looking for it.
 - **Never start, stop or signal a server.** A daemon is running on port 8008
   from this checkout and it is not yours. Do not `pkill`, do not `kill`, do not
   probe other ports.
