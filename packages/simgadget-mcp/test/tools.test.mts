@@ -438,6 +438,35 @@ test("attach_simulator", async (t) => {
     }
   });
 
+  await t.test("an unknown udid says only that, with no session advice", async () => {
+    // The one tool that passes no `sessionId` to `handleToolError`. Every
+    // other tool's session already owns a simulator, so "session X can no
+    // longer use it -- call destroy_simulator" is the way back; here nothing
+    // was ever registered, and that sentence would send a caller to destroy a
+    // session that does not exist. The old server answered with the first
+    // sentence alone (index.ts:1395), and so does this.
+    const registry = registryOver(createdFake(), {
+      attach: async (udid: string) => {
+        throw new SimulatorNotFoundError(udid);
+      },
+    });
+
+    const harness = await connect(registry);
+    try {
+      const { text, isError } = await harness.call("attach_simulator", {
+        id: "qa",
+        udid: "11111111-2222-3333-4444-555555555555",
+      });
+
+      assert.equal(isError, true);
+      assert.match(text, /No simulator found with UDID "11111111-2222-3333-4444-555555555555"/);
+      assert.doesNotMatch(text, /no longer use it/);
+      assert.doesNotMatch(text, /destroy_simulator/);
+    } finally {
+      await harness.close();
+    }
+  });
+
   await t.test("the schema rejects something that is not a udid", async () => {
     const harness = await connect(registryOver(createdFake()));
     try {

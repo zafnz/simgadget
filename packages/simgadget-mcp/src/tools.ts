@@ -284,8 +284,16 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
             const boot = await sim.waitReady();
 
             return textResult(renderAttached({ name: sim.name, udid: sim.udid, boot }));
-          },
-          { sessionId: id }
+          }
+          // Deliberately no `{sessionId}`, alone among the seventeen. The
+          // context exists so `simulator-not-found` can add "session X can no
+          // longer use it — call destroy_simulator, then start_simulator",
+          // and on this path the session never held the simulator in the
+          // first place: nothing has been registered when the udid turns out
+          // not to exist, and the registry refuses before it registers if it
+          // is not booted. The old server answered `No simulator found with
+          // UDID "..."` and nothing else, which is exactly right and exactly
+          // what dropping the context restores. Raised by agent C at 3.4.
         )
     );
   }

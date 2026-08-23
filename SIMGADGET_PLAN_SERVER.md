@@ -468,6 +468,16 @@ proves the entry point, the transport and the `initialize` handshake.
    the other end, changes what `tsc` emits for the published server, and is
    your call, not a test helper's. `simgadget` itself is immune: it ships one
    `types` for both conditions.
+
+   **Recommended, on review: keep the package CJS and extend the harness.**
+   `index.ts` and `transport.ts` are `.ts` files in `src/`, so they resolve the
+   same CJS declarations `tools.ts` already does — the mismatch only bites
+   where an `.mts` *test* touches an SDK type, which is exactly what
+   `test/harness/mcp.ts` exists to absorb. `"type": "module"` would change the
+   published emit for no user-facing gain and bring its own hazards: `__dirname`
+   stops existing (the library's own `packageRoot()` depends on it), and step
+   7's wrapper package has to `require()` this one's entry. The rule to write
+   down instead: **the SDK crosses into tests only through `test/harness/`.**
 2. **`registerTools(server, sessions)` takes both as parameters**, and
    `SERVER_INSTRUCTIONS` is exported from `tools.ts`. In HTTP mode, pass the
    **same** registry to each per-request `McpServer` — that is what makes a
@@ -478,16 +488,18 @@ proves the entry point, the transport and the `initialize` handshake.
    the variable changes, and a test can set it without a fresh process.
 4. **`assertIdbPathUnset()` is still uncalled** — agent A's note, still
    outstanding, and not mine to place: it belongs at startup in `index.ts`.
-5. **One wrinkle for the TESTING_TOOLS run, flagged rather than fixed.**
-   `attach_simulator` passes `{sessionId: id}` like every other tool, so a udid
-   that does not exist renders row 11's sentence: *"…Session "qa" can no longer
-   use it — call destroy_simulator, then start_simulator for a fresh one."* On
-   **attach** that is inapt — the session never held that simulator, and
-   `destroy_simulator` would answer "no simulator is running". The instruction
-   to pass the context from every tool is followed as written and the first
-   sentence is still the actionable one; whether this path deserves different
-   prose is an owner's call, and it is the kind of thing a human reading a
-   screen at step 6 should decide.
+5. **~~One wrinkle for the TESTING_TOOLS run~~ — settled 2026-08-23, on
+   review.** `attach_simulator` passed `{sessionId: id}` like every other tool,
+   so a udid that does not exist rendered row 11's sentence: *"…Session "qa"
+   can no longer use it — call destroy_simulator, then start_simulator for a
+   fresh one."* Inapt on attach, where the session never held that simulator
+   and `destroy_simulator` would answer "no simulator is running". **Fixed by
+   dropping the context from that one tool**, which restores the old server's
+   answer exactly (`No simulator found with UDID "…"`, index.ts:1395) and is
+   the parity rule deciding it rather than taste. `attach_simulator` is now the
+   only tool of the seventeen that passes no session context, with a comment
+   saying why, and a test asserting the sentence is absent. Raising it was
+   right; it was cheaper to settle here than to find it on a screen at step 6.
 6. **`install_app` resolves with `path.resolve`, not `ensureAbsolutePath`**,
    and that is deliberate: it is the old server's behaviour and the library's
    own rule. An app bundle is something the caller built, so a relative path
