@@ -976,22 +976,28 @@ phase-by-phase sequencing — is deliberately gone; git has it.
 - **Portrait point dimensions come from `describe`** (decided 2026-08-16) —
   the one piece of the coordinate contract that is new code rather than a
   port. See the contract section; contract check #9 is its gate.
-- **`os: ["darwin"]` is declared by the server and not by the library**
-  (decided 2026-08-24, forced by the first push). npm enforces `os` on a
-  package it installs *as a dependency*, and does not enforce it on a project
-  or a workspace package for itself. Before the split there was one package and
-  the field was decorative; after it, `simgadget` is a dependency of
-  `simgadget-mcp`, so `npm ci` on Linux refuses the whole install with
-  `EBADPLATFORM` — which is what broke CI, whose whole point is that a
-  typecheck and a fake-driven test suite need no simulator and no macOS.
-  A hard `os` on a *library* also breaks any legitimate install-on-Linux,
-  run-on-macOS workflow, Docker builds included. The correctness it was
-  standing in for is already covered better: `assertSupportedArchitecture`
-  throws `UnsupportedArchitectureError` at resolve time naming the platform and
-  the remedy, which is the same reason the library declares no `cpu` field
-  despite being arm64-only. `simgadget-mcp` keeps the field — nothing depends
-  on it, so it costs nobody an install, and a user typing
-  `npm i -g simgadget-mcp` on Linux is better served by an immediate refusal.
+- **`os: ["darwin"]` stays on the server, comes off the library, and CI
+  installs with `--force`** (decided 2026-08-24, forced by the first push, and
+  corrected once when the first explanation turned out to be wrong).
+
+  The measured behaviour: **npm enforces `os` on every workspace package during
+  `npm ci`, whether or not anything depends on it.** The first attempt assumed
+  the check applied only to a dependency relationship and dropped the field
+  from the library alone; the next run failed identically, naming
+  `simgadget-mcp`. Before the split there was one package, npm does not check a
+  project against itself, and the field sat there costing nothing — so the
+  declaration never changed, only what it now means.
+
+  So the Linux runner needs `--force` regardless, and the field is kept where
+  it earns its place: on `simgadget-mcp`, which is what a person installs, and
+  where a Linux user typing `npm i -g` is better served by an immediate refusal
+  than by a runtime error. It comes off the library on its own merits — a hard
+  `os` on a *library* breaks legitimate install-on-Linux, run-on-macOS
+  workflows and Docker builds — and the correctness it stood in for is already
+  covered better by `assertSupportedArchitecture`, which throws
+  `UnsupportedArchitectureError` at resolve time naming the platform and the
+  remedy. That is the same arrangement the library already has for arm64, where
+  it declares no `cpu` field either.
 - **`deviceType` is a field on the handle, not a lookup** (decided
   2026-08-21, found by agent A while writing `render.ts`). `start_simulator`'s
   answer names the model — an agent asks for `"iPhone"` and the reply is where

@@ -24,7 +24,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24.x"
-      - run: npm ci
+      # `--force` is here for exactly one reason: `simgadget-mcp` declares
+      # `"os": ["darwin"]`, and npm refuses EBADPLATFORM for a workspace
+      # package on a Linux runner — before any check runs. The declaration is
+      # true and worth keeping for the people who install the server, and none
+      # of the checks below needs macOS: a typecheck, a fake-driven test suite
+      # and a packed install prove the module graph and the wiring, not a
+      # simulator. A macOS runner would cost 10x for no more signal.
+      - run: npm ci --force
 
       - name: Typecheck
         run: npm run typecheck
