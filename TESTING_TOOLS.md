@@ -2,7 +2,7 @@
 
 Exercises every MCP tool against one simulator. Part 1 covers portrait, Part 2 verifies coordinates after rotation, Part 3 covers views hosted by another process, Part 4 covers controls whose frame is not the thing you can touch, Part 5 checks what we assume idb_companion does, Part 6 times the server.
 
-**Run this through the `mcp__ios-multi-simulator__*` tools, one call at a time.
+**Run this through the `mcp__simgadget__*` tools, one call at a time.
 Do not script it without explicit permission.**
 
 With the users permission you have `scripts/imsmd.sh start|stop|restart` that can
@@ -20,6 +20,26 @@ Build it first:
 testapp/build.sh
 ```
 
+**Expected strings changed with the two-package split**, and only where a row
+of SIMGADGET_PLAN_SERVER.md's "Deliberate behaviour changes" authorises it. The
+ones that show up below: `launch_app` now reports a pid (row 12), `screenshot`
+answers with the absolute path the server resolved rather than simctl's stderr
+(row 9), `ui_describe_point` on empty space answers rather than erroring
+(row 5), and the wedge message says whether a bridge restart was actually
+attempted (row 10). **If a reply differs from this document and no row above
+explains it, that is a finding for TODO.md — not a string to bring into line
+mid-run.**
+
+Two known open items, so neither is mistaken for a regression:
+
+- **TODO #92** — `ui_describe_point` on empty space answers the four characters
+  `null`, where the spec asks for a sentence. There is no step for it below;
+  adding one is part of that fix.
+- **TODO #93** — `screenshot` and `record_video` still *describe* their
+  `output_path` in terms of `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`. Held
+  deliberately until after this run, because those descriptions are pinned by
+  the parity baseline.
+
 **Boot time.** `start_simulator` does not return until the simulator is driveable, so no polling is needed between steps.
 
 **If a step fails with "not answering accessibility requests"**, that is the boot wedge, not the step under test. See [BOOT_BUG.md](BOOT_BUG.md).
@@ -34,7 +54,9 @@ testapp/build.sh
 start_simulator(id: "test-session", type: "iPhone")
 ```
 
-**Expected:** Simulator is created and driveable. Output includes device name, type, UDID, and how long it took to become ready. Continue straight to the next step.
+**Expected:** Simulator is created and driveable —
+`Simulator started: "test-session_iphone" (iPhone 16 Pro, <udid>). Ready after 41s.`
+Note the UDID; later steps need it. Continue straight to the next step.
 
 ### #2 ui_view — home screen
 
@@ -92,7 +114,13 @@ install_app(id: "test-session", app_path: "<repo>/testapp/build/MCPTestApp.app")
 launch_app(id: "test-session", bundle_id: "com.example.mcptestapp")
 ```
 
-**Expected:** "App com.example.mcptestapp launched successfully".
+**Expected:** `App com.example.mcptestapp launched successfully with PID: <pid>`.
+
+> The pid is new, and it is a fix rather than an addition (deliberate change
+> 12). `simctl launch` answers `com.example.mcptestapp: 18900`, and the old
+> parse was anchored at the start of that line — so it never matched, and
+> *every* successful launch used to answer without a pid. A reply with no
+> `with PID:` now means the parse has regressed, not that simctl was quiet.
 
 ### #9 ui_view — verify the app rendered
 
@@ -178,7 +206,13 @@ ui_describe_point(id: "test-session", x: <x>, y: <y>)
 screenshot(id: "test-session", output_path: "/tmp/mcp-test-screenshot.png")
 ```
 
-**Expected:** "Wrote screenshot to". The file exists and is a valid PNG, in physical pixels — larger than the logical frame by the device's scale factor.
+**Expected:** `Wrote screenshot to: /tmp/mcp-test-screenshot.png`. The file
+exists and is a valid PNG, in physical pixels — larger than the logical frame by
+the device's scale factor.
+
+> The path said back is the **absolute** one that was resolved, composed by the
+> server (deliberate change 9). It used to be whatever `simctl` printed on
+> stderr.
 
 ### #18 record_video — start recording
 
@@ -186,7 +220,14 @@ screenshot(id: "test-session", output_path: "/tmp/mcp-test-screenshot.png")
 record_video(id: "test-session")
 ```
 
-**Expected:** Recording started, with an output path (defaults under `~/Downloads` unless `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` is set).
+**Expected:** `Recording started. The video will be saved to: <path>` followed
+by `To stop recording, use the stop_recording command.` The path defaults under
+`~/Downloads` unless `SIMGADGET_DEFAULT_OUTPUT_DIR` is set.
+
+> The tool's own `output_path` **description** still names
+> `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`, which the shim keeps working. That is
+> a known wart held deliberately until after this run, because the description
+> is pinned by the parity baseline — TODO #93.
 
 ### #19 ui_tap — activity while recording
 
@@ -213,7 +254,8 @@ start_simulator(id: "owner-session", type: "iPhone")
 attach_simulator(id: "attach-test", udid: "<udid from owner-session>")
 ```
 
-**Expected:** "Simulator destroyed", then a new simulator, then "Attached to simulator: ...".
+**Expected:** `Simulator destroyed: "<name>" (<udid>)`, then a new simulator,
+then `Attached to simulator: "<name>" (<udid>)`.
 
 ### #22 Verify the attached session, then clean up
 
@@ -223,7 +265,11 @@ destroy_simulator(id: "attach-test")
 destroy_simulator(id: "owner-session")
 ```
 
-**Expected:** A screenshot from the same simulator; then "Detached from simulator" for the attached session (owned=false), and "Simulator destroyed" for the owner (owned=true).
+**Expected:** A screenshot from the same simulator; then
+`Detached from simulator: "<name>" (<udid>)` for the attached session
+(owned=false), and `Simulator destroyed: "<name>" (<udid>)` for the owner
+(owned=true). The two verbs are the whole check: an attached session must not
+delete a simulator it did not create.
 
 ---
 
@@ -271,7 +317,9 @@ rotate(id: "landscape-test", orientation: "landscape_left")
 detect_rotation(id: "landscape-test")
 ```
 
-**Expected:** `landscape_left` after a Rotate Left, or `landscape_right` if you rotated the other way — the same words the Simulator's own menus use.
+**Expected:** `Detected orientation: "landscape_left" for session "landscape-test".`
+after a Rotate Left, or `landscape_right` if you rotated the other way — the
+same words the Simulator's own menus use.
 
 Cross-check it against what the app itself believes:
 
@@ -341,7 +389,7 @@ ui_find(id: "landscape-test", label: "status:")
 destroy_simulator(id: "landscape-test")
 ```
 
-**Expected:** Simulator destroyed.
+**Expected:** `Simulator destroyed: "<name>" (<udid>)`.
 
 ---
 
@@ -435,7 +483,7 @@ ui_view(id: "remote-test")
 destroy_simulator(id: "remote-test")
 ```
 
-**Expected:** Simulator destroyed.
+**Expected:** `Simulator destroyed: "<name>" (<udid>)`.
 
 ---
 
@@ -483,7 +531,7 @@ ui_find(id: "toggle-test", label: "status:")
 
 **Expected:** a `Tapped ... at (x, y)` line, and the status line changes — `status: settings toggle = ...`, flipped from wherever #44 left it.
 
-This is the half that depends on a tap being **held**. An instantaneous touch actuates a switch about 40% of the time, so a coordinate tap that works once proves little; if this step is flaky, that floor has regressed rather than anything about toggles. See `MIN_TAP_HOLD_SECONDS`.
+This is the half that depends on a tap being **held**. An instantaneous touch actuates a switch about 40% of the time, so a coordinate tap that works once proves little; if this step is flaky, that floor has regressed rather than anything about toggles. See `MIN_TAP_HOLD_SECONDS` in [packages/simgadget/src/ax/tap.ts](packages/simgadget/src/ax/tap.ts), where the measurement that fixed the constant sits beside it.
 
 ### #46 The boundary: a name that is not a control
 
@@ -558,7 +606,7 @@ ui_tap(id: "toggle-test", label: "Plain Stepper, Increment")
 
 **Expected:** an **error**, naming what is in the way:
 
-> `"Plain Stepper, Increment" is at {x:201 y:794 w:140 h:32}, but "Toolbar Search" is there instead, so a tap at its centre (271, 810) would not reach it — it is covered, off screen, or scrolled out of view.`
+> `"Plain Stepper, Increment" is at {x:201 y:794 w:140 h:32}, but "Toolbar Search" is there instead, so a tap at its centre (271, 810) would not reach it — it is covered, off screen, or scrolled out of view. Scroll it into view, or read its real position from ui_view and use ui_tap {x, y}.`
 
 **A `Tapped ...` reply here is the regression.** Before this check existed, that call focused the toolbar's search field, opened the keyboard, and reported success. Every frame involved was correct, so no amount of tree work would have caught it — the guard is a single hit-test at the point about to be touched, ~10 ms against a tap that already costs ~110 ms.
 
@@ -580,10 +628,10 @@ destroy_simulator(id: "toggle-test")
 
 ## Part 5 — What we assume idb_companion does
 
-Everything above tests this server. This part tests the **binary underneath it**, and belongs to a different question: idb is under active development, none of these behaviours is something upstream has promised to keep, and every one of them is load-bearing for a decision in `src/`. They are also all invisible while they hold — a companion that changed its mind would leave this server quietly doing the wrong thing rather than failing.
+Everything above tests this server. This part tests the **binary underneath it**, and belongs to a different question: idb is under active development, none of these behaviours is something upstream has promised to keep, and every one of them is load-bearing for a decision in `packages/simgadget/src/`. They are also all invisible while they hold — a companion that changed its mind would leave this server quietly doing the wrong thing rather than failing.
 
 ```bash
-npm run build --workspaces && testapp/build.sh
+npm run build && testapp/build.sh
 # install and launch the fixture, main screen
 npm run check:companion -- <udid>
 ```
@@ -610,7 +658,7 @@ which checks the seventh: that a hosted view still restarts its coordinate space
 **Run this after bumping `companion.lock.json` or the submodule**, before trusting the new binary. As a demonstration that it bites, run it against the 2022 brew companion, which fails five of the six:
 
 ```bash
-IOS_SIMULATOR_MCP_COMPANION_PATH=/opt/homebrew/bin/idb_companion npm run check:companion -- <udid>
+SIMGADGET_COMPANION_PATH=/opt/homebrew/bin/idb_companion npm run check:companion -- <udid>
 ```
 
 — reporting, among other things, that `accessibility_action` is `UNIMPLEMENTED` there.
@@ -667,7 +715,7 @@ Two things to check rather than exact figures:
 
 - **`ui_tap` costs its own hold, and nothing else. Expect 100–150 ms.** Every tap is held for 100 ms (`MIN_TAP_HOLD_SECONDS`), because an instantaneous touch actuates a control only about 40% of the time — see Part 4. Everything above the hold is the real round trip, so the healthy band is 100–150 ms and the interesting readings are outside it: **below 100 ms the floor has been lost** and taps are unreliable again, which no other check in this file would notice; well above 150 ms is a slow companion connection rather than the tool.
 - **`ui_describe_point` is fast** — single digits on an idle machine, under 50 ms in any case. It scales with what else the machine is doing: a busy Mac was measured at 22 ms, with every other figure in the table up by the same factor.
-  - **`ui_describe_point` is the one to watch, and this row has caught a real regression.** It is the only cheap tool that can quietly become an expensive one, because it falls back to a whole-screen read when a frame looks like it belongs to a remote-hosted view (Part 3). Get that condition wrong and every point read pays ~300 ms while still returning the right answer, so nothing fails — the number here is the only thing that notices. A measurement of ~300 ms means the fallback is firing on ordinary elements; `isRemotelyHosted` in [src/ax/tree.ts](src/ax/tree.ts) is the thing to look at. It was measured at 313 ms once, because a hit-test at x=200 returns the home screen's Health icon, whose frame ends at x=188.67.
+  - **`ui_describe_point` is the one to watch, and this row has caught a real regression.** It is the only cheap tool that can quietly become an expensive one, because it falls back to a whole-screen read when a frame looks like it belongs to a remote-hosted view (Part 3). Get that condition wrong and every point read pays ~300 ms while still returning the right answer, so nothing fails — the number here is the only thing that notices. A measurement of ~300 ms means the fallback is firing on ordinary elements; `isRemotelyHosted` in [packages/simgadget/src/ax/tree.ts](packages/simgadget/src/ax/tree.ts) is the thing to look at. It was measured at 313 ms once, because a hit-test at x=200 returns the home screen's Health icon, whose frame ends at x=188.67.
 - **Anything reading the whole screen costs ~300 ms**, because it reads the app's real view hierarchy. A `ui_find` that misses pays the same, since it falls back to that read. This is the reason to tap by name rather than describing the screen and picking coordinates.
 
 **Measure against a screen that does not change.** Three of these tools alter what
