@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — SimGadget: two packages, one repository
+## 3.0.0 — SimGadget: two packages, one repository
 
 The simulator-driving code is now a library in its own right, **`simgadget`**,
 and the MCP server is one consumer of it, **`simgadget-mcp`**. Both live in this

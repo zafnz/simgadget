@@ -39,7 +39,8 @@ trap 'rm -rf "$WORK"' EXIT
 # failed run leaves nothing behind to be committed by accident.
 LIB_TGZ="$(npm pack --silent --workspace=simgadget --pack-destination "$WORK" | tail -1)"
 MCP_TGZ="$(npm pack --silent --workspace=simgadget-mcp --pack-destination "$WORK" | tail -1)"
-echo "packed $LIB_TGZ and $MCP_TGZ"
+WRAP_TGZ="$(npm pack --silent --workspace=ios-multi-simulator-mcp --pack-destination "$WORK" | tail -1)"
+echo "packed $LIB_TGZ, $MCP_TGZ and $WRAP_TGZ"
 
 cd "$WORK"
 npm init -y >/dev/null
@@ -50,7 +51,7 @@ npm init -y >/dev/null
 # outside the repository, the library coming from its tarball rather than the
 # workspace, and the `bin` starting -- and none of it needs macOS. On a Mac the
 # flag is a no-op.
-npm install "./$LIB_TGZ" "./$MCP_TGZ" --force --no-audit --no-fund >/dev/null
+npm install "./$LIB_TGZ" "./$MCP_TGZ" "./$WRAP_TGZ" --force --no-audit --no-fund >/dev/null
 
 # A symlink here means the install reached back into the workspace and the rest
 # of this script would prove nothing about what users receive.
@@ -75,4 +76,24 @@ if ! grep -q '"serverInfo"' <<<"$RESPONSE"; then
   exit 1
 fi
 
-echo "OK: both packed packages install and the server answers initialize."
+# And again through the deprecated name, because that bin is the entire reason
+# the wrapper exists: a client config that still says `ios-multi-simulator-mcp`
+# has to keep working, and the only way to know is to run it. Its notice goes
+# to stderr, so stdout must still be nothing but MCP.
+WRAPPED="$(printf '%s\n' "$INIT" \
+  | ./node_modules/.bin/ios-multi-simulator-mcp --stdio 2>/dev/null || true)"
+
+if ! grep -q '"serverInfo"' <<<"$WRAPPED"; then
+  echo "ERROR: the deprecated wrapper did not start the server; every existing client config" >&2
+  echo "pointing at ios-multi-simulator-mcp would break on upgrade." >&2
+  exit 1
+fi
+
+NOTICE="$(printf '%s\n' "$INIT" \
+  | ./node_modules/.bin/ios-multi-simulator-mcp --stdio 2>&1 >/dev/null || true)"
+if ! grep -q "deprecated" <<<"$NOTICE"; then
+  echo "ERROR: the wrapper started the server without saying it is deprecated." >&2
+  exit 1
+fi
+
+echo "OK: all three packed packages install, and both bins answer initialize."

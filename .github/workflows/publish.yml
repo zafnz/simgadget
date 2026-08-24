@@ -36,7 +36,37 @@ jobs:
       # ts-proto, a devDependency. Every check passed -- it built, it packed
       # with the right files, it ran from the working tree -- and the published
       # package could not start at all.
-      - name: Smoke test the packed package
+      #
+      # Since 3.0.0 there are three packages, and the smoke covers all of them:
+      # the server resolving the library from a *tarball* rather than the
+      # workspace symlink is the way a split like this breaks for users and for
+      # nobody else, and the wrapper's bin is what every existing client config
+      # still invokes.
+      - name: Smoke test the packed packages
         run: npm run smoke
 
-      - run: npm publish --access public
+      # Dependency order, and built first. `simgadget-mcp` has no `prepare`
+      # script and cannot safely have one -- npm does not order workspace
+      # lifecycle scripts by dependency, and its `tsc` needs the library's
+      # declarations to exist (TODO #90) -- so the root's ordered `build` is
+      # what guarantees both `build/` directories are current before anything
+      # is packed. `npm run smoke` above already ran it; this is explicit so
+      # that removing the smoke step never silently starts publishing stale
+      # output.
+      - name: Build, in dependency order
+        run: npm run build
+
+      - name: Publish simgadget
+        run: npm publish --access public --workspace=simgadget
+
+      # Second, because its dependency range (`simgadget@^3.0.0`) has to be
+      # satisfiable on the registry the moment it lands, or the first person to
+      # install it gets a package whose dependency does not exist yet.
+      - name: Publish simgadget-mcp
+        run: npm publish --access public --workspace=simgadget-mcp
+
+      # Last, and only ever to keep old client configs working. It is
+      # deprecated on npm; publishing it again does not undeprecate it, but
+      # `npm deprecate` has to be re-run for each new version.
+      - name: Publish the deprecated ios-multi-simulator-mcp wrapper
+        run: npm publish --access public --workspace=ios-multi-simulator-mcp
