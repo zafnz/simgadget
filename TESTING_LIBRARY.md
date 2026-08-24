@@ -14,7 +14,10 @@ npm run test:e2e -w simgadget
 Roughly 110 seconds, unattended, from a cold start. It creates two throwaway
 simulators, deletes them, and leaves nothing behind.
 
-## Why it exists, given there are already 521 unit tests
+## Why it exists, given there are already 523 unit tests
+
+(523 in `simgadget`, plus 415 in `simgadget-mcp` over rendering, sessions and
+tool wiring — neither of which touches a device either.)
 
 The unit suite proves the library calls the right things in the right order,
 against a fake `idb_companion` that answers instantly and always agrees with
@@ -201,11 +204,14 @@ a finding that lives only in a commit message is a finding that gets rediscovere
 4. **`launchApp` could never return a pid — fixed.** `simctl launch` answers
    `com.example.mcptestapp: 18900`, and the parse was `/^(\d+)/`, anchored at
    the start of a line that begins with the bundle identifier. It could not
-   match, so `{pid}` was `null` for every launch that ever succeeded. The
-   shipped server has the same bug (`src/index.ts:2648`). Now parsed from the
-   end of the reply, since a bundle identifier may itself contain digits, and
+   match, so `{pid}` was `null` for every launch that ever succeeded. Now parsed
+   from the end of the reply, since a bundle identifier may itself contain digits, and
    the suite asserts a real pid comes back — its absence is exactly how the
-   bug survived a port.
+   bug survived a port. The old single-file server carried the same bug for its
+   whole life (it was at `src/index.ts:2648` before that file was deleted);
+   `simgadget-mcp` renders the pid the library now returns, which is row 12 of
+   SIMGADGET_PLAN_SERVER.md's deliberate changes and a visible difference in
+   `launch_app`'s reply.
 
    Reading from the end has an edge the fixture cannot show, because
    `com.example.mcptestapp` does not end in a digit: a reply that is *only* a
