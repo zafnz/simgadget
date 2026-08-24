@@ -52,7 +52,18 @@ cheapest option — a few hundred bytes — and you never handle coordinates:
 ui_tap  { id: "qa-login-flow", label: "Sign Up" }
 ```
 
-`label` is a case-sensitive substring match against the accessibility label.
+`label` is a case-sensitive substring match against the element's accessibility
+label, its visible text, or its accessibility identifier; curly quotes,
+apostrophes and dashes are folded to their plain equivalents, so ask for what
+you see on screen. The first match wins, and `ui_tap` names the element it
+acted on — which is where a wrong match shows up.
+
+`ui_tap` can refuse, and the refusal is the useful answer: it checks the touch
+will reach the element before sending it, so a control that is covered,
+scrolled out of view or disabled is reported rather than silently missed.
+Scroll it into view, or read its real position from `ui_view` and use
+`ui_tap {x, y}`. A switch is switched rather than touched, and the reply
+carries the state read back — if it says the state did not change, it did not.
 
 **To check whether something is on screen**, use `ui_find`. It returns the
 element, or an ordinary "not found" answer if it is absent — so it is safe to
@@ -124,7 +135,8 @@ else is rejected rather than partially typed.
 | `record_video` / `stop_recording` | `output_path?`, ... | Record a video of a flow |
 | `install_app` | `app_path` | Install a .app or .ipa |
 | `launch_app` | `bundle_id`, `terminate_running?` | Launch an installed app |
-| `detect_rotation` | — | Re-sync coordinates after rotating the device |
+| `rotate` | `orientation` | Rotate the device, and be told what the interface actually adopted |
+| `detect_rotation` | — | Re-sync coordinates after something else rotated the device |
 
 ## A worked example
 

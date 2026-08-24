@@ -1,5 +1,74 @@
 # Changelog
 
+## Unreleased — SimGadget: two packages, one repository
+
+The simulator-driving code is now a library in its own right, **`simgadget`**,
+and the MCP server is one consumer of it, **`simgadget-mcp`**. Both live in this
+repository and are published in lockstep at the same version number.
+
+The motivation: the MCP protocol layer earns nothing for someone who already has
+a shell and a Node runtime, and everything underneath it — companion
+resolution, process lifecycle, orientation, tree pruning, wedge recovery — is
+useful to people who will never run an MCP server.
+
+```js
+import { createSimulator } from "simgadget";
+
+const sim = await createSimulator({ deviceType: "iPhone 16 Pro" });
+await sim.installApp("./build/MyApp.app");
+await sim.launchApp("com.example.myapp");
+await sim.tap({ label: "Sign Up" });
+```
+
+`npx simgadget prefetch` resolves and caches the pinned `idb_companion` ahead of
+time, for CI images and provisioning scripts.
+
+### Breaking
+
+Three things change, and the deprecated `ios-multi-simulator-mcp` wrapper covers
+the first so existing client configs keep working:
+
+- **The MCP server key in your client config.** The package is now
+  `simgadget-mcp` (`npx -y simgadget-mcp`), and the server reports itself to
+  clients as `simgadget` rather than `ios-simulator`. `ios-multi-simulator-mcp`
+  remains published as a thin wrapper around it, and is deprecated.
+- **`IOS_SIMULATOR_MCP_*` → `SIMGADGET_*`.** Every variable keeps its suffix.
+  The old spelling still works, with exactly one deprecation line on stderr per
+  variable per process, and is dropped two releases from now. Two of the ten are
+  read by the *library* — `SIMGADGET_COMPANION_PATH` and
+  `SIMGADGET_COMPANION_CACHE` — and the other eight configure a server.
+  `IOS_SIMULATOR_MCP_IDB_PATH` remains a tombstone that throws; so does
+  `SIMGADGET_IDB_PATH`.
+- **The companion cache directory moved** to `~/Library/Caches/simgadget/`
+  (or `$XDG_CACHE_HOME/simgadget`). This orphans an already-downloaded 19 MB
+  companion, which is re-fetched and re-verified once. Harmless, but worth
+  knowing on a metered connection. `~/Library/Caches/ios-multi-simulator-mcp/`
+  is then yours to delete.
+
+The socket directory also moved, to `/tmp/simgadget-<uid>/`. Nothing outside the
+process reads it.
+
+### Also visible
+
+- **`launch_app` reports the pid**, which it never actually managed to before:
+  `simctl launch` prints the bundle identifier first and the parse was anchored
+  at the start of the line, so *every* successful launch answered without one.
+- **`screenshot` answers `Wrote screenshot to: <path>`** with the absolute path
+  that was resolved, rather than echoing simctl's stderr.
+- **`ui_describe_point` on empty space answers** rather than raising an error —
+  nothing is there, and that is the answer.
+- **The wedge message says whether a bridge restart was actually attempted.**
+  It used to claim one had been even when the cooldown had refused to try,
+  which sent readers looking for a restart that never happened.
+- **A simulator that has gone away names the session and the way back**, which
+  the library — having no tools to name — cannot do for itself.
+- **Error prose is now triggered by typed catches, not by matching error
+  message text.** The wording is preserved; what changed is that nothing
+  anywhere regexes a message any more.
+
+Full design, including the API and the error taxonomy, in
+[SIMGADGET.md](SIMGADGET.md).
+
 ## 2.2.0
 
 ### Taps are held long enough to land
