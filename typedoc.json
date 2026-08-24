@@ -1,0 +1,60 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+
+  // `src/index.ts` is the only module the package's `exports` map resolves, so
+  // pointing TypeDoc at it means the generated reference cannot document
+  // anything a user cannot import. Anything under ax/, idb/ or internal/ is
+  // absent for the same reason it is absent from a `require`, rather than
+  // because a filter hid it.
+  "entryPoints": ["packages/simgadget/src/index.ts"],
+  "tsconfig": "packages/simgadget/tsconfig.json",
+
+  "out": "website/api",
+  "name": "simgadget",
+  // Deliberately NOT packages/simgadget/README.md. That file is the npm landing
+  // page, so it has to stand alone and repeats the API summary that also lives
+  // in website/library.html -- pointing TypeDoc at it made /api/ open on a third
+  // copy of the same document, under a second "simgadget" heading. This file
+  // covers what the README does not: a worked example, and the rules that apply
+  // across the whole API and cannot be seen in the types.
+  "readme": "docs/api-landing.md",
+
+  // Gitignored and generated: locally by `npm run docs`, in CI by the Pages
+  // workflow. Nothing here is committed, so nothing here can go stale.
+  "githubPages": false,
+  "hideGenerator": true,
+
+  // `protected` members are the deps seam and the orientation hint -- both
+  // implementation, and the hint in particular is the "auto" state that
+  // DECISIONS.md #3 says never crosses a boundary. Without this TypeDoc
+  // documents them and then warns that their types are not public, which is
+  // the right complaint about the wrong question.
+  "excludeProtected": true,
+  "excludeInternal": true,
+
+  // `notExported` and `invalidLink` are hard errors: the `docs` script runs
+  // with --treatWarningsAsErrors, so a public export that leaks a private type,
+  // or an {@link} pointing at nothing, fails the build and the Pages deploy.
+  //
+  // `notDocumented` is off, and that is a debt rather than a decision. Turning
+  // it on today reports 90 members -- mostly option and result interfaces whose
+  // fields carry `//` trailing comments, which TypeDoc does not read, rather
+  // than `/** */`. Run `npm run docs:undocumented` for the list. Once that
+  // reaches zero, set this true and the gate closes behind it.
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+
+  "customCss": "website/assets/typedoc-theme.css",
+  "titleLink": "/",
+  "navigationLinks": {
+    "Library": "/library.html",
+    "MCP server": "/mcp.html",
+    "GitHub": "https://github.com/zafnz/simgadget"
+  },
+
+  "sort": ["source-order"],
+  "categorizeByGroup": true
+}

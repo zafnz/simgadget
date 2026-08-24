@@ -1,5 +1,10 @@
 # Implementation plan: self-contained idb
 
+> **Archived, and pre-rename.** This plan is finished and shipped. It names
+> `ios-multi-simulator-mcp` and paths that no longer exist; the packages are
+> now `simgadget` and `simgadget-mcp`. Kept for the reasoning, not as a
+> description of the code. See [docs/README.md](../README.md).
+
 Branch: `feat/self-contained-idb`. Background and evidence: `../DESIGN.md`.
 
 ## Goal

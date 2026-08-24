@@ -3,7 +3,7 @@
 A minimal UIKit app for exercising this MCP server's UI tools. **Not shipped
 with the package** (`package.json`'s `files` covers `build` and
 `companion.lock.json` only) and not part of the server in any way — it exists
-so [TESTING_TOOLS.md](../TESTING_TOOLS.md) has a fixture it controls, instead of borrowing
+so [TESTING_TOOLS.md](../docs/testing/TESTING_TOOLS.md) has a fixture it controls, instead of borrowing
 Apple's apps and their first-run wizards.
 
 ## Why it looks the way it does

@@ -59,7 +59,7 @@ disabled, or scrolled out of view looks exactly like a tap that worked.
 **A newly discovered bug lands three things, not one:**
 
 1. the fix,
-2. a step added or adjusted in [TESTING_TOOLS.md](TESTING_TOOLS.md) that would
+2. a step added or adjusted in [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) that would
    have caught it against the `testapp/` fixture,
 3. a unit test that catches it in milliseconds.
 
@@ -260,7 +260,7 @@ npm ls --depth=0
 
 4. **Verify compatibility**:
    - Test all existing functionality
-   - Run through [TESTING_TOOLS.md](TESTING_TOOLS.md), and [TESTING_SERVER.md](TESTING_SERVER.md) if transports or sessions are affected
+   - Run through [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md), and [TESTING_SERVER.md](docs/testing/TESTING_SERVER.md) if transports or sessions are affected
    - Ensure no new TypeScript errors (`npm run typecheck`)
 
 ### Why This Matters
@@ -304,7 +304,7 @@ If adding a new tool:
 2. Use proper Zod schemas for input validation
 3. Include comprehensive error handling with troubleshooting links
 4. Use the `--` separator when passing user input to commands (security best practice)
-5. Add the tool to the README.md and AGENT_INSTRUCTIONS.md documentation, and a step to TESTING_TOOLS.md
+5. Add the tool to the README.md and AGENT_INSTRUCTIONS.md documentation, and a step to [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md)
 6. A tool's description and `SERVER_INSTRUCTIONS` are pinned by
    `packages/simgadget-mcp/test/fixtures/tools-list.baseline.json`, which must
    never be regenerated. A new tool is a new baseline entry; a *changed*
@@ -366,14 +366,14 @@ simulators against the `testapp/` fixture, deletes them in `after()` including
 on failure, and never touches a simulator it did not create. This is the layer
 that answers whether the library actually drives a device — the fake companion
 cannot tell you whether an AXBridge read really does see inside a toolbar. See
-[TESTING_LIBRARY.md](TESTING_LIBRARY.md).
+[TESTING_LIBRARY.md](docs/testing/TESTING_LIBRARY.md).
 
 ### 3. The companion contract — `npm run check:companion -- <udid>`
 
 Six things this codebase believes about somebody else's binary, none of which
 upstream has promised to keep, and all of which are invisible while they hold.
 **Run it after bumping `companion.lock.json` or the submodule**, before
-trusting the new binary. See TESTING_TOOLS.md Part 5.
+trusting the new binary. See [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) Part 5.
 
 ### 4. Manual testing
 
@@ -420,7 +420,7 @@ for changes that touch it:
    - Test all affected functionality
    - Test error conditions
    - Verify the tool works as expected with AI agents
-   - Run [TESTING_TOOLS.md](TESTING_TOOLS.md) to ensure existing functionality still works, and [TESTING_SERVER.md](TESTING_SERVER.md) for transport or session changes
+   - Run [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) to ensure existing functionality still works, and [TESTING_SERVER.md](docs/testing/TESTING_SERVER.md) for transport or session changes
 
 ### Required Documentation for Contributions
 
@@ -446,7 +446,7 @@ Include in your pull request:
 4. **Update documentation** if needed:
 
    - Add new tools to README.md and AGENT_INSTRUCTIONS.md
-   - Add a step to TESTING_TOOLS.md — required if the change is a bug fix, per
+   - Add a step to [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) — required if the change is a bug fix, per
      the regression rule above
    - Update any other relevant documentation
 

@@ -95,8 +95,8 @@ CommonJS works the same way: `const { createSimulator } = require("simgadget")`.
   state read back before and after. When it cannot confirm the state changed it
   says so rather than claiming success.
 
-The full API, with every signature, result shape and error payload, is in
-[SIMGADGET.md](SIMGADGET.md).
+The full API, with every signature, result shape and error payload, is at
+[simgadget.dev/api](https://simgadget.dev/api/).
 
 
 ---
@@ -430,6 +430,15 @@ turn, but no Face ID iPhone gives an app an upside-down interface, whatever its
 interface actually kept. Use an iPad if you need that case.
 
 For everything else, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+# More documentation
+
+[AGENT_INSTRUCTIONS.md](AGENT_INSTRUCTIONS.md) is written to be handed to an
+agent, and [CONTRIBUTING.md](CONTRIBUTING.md) covers development setup. The rest
+is under [docs/](docs/) — the design spec and other internals in
+[docs/devs/](docs/devs/), the manual test plans in
+[docs/testing/](docs/testing/), and finished plans kept for their reasoning in
+[docs/archive/](docs/archive/). [docs/README.md](docs/README.md) is the index.
 
 # License
 

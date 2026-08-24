@@ -1,5 +1,10 @@
 # Resolved implementation decisions — SimGadget library phase
 
+> **Archived.** The decisions are settled and implemented; this is the
+> numbered register that source comments across both packages cite
+> (`DECISIONS.md #12`, and so on). Kept for those citations, not as a
+> description of the code. See [docs/README.md](../README.md).
+
 Read alongside `SIMGADGET.md` (authoritative spec) and `SIMGADGET_PLAN.md` (plan).
 Everything here has already been settled — by the spec, by the plan's "Open items
 — all resolved", or by the repository owner during this session. **Do not

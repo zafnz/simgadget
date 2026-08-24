@@ -39,10 +39,10 @@ boot-time polling. Neither survived contact with an experiment.
 Reading `vendor/idb` at our pinned sha:
 
 - The error is `noTranslationObject`, thrown at
-  [FBAXTranslationDispatcher.swift:60](vendor/idb/FBSimulatorControl/Commands/FBAXTranslationDispatcher.swift:60)
+  [FBAXTranslationDispatcher.swift:60](../../vendor/idb/FBSimulatorControl/Commands/FBAXTranslationDispatcher.swift:60)
   when `request.perform(withTranslator:)` returns nil. No element is produced at
   all.
-- [FBSimulatorAccessibilityCommands.swift:150](vendor/idb/FBSimulatorControl/Commands/FBSimulatorAccessibilityCommands.swift:150)
+- [FBSimulatorAccessibilityCommands.swift:150](../../vendor/idb/FBSimulatorControl/Commands/FBSimulatorAccessibilityCommands.swift:150)
   catches it, checks whether SpringBoard is a running launchd service, and — since
   ours *is* running — rethrows unchanged. **No remediation is attempted.**
 - idb has the cure. `remediateSpringBoard` stops `com.apple.CoreSimulator.bridge`.
@@ -130,7 +130,7 @@ one. Untested here.
    attempt, because a wedged simulator under an agent fails every few hundred
    milliseconds and restarting under each failure would leave the bridge
    permanently mid-restart. The rules are a pure function, `shouldRecover` in
-   [packages/simgadget/src/ax/recovery.ts](packages/simgadget/src/ax/recovery.ts), and are unit tested.
+   [packages/simgadget/src/ax/recovery.ts](../../packages/simgadget/src/ax/recovery.ts), and are unit tested.
 
    The boot wedge is what this file is about, but nothing says the bridge can
    only wedge at boot; before this, a session that wedged mid-run got a clearer

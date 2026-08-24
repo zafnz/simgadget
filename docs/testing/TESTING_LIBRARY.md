@@ -33,7 +33,7 @@ checked belongs to iOS, to the real companion, or to the geometry between them:
   thirty-second gRPC timeout.
 
 Where the fake encodes a belief about someone else's undocumented binary,
-[`scripts/check-companion-contract.mjs`](scripts/check-companion-contract.mjs)
+[`scripts/check-companion-contract.mjs`](../../scripts/check-companion-contract.mjs)
 pins that belief directly. This suite is the layer above: it checks that the
 library built on those beliefs actually drives a device.
 

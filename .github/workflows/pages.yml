@@ -4,8 +4,15 @@ name: Pages
 #
 # GitHub Pages' branch deployment can only serve the repository root or
 # `/docs`, and this site lives in neither -- so it is deployed as an artifact
-# instead. That is also why there is no build step: the site is three static
-# HTML files and an assets directory, so the whole job is "upload the folder".
+# instead.
+#
+# The hand-written pages need no build; the API reference at /api/ does. It is
+# generated from `packages/simgadget/src/index.ts` by TypeDoc into
+# `website/api/`, which is gitignored -- so the docs on the site are always
+# built from the commit being deployed and cannot drift from the source the way
+# a committed build would. That is also why this workflow watches the library's
+# sources: a doc comment changed with no change under `website/` still has to
+# redeploy, and before the generate step existed that push published nothing.
 #
 # `website/CNAME` is part of the artifact on purpose. The custom domain is a
 # repository setting, but Pages reads that file back out of every deployment,
@@ -17,6 +24,13 @@ on:
     paths:
       - 'website/**'
       - '.github/workflows/pages.yml'
+      # The API reference is generated from these, so a change here changes the
+      # published site even though nothing under website/ moved.
+      - 'packages/simgadget/src/**'
+      - 'docs/api-landing.md'
+      - 'typedoc.json'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 # Read the repo, mint the deployment's OIDC token, write the Pages deployment.
@@ -39,6 +53,18 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm run docs` runs TypeDoc with --treatWarningsAsErrors, so a public
+      # export that leaks a private type, or a dead {@link}, fails here rather
+      # than shipping a broken reference. It writes into website/api/, which the
+      # upload step below then picks up along with the rest of the site.
+      - run: npm ci
+      - run: npm run docs
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

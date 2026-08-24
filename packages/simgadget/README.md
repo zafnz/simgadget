@@ -97,8 +97,8 @@ const result = await sim.tap({ label: "Sound" });
 ## API
 
 A short summary of the public surface. The authoritative signatures — every
-option, default and thrown error — are in
-[SIMGADGET.md](https://github.com/zafnz/simgadget/blob/main/SIMGADGET.md).
+option, default and thrown error — are in the generated reference at
+[simgadget.dev/api](https://simgadget.dev/api/).
 
 ### Top-level functions
 
@@ -305,9 +305,9 @@ Python `idb` CLI to point at any more.
 
 ## More
 
-- **[SIMGADGET.md](https://github.com/zafnz/simgadget/blob/main/SIMGADGET.md)** — the design spec: the full API with every signature, the error taxonomy, the coordinate contract, the decisions register
+- **[simgadget.dev/api](https://simgadget.dev/api/)** — the generated API reference: every signature, option, default and thrown error, with a search box
 - **[TROUBLESHOOTING.md](https://github.com/zafnz/simgadget/blob/main/TROUBLESHOOTING.md)** — common issues and their solutions
-- **[TESTING_LIBRARY.md](https://github.com/zafnz/simgadget/blob/main/TESTING_LIBRARY.md)** — the end-to-end suite: what it covers and what it deliberately does not
+- **[TESTING_LIBRARY.md](https://github.com/zafnz/simgadget/blob/main/docs/testing/TESTING_LIBRARY.md)** — the end-to-end suite: what it covers and what it deliberately does not
 - **[CONTRIBUTING.md](https://github.com/zafnz/simgadget/blob/main/CONTRIBUTING.md)** — development setup and the vendored idb submodule
 - **[simgadget-mcp](https://www.npmjs.com/package/simgadget-mcp)** — the MCP server built on this library, for driving simulators from AI agents
 

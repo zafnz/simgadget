@@ -1,5 +1,10 @@
 # SimGadget: implementation plan for the library
 
+> **Archived.** This plan is finished: the library exists, is tested against a
+> real simulator, and has been reviewed. Kept for the reasoning and for the
+> citations in test and source comments, not as a description of the code.
+> See [docs/README.md](../README.md).
+
 > **Scope: SIMGADGET.md step 2, and nothing after it.** This plan takes the
 > library from an empty `packages/simgadget/src/index.ts` to a published-shaped,
 > proven `simgadget` — and stops. The MCP port (step 3) is explicitly out of

@@ -158,7 +158,7 @@ that answers in tens of milliseconds did not order one.
 
 A simulator can keep rendering and answering taps while every accessibility read
 fails forever, and it happens on its own to roughly one fresh simulator in four
-(see [BOOT_BUG.md](BOOT_BUG.md)).
+(see [BOOT_BUG.md](../devs/BOOT_BUG.md)).
 
 **There is no known way to induce it on demand, so this cannot be a scripted
 step.** Stopping the guest's bridge is not it: `xcrun simctl spawn <udid>

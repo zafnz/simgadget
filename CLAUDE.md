@@ -48,6 +48,12 @@ npm run test:e2e
 # Pack both tarballs and prove the server installs and answers from them
 npm run smoke
 
+# Generate the API reference into website/api/ (gitignored; open index.html)
+npm run docs
+
+# List the public exports still missing a doc comment
+npm run docs:undocumented
+
 # Run the MCP inspector against the server
 npm run dev
 
@@ -114,7 +120,7 @@ checking one against a device costs a simulator boot:
 - `ax/recovery.ts` — `shouldRecover`: when a failed accessibility read is worth
   restarting the simulator's bridge for. The cure lives in `simulator.ts`; only
   the decision is here, because getting it wrong is expensive in both
-  directions (see [BOOT_BUG.md](BOOT_BUG.md)).
+  directions (see [BOOT_BUG.md](docs/devs/BOOT_BUG.md)).
 - `ax/tap.ts` — the tap decisions: the hold floor, what counts as a toggle,
   what a hit-test verdict means.
 
@@ -208,7 +214,7 @@ cannot see toolbar contents while AXBridge can, that a point read hit-tests
 cheaply, and that `accessibility_action` activates a control without a touch.
 Each one is invisible while it holds and silently wrong when it stops. The 2022
 brew companion fails five of the six, which is what the check is calibrated
-against; see TESTING_TOOLS.md Part 5.
+against; see [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) Part 5.
 
 ## Configuration
 
@@ -236,6 +242,52 @@ throw an explanatory error, because there is no Python `idb` CLI to point at any
 more. `assertIdbPathUnset()` is called at server startup and from companion
 resolution, never at module load — a module that throws on import cannot be
 unit tested.
+
+## The API reference
+
+`npm run docs` runs TypeDoc over `packages/simgadget/src/index.ts` and writes
+`website/api/`, which is **gitignored**: it is built locally when you want to
+read it, and by the Pages workflow on every deploy. Nothing generated is
+committed, so the published reference cannot drift from the source it describes.
+
+TypeDoc documents what is reachable from `index.ts`, which is what the
+package's `exports` map resolves. The generated reference is therefore the
+public surface, and nothing under `ax/`, `idb/` or `internal/` can appear in it
+by accident.
+
+Two things to know before changing either:
+
+- **The palette is shared rather than copied.** `website/assets/tokens.css` holds the
+  colours, type stacks and geometry; `site.css` imports it, and so does
+  `website/assets/typedoc-theme.css`, which aliases TypeDoc's own `--color-*`
+  and `--hl-*` variables onto those tokens. Change a colour in `tokens.css` and
+  both the hand-written pages and the generated reference follow. The theming
+  works because TypeDoc's default theme switches on the same three selectors
+  this site already uses (`:root`, the `prefers-color-scheme` media query, and
+  `:root[data-theme=…]`), so TypeDoc's own theme toggle drives the site's
+  tokens. If a TypeDoc upgrade adds a selector `typedoc-theme.css` does not
+  mirror, one theme reverts to TypeDoc's own grey with no other symptom; check
+  the two selector lists in that file first.
+- **`--treatWarningsAsErrors` is on.** A public export that leaks a private type
+  (`notExported`) or a dead `{@link}` (`invalidLink`) fails the build and the
+  deploy. `notDocumented` is deliberately *off*: turning it on today reports 90
+  members, mostly option and result interfaces whose fields carry `//` trailing
+  comments, which TypeDoc does not read, rather than `/** */`. Run
+  `npm run docs:undocumented` for the list; when it reaches zero, flip
+  `validation.notDocumented` in `typedoc.json` and the gate closes behind it.
+
+The landing page at `/api/` is `docs/api-landing.md`, and is **not** the
+package README. The README is the npm landing page, so it has to stand alone and
+carries its own API summary, the same one `website/library.html` carries. Using
+it here put a third copy of that summary in front of the generated reference,
+under a second `simgadget` heading. `docs/api-landing.md` covers what the README
+does not: a worked example, and the four rules that apply across the whole API
+and cannot be seen in the types (the coordinate space, actions returning the
+outcome, null-versus-throw, and the error `code`).
+
+`website/library.html`'s section 04 stays hand-written on purpose — it is the
+shape of the API grouped by what you are trying to do, for reading, and it links
+out to `/api/` for looking things up.
 
 ## Available MCP Tools
 
@@ -265,7 +317,7 @@ baseline** (`packages/simgadget-mcp/test/fixtures/tools-list.baseline.json`),
 which two tests diff against — one over the Zod schemas, one over the built
 server's `initialize` and `tools/list` responses. It must never be regenerated.
 Changing a description on purpose means adding a row to
-SIMGADGET_PLAN_SERVER.md's "Deliberate behaviour changes" and an entry in the
+[SIMGADGET_PLAN_SERVER.md](docs/archive/SIMGADGET_PLAN_SERVER.md)'s "Deliberate behaviour changes" and an entry in the
 test's `ALLOWED_DIFFERENCES` citing that row.
 
 ## Testing
@@ -283,7 +335,7 @@ published packages still support Node 18; this is a development-only floor).
 `packages/simgadget/test/e2e/`. Two throwaway simulators against the `testapp/`
 fixture, ~110 seconds unattended, and it deletes what it creates. This is the
 layer that answers whether the library actually drives a device. See
-[TESTING_LIBRARY.md](TESTING_LIBRARY.md).
+[TESTING_LIBRARY.md](docs/testing/TESTING_LIBRARY.md).
 
 **Manual testing** — the only way to answer whether the *server* behaves as an
 agent meets it. Requires macOS on Apple Silicon with Xcode and iOS simulators
@@ -292,9 +344,9 @@ installed, and an MCP client. Test changes by:
 1. Building with `npm run build`
 2. Pointing your MCP client at `packages/simgadget-mcp/build/index.js`, or
    starting the managed daemon (below) and using HTTP
-3. Running through [TESTING_TOOLS.md](TESTING_TOOLS.md), which exercises every
+3. Running through [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md), which exercises every
    tool against the `testapp/` fixture (build it with `testapp/build.sh` first)
-4. Running [TESTING_SERVER.md](TESTING_SERVER.md) as well when touching
+4. Running [TESTING_SERVER.md](docs/testing/TESTING_SERVER.md) as well when touching
    transports, sessions or process lifecycle — it covers what a single-simulator
    run cannot
 
@@ -387,7 +439,7 @@ other ports, from this same checkout**, and they are production. So:
 - **Security first**: always use the `--` separator for user inputs,
   `execFile` with `shell: false`, validate with Zod.
 - **The regression rule**: a newly discovered bug lands **three** things — the
-  fix, a step added or adjusted in TESTING_TOOLS.md that would have caught it
+  fix, a step added or adjusted in [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) that would have caught it
   against the fixture, and a unit test that catches it in milliseconds. When the
   broken rule is not expressible purely, that is the signal to extract the
   decision into a pure function first — which is exactly how `ax/recovery.ts`
@@ -405,21 +457,36 @@ other ports, from this same checkout**, and they are production. So:
 
 ## Additional Documentation
 
+The root holds only what a user or a contributor arrives looking for; everything
+else is under `docs/`, split by who reads it.
+
+**In the root:**
+
 - **[README.md](README.md)** - The front door: what the two packages are, installation, the library API, the MCP tools, the coordinate contract, configuration
-- **[SIMGADGET.md](SIMGADGET.md)** - The design spec: the split rule, the full library API with signatures, the error taxonomy, the coordinate contract, the decisions register
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines, development setup, the vendored idb submodule, dependency management
-- **[TESTING_TOOLS.md](TESTING_TOOLS.md)** - Step-by-step manual test plan covering every MCP tool, run against the `testapp/` fixture
-- **[TESTING_SERVER.md](TESTING_SERVER.md)** - Release checks for transports, multiple sessions on one server, and process lifecycle
-- **[TESTING_LIBRARY.md](TESTING_LIBRARY.md)** - The library's end-to-end suite: what it covers, the rules it keeps, and what it deliberately does not
-- **[BOOT_BUG.md](BOOT_BUG.md)** - The accessibility-never-starts wedge: what was ruled out, what was not, and the recovery in place
-- **[CAMERA.md](CAMERA.md)** - **Proposal, not implemented.** Feeding a static image to the simulator's camera
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and their solutions
+- **[AGENT_INSTRUCTIONS.md](AGENT_INSTRUCTIONS.md)** - What to hand an agent that will be driving the tools
 - **[SECURITY.md](SECURITY.md)** - Security policy and information about fixed vulnerabilities
 - **[CONTEXT.md](CONTEXT.md)** - Reference links for MCP documentation, iOS simulator commands, idb, and security best practices
-- **[TODO.md](TODO.md)** - Open findings, in review batches
 - **[CHANGELOG.md](CHANGELOG.md)** - Release history
 
-Historical records, not descriptions of the code as it is:
-[PLAN.md](PLAN.md), [DECISIONS.md](DECISIONS.md),
-[SIMGADGET_PLAN.md](SIMGADGET_PLAN.md),
-[SIMGADGET_PLAN_SERVER.md](SIMGADGET_PLAN_SERVER.md).
+**[docs/devs/](docs/devs/)** — internals, for people changing this code:
+
+- **[SIMGADGET.md](docs/devs/SIMGADGET.md)** - The design spec: the split rule, the full library API with signatures, the error taxonomy, the coordinate contract, the decisions register
+- **[BOOT_BUG.md](docs/devs/BOOT_BUG.md)** - The accessibility-never-starts wedge: what was ruled out, what was not, and the recovery in place
+- **[TODO.md](docs/devs/TODO.md)** - Open findings, in review batches
+- **[CAMERA.md](docs/devs/CAMERA.md)** - **Proposal, not implemented.** Feeding a static image to the simulator's camera
+- **[WEB_PITCH.md](docs/devs/WEB_PITCH.md)** - Source copy for the marketing site, with every claim traced to something measured here
+
+**[docs/testing/](docs/testing/)** — the test plans:
+
+- **[TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md)** - Step-by-step manual test plan covering every MCP tool, run against the `testapp/` fixture
+- **[TESTING_SERVER.md](docs/testing/TESTING_SERVER.md)** - Release checks for transports, multiple sessions on one server, and process lifecycle
+- **[TESTING_LIBRARY.md](docs/testing/TESTING_LIBRARY.md)** - The library's end-to-end suite: what it covers, the rules it keeps, and what it deliberately does not
+
+**[docs/archive/](docs/archive/)** — historical records, not descriptions of the
+code as it is. They are kept because the source comments cite them by name, and
+because a decision's reason outlives the plan that carried it:
+[PLAN.md](docs/archive/PLAN.md), [DECISIONS.md](docs/archive/DECISIONS.md),
+[SIMGADGET_PLAN.md](docs/archive/SIMGADGET_PLAN.md),
+[SIMGADGET_PLAN_SERVER.md](docs/archive/SIMGADGET_PLAN_SERVER.md).

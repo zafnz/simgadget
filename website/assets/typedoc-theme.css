@@ -1,0 +1,193 @@
+/* ==========================================================================
+   SimGadget — TypeDoc theme bridge
+
+   Dresses the generated API reference in the site's palette. This file is
+   passed to TypeDoc as `customCss` and lands at /api/assets/custom.css, which
+   is why the @import below climbs two directories to reach the real tokens.
+
+   How the theming works, because it is not obvious and it is load-bearing:
+
+   TypeDoc's default theme resolves every colour through a `--color-*`
+   variable, and switches themes with exactly the selectors this site already
+   uses -- bare `:root`, a `prefers-color-scheme` media query, and
+   `:root[data-theme="light"|"dark"]`. So rather than restate the palette, we
+   alias `--color-*` onto the site's tokens once, and let TypeDoc's own theme
+   toggle drive `data-theme`, which tokens.css is already listening for. The
+   result is that one toggle drives both variable systems from one palette.
+
+   The alias block therefore has to out-specify TypeDoc's own definitions.
+   `:root` alone would lose to `:root[data-theme="dark"]` (0,2,0 beats 0,1,0),
+   so the selector list below matches TypeDoc's specificity in each case and
+   wins on source order -- custom.css is linked after style.css. If a future
+   TypeDoc adds a theme selector we do not mirror here, the symptom is one
+   theme silently reverting to grey, so check this list first.
+   ========================================================================== */
+
+@import url("../../assets/tokens.css");
+
+:root,
+:root[data-theme="light"],
+:root[data-theme="dark"] {
+  /* --- surfaces ---------------------------------------------------------- */
+  --color-background:           var(--bg);
+  --color-background-secondary: var(--bg-2);
+  --color-background-active:    var(--bg-3);
+  --color-active-menu-item:     var(--bg-3);
+  --color-icon-background:      var(--bg);
+
+  /* --- ink --------------------------------------------------------------- */
+  --color-text:          var(--ink);
+  --color-contrast-text: var(--ink);
+  --color-text-aside:    var(--ink-2);
+  --color-icon-text:     var(--ink);
+
+  /* Hairlines. TypeDoc calls this "accent" but only ever draws borders and
+     rules with it, so it is the site's line colour, not the site's accent. */
+  --color-accent:        var(--line);
+  --color-focus-outline: var(--accent);
+  --color-link:          var(--accent);
+
+  /* --- callouts ---------------------------------------------------------- */
+  --color-background-warning: var(--amber-tint);
+  --color-warning-text:       var(--amber);
+  --color-comment-tag:        var(--bg-3);
+  --color-comment-tag-text:   var(--ink-2);
+
+  --color-alert-note:      var(--accent);
+  --color-alert-tip:       var(--accent);
+  --color-alert-important: var(--ink-2);
+  --color-alert-warning:   var(--amber);
+  --color-alert-caution:   var(--red);
+
+  /* --- kinds -------------------------------------------------------------
+     TypeDoc ships twelve hues here, one per declaration kind. A rainbow is
+     wrong for a site whose brief is "two accents only", and the information
+     is not lost: TypeDoc's kind icons differ in shape and letter as well as
+     colour. So this collapses to one distinction: things you call or hold
+     (accent) against the types describing them (secondary ink). Give a kind
+     its own hue here if it ever needs to stand out. */
+  --color-ts-project:               var(--accent);
+  --color-ts-module:                var(--accent);
+  --color-ts-namespace:             var(--accent);
+  --color-ts-class:                 var(--accent);
+  --color-ts-constructor:           var(--accent);
+  --color-ts-constructor-signature: var(--accent);
+  --color-ts-function:              var(--accent);
+  --color-ts-method:                var(--accent);
+  --color-ts-call-signature:        var(--accent);
+  --color-ts-accessor:              var(--accent);
+  --color-ts-get-signature:         var(--accent);
+  --color-ts-set-signature:         var(--accent);
+  --color-ts-enum:                  var(--accent);
+  --color-ts-enum-member:           var(--accent);
+
+  --color-ts-interface:       var(--ink-2);
+  --color-ts-type-alias:      var(--ink-2);
+  --color-ts-type-parameter:  var(--ink-2);
+  --color-ts-property:        var(--ink-2);
+  --color-ts-variable:        var(--ink-2);
+  --color-ts-parameter:       var(--ink-2);
+  --color-ts-index-signature: var(--ink-2);
+  --color-ts-reference:       var(--ink-2);
+  --color-ts-document:        var(--ink-2);
+  --color-document:           var(--ink-2);
+  --color-ts-keyword:         var(--ink-3);
+}
+
+/* --- syntax highlighting -------------------------------------------------
+   TypeDoc highlights with Shiki and ships VS Code's Light/Dark Plus as nine
+   `--hl-N` hues. The site highlights with five hand-picked ones (site.css's
+   .t-* classes): amber keywords, mint strings, dimmed italic comments. A
+   rainbow next to that reads as a different site, so the nine collapse onto
+   the five here. The index-to-token mapping below is VS Code's, which is what
+   Shiki emitted -- if a TypeDoc upgrade changes the bundled theme these
+   indices move, and the symptom is comments in the wrong colour.
+
+   Same specificity story as the block above: highlight.css defines these
+   under `:root`, both media queries and both `[data-theme]` selectors, and
+   custom.css is linked after it. */
+:root,
+:root[data-theme="light"],
+:root[data-theme="dark"] {
+  --hl-0: var(--ink);       /* function name  */
+  --hl-1: var(--ink);       /* plain text     */
+  --hl-2: var(--accent);    /* string         */
+  --hl-3: var(--amber);     /* control flow   */
+  --hl-4: var(--ink-2);     /* variable       */
+  --hl-5: var(--ink-3);     /* comment        */
+  --hl-6: var(--amber);     /* keyword        */
+  --hl-7: var(--ink-2);     /* constant       */
+  --hl-8: var(--ink-2);     /* type           */
+
+  --code-background: var(--bg-2);
+}
+
+.hl-0 { font-weight: 600; }
+.hl-5 { font-style: italic; }
+
+/* The site draws code in a hairlined, shadowed panel; TypeDoc draws it flush. */
+pre {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+/* `color-scheme` cannot be aliased to a site token -- it is a literal keyword
+   that tells the browser how to paint scrollbars and form controls, so it
+   needs the same three-block dance tokens.css does. */
+:root { --color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --color-scheme: dark; }
+}
+:root[data-theme="dark"] { --color-scheme: dark; }
+
+/* --- typography ---------------------------------------------------------- */
+
+body {
+  font-family: var(--sans);
+}
+
+/* Mono for anything that is code, and deliberately not for the navigation:
+   TypeDoc's sidebar sets names in the body font, and mono there costs enough
+   width that `UnsupportedArchitectureError` wraps to two lines. */
+code, pre, .tsd-signature, .tsd-typography code, input {
+  font-family: var(--mono);
+}
+
+/* The site sets code in a hairlined box; match it so a signature on /api/
+   reads the same as one on /library.html. */
+.tsd-typography code:not(pre code) {
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: .1em .35em;
+  font-size: .9em;
+}
+
+.tsd-panel,
+.tsd-signature,
+.tsd-page-toolbar,
+dialog#tsd-search {
+  border-radius: var(--r);
+}
+
+.tsd-signature {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+
+/* TypeDoc's headings inherit --color-text; the site gives them tighter
+   tracking, which is most of why its headings read as "instrument". */
+h1, h2, h3, h4 {
+  letter-spacing: -.015em;
+}
+
+/* Links back to the main site sit in the toolbar; give them the site's
+   understated treatment rather than TypeDoc's underlined blue. */
+#tsd-toolbar-links a {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+#tsd-toolbar-links a:hover {
+  color: var(--accent);
+}

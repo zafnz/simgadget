@@ -418,7 +418,7 @@ For everything else, see
 
 - **[simgadget](https://www.npmjs.com/package/simgadget)** — the library underneath, if you would rather write code than a prompt
 - **[AGENT_INSTRUCTIONS.md](https://github.com/zafnz/simgadget/blob/main/AGENT_INSTRUCTIONS.md)** — concrete examples to hand an agent
-- **[TESTING_TOOLS.md](https://github.com/zafnz/simgadget/blob/main/TESTING_TOOLS.md)** — the manual test plan covering every tool
+- **[TESTING_TOOLS.md](https://github.com/zafnz/simgadget/blob/main/docs/testing/TESTING_TOOLS.md)** — the manual test plan covering every tool
 - **[SECURITY.md](https://github.com/zafnz/simgadget/blob/main/SECURITY.md)** — security policy
 - **[CHANGELOG.md](https://github.com/zafnz/simgadget/blob/main/CHANGELOG.md)** — release history
 

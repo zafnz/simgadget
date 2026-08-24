@@ -43,7 +43,7 @@ their fixes are what you should see:
 
 **Boot time.** `start_simulator` does not return until the simulator is driveable, so no polling is needed between steps.
 
-**If a step fails with "not answering accessibility requests"**, that is the boot wedge, not the step under test. See [BOOT_BUG.md](BOOT_BUG.md).
+**If a step fails with "not answering accessibility requests"**, that is the boot wedge, not the step under test. See [BOOT_BUG.md](../devs/BOOT_BUG.md).
 
 ---
 
@@ -447,7 +447,7 @@ ui_describe_point(id: "remote-test", x: 201, y: 737)
 
 **Expected:** `Fill Strong Password`, with **the same frame `ui_find` reported**.
 
-Two distinct failures hide here. If it returns the wrong *element* — `ScrollArea`, or the login form — then the position is wrong. If it returns the right element with a frame that does not cover (201, 737), the tools disagree about one element, which is the defect [#58](TODO.md) was closed to prevent; a point read hit-tests and so is right about identity while having no ancestry to derive position from.
+Two distinct failures hide here. If it returns the wrong *element* — `ScrollArea`, or the login form — then the position is wrong. If it returns the right element with a frame that does not cover (201, 737), the tools disagree about one element, which is the defect [#58](../devs/TODO.md) was closed to prevent; a point read hit-tests and so is right about identity while having no ancestry to derive position from.
 
 ### #39 ui_tap — the tap must land on the button
 
@@ -535,7 +535,7 @@ ui_find(id: "toggle-test", label: "status:")
 
 **Expected:** a `Tapped ... at (x, y)` line, and the status line changes — `status: settings toggle = ...`, flipped from wherever #44 left it.
 
-This is the half that depends on a tap being **held**. An instantaneous touch actuates a switch about 40% of the time, so a coordinate tap that works once proves little; if this step is flaky, that floor has regressed rather than anything about toggles. See `MIN_TAP_HOLD_SECONDS` in [packages/simgadget/src/ax/tap.ts](packages/simgadget/src/ax/tap.ts), where the measurement that fixed the constant sits beside it.
+This is the half that depends on a tap being **held**. An instantaneous touch actuates a switch about 40% of the time, so a coordinate tap that works once proves little; if this step is flaky, that floor has regressed rather than anything about toggles. See `MIN_TAP_HOLD_SECONDS` in [packages/simgadget/src/ax/tap.ts](../../packages/simgadget/src/ax/tap.ts), where the measurement that fixed the constant sits beside it.
 
 ### #46 The boundary: a name that is not a control
 
@@ -719,7 +719,7 @@ Two things to check rather than exact figures:
 
 - **`ui_tap` costs its own hold, and nothing else. Expect 100–150 ms.** Every tap is held for 100 ms (`MIN_TAP_HOLD_SECONDS`), because an instantaneous touch actuates a control only about 40% of the time — see Part 4. Everything above the hold is the real round trip, so the healthy band is 100–150 ms and the interesting readings are outside it: **below 100 ms the floor has been lost** and taps are unreliable again, which no other check in this file would notice; well above 150 ms is a slow companion connection rather than the tool.
 - **`ui_describe_point` is fast** — single digits on an idle machine, under 50 ms in any case. It scales with what else the machine is doing: a busy Mac was measured at 22 ms, with every other figure in the table up by the same factor.
-  - **`ui_describe_point` is the one to watch, and this row has caught a real regression.** It is the only cheap tool that can quietly become an expensive one, because it falls back to a whole-screen read when a frame looks like it belongs to a remote-hosted view (Part 3). Get that condition wrong and every point read pays ~300 ms while still returning the right answer, so nothing fails — the number here is the only thing that notices. A measurement of ~300 ms means the fallback is firing on ordinary elements; `isRemotelyHosted` in [packages/simgadget/src/ax/tree.ts](packages/simgadget/src/ax/tree.ts) is the thing to look at. It was measured at 313 ms once, because a hit-test at x=200 returns the home screen's Health icon, whose frame ends at x=188.67.
+  - **`ui_describe_point` is the one to watch, and this row has caught a real regression.** It is the only cheap tool that can quietly become an expensive one, because it falls back to a whole-screen read when a frame looks like it belongs to a remote-hosted view (Part 3). Get that condition wrong and every point read pays ~300 ms while still returning the right answer, so nothing fails — the number here is the only thing that notices. A measurement of ~300 ms means the fallback is firing on ordinary elements; `isRemotelyHosted` in [packages/simgadget/src/ax/tree.ts](../../packages/simgadget/src/ax/tree.ts) is the thing to look at. It was measured at 313 ms once, because a hit-test at x=200 returns the home screen's Health icon, whose frame ends at x=188.67.
 - **Anything reading the whole screen costs ~300 ms**, because it reads the app's real view hierarchy. A `ui_find` that misses pays the same, since it falls back to that read. This is the reason to tap by name rather than describing the screen and picking coordinates.
 
 **Measure against a screen that does not change.** Three of these tools alter what

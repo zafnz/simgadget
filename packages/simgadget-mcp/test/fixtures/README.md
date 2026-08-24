@@ -12,7 +12,7 @@ stripped. That matters: `IOS_SIMULATOR_MCP_FILTERED_TOOLS` removes a tool from
 tools and would pass forever.
 
 **It cannot be retaken.** The server it reads stops existing at step 3.6 of
-[SIMGADGET_PLAN_SERVER.md](../../../../SIMGADGET_PLAN_SERVER.md); this file is
+[SIMGADGET_PLAN_SERVER.md](../../../../docs/archive/SIMGADGET_PLAN_SERVER.md); this file is
 the reason step 3.0 comes before everything else. Treat it as a fixture to diff
 against, never as something to regenerate: a regenerated baseline agrees with
 whatever the server currently says, which is the one thing it must not do.

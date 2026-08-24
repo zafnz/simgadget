@@ -3,3 +3,7 @@ build/
 TEMP.md
 .mcp.json
 .DS_Store
+
+# Generated API reference. Built locally with `npm run docs`, and in CI by the
+# Pages workflow, so it is never committed and can never be stale.
+website/api/

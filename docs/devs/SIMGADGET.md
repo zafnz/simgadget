@@ -1,12 +1,13 @@
 # SimGadget: the library, the server, and the rename
 
-> **Status: agreed design, not yet implemented.** This is the spec for the
-> migration. The names are reserved on npm, the domain is registered, and the
-> API below is written to be implemented as-is — full signatures, result
-> shapes and error taxonomy, so an implementing agent does not have to invent
-> any of it. Where a judgement call was already argued out, the decision and
-> its reason are in the Decisions register at the end; do not relitigate them
-> mid-implementation.
+> **Status: implemented and shipped.** Both packages exist and are published;
+> the migration this spec describes is done. It is kept as the design spec, not
+> as a plan: the API below — full signatures, result shapes and error taxonomy
+> — is what the library actually offers, and where a judgement call was argued
+> out, the decision and its reason are in the Decisions register at the end.
+> The steps and the "what we are building" framing read as future tense because
+> that is how they were written; the plans that executed them are in
+> [docs/archive/](../archive/).
 
 First sketched 2026-08-15; reviewed against the full codebase 2026-08-16 and
 rewritten as a spec the same day. The largest change from the sketch: the API

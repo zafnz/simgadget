@@ -93,7 +93,7 @@ process reads it.
   anywhere regexes a message any more.
 
 Full design, including the API and the error taxonomy, in
-[SIMGADGET.md](SIMGADGET.md).
+[SIMGADGET.md](docs/devs/SIMGADGET.md).
 
 ## 2.2.0
 
@@ -349,7 +349,7 @@ observed — the message asks you to file a bug.
 
 **The cause is still unknown.** This is a verified cure, not a fix. What was
 ruled out, what was not, and why, is written up in
-[BOOT_BUG.md](BOOT_BUG.md).
+[BOOT_BUG.md](docs/devs/BOOT_BUG.md).
 
 ### `start_simulator` returns when it says it will
 

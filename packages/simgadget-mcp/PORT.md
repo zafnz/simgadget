@@ -3,7 +3,7 @@
 The server is a **port onto a finished, validated library**, not something
 co-developed with it. `simgadget` passed its own exit gate (SIMGADGET.md step
 2) on 2026-08-18; step 3 is landing here, in the order
-[SIMGADGET_PLAN_SERVER.md](../../SIMGADGET_PLAN_SERVER.md) sets out, one agent
+[SIMGADGET_PLAN_SERVER.md](../../docs/archive/SIMGADGET_PLAN_SERVER.md) sets out, one agent
 per group of steps.
 
 The working MCP server **is this package**, as of step 3.6. The repo-root

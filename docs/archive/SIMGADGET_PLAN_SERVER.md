@@ -1,6 +1,12 @@
 # SimGadget: implementation plan for the server, the rename and the publish
 
-Covers **steps 3–7 of [SIMGADGET.md](SIMGADGET.md)**, which is authoritative
+> **Archived.** This plan is finished: the server was ported, the rename
+> happened and both packages are published. Its "Deliberate behaviour
+> changes" rows are still live — the `tools/list` baseline test cites them by
+> number. Kept for that and for the reasoning, not as a description of the
+> code. See [docs/README.md](../README.md).
+
+Covers **steps 3–7 of [SIMGADGET.md](../devs/SIMGADGET.md)**, which is authoritative
 for this branch. [SIMGADGET_PLAN.md](SIMGADGET_PLAN.md) covered steps 1 and 2
 and is finished: the library exists, is tested against a real simulator, and
 has been reviewed. This file is its sibling, written in the same shape and to
