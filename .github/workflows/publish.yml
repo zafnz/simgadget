@@ -21,7 +21,13 @@ jobs:
         with:
           node-version: "24.x"
           registry-url: "https://registry.npmjs.org"
-      - run: npm ci
+      # `--force` for exactly one reason, the same as ci.yml's: the workspace
+      # contains packages declaring `"os": ["darwin"]`, and npm refuses
+      # EBADPLATFORM for a workspace package on a Linux runner — before
+      # anything is built, tested or published. Nothing this workflow does
+      # needs macOS. Missing here when ci.yml gained it, which is why the first
+      # 3.0.1 release attempt failed at the first step.
+      - run: npm ci --force
 
       - name: Unit tests
         run: npm test
