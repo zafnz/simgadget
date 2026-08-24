@@ -1,0 +1,51 @@
+{
+  "name": "simgadget-mcp",
+  "version": "3.0.0",
+  "description": "MCP server for session-based iOS simulator lifecycle management, enabling multi-agent parallel control. Built on the simgadget library.",
+  "license": "MIT",
+  "author": {
+    "name": "Nick Clifford",
+    "url": "https://nickclifford.com/"
+  },
+  "contributors": [
+    {
+      "name": "Joshua Yoes",
+      "url": "https://joshuayoes.com"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zafnz/simgadget.git"
+  },
+  "keywords": [
+    "ios",
+    "simulator",
+    "mcp",
+    "modelcontextprotocol"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin"
+  ],
+  "main": "build/index.js",
+  "bin": {
+    "simgadget-mcp": "build/index.js"
+  },
+  "types": "build/index.d.ts",
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "watch": "tsc --watch",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "node --experimental-transform-types --test \"test/*.test.mts\""
+  },
+  "dependencies": {
+    "simgadget": "^3.0.0",
+    "@modelcontextprotocol/sdk": "1.18.2",
+    "zod": "^3.23.8"
+  }
+}

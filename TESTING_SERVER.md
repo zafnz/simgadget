@@ -13,23 +13,31 @@ For the tools themselves, see [TESTING_TOOLS.md](TESTING_TOOLS.md) — nothing h
 HTTP is the default transport, so a plain start is a shared server:
 
 ```bash
-node build/index.js --port 8008
+node packages/simgadget-mcp/build/index.js --port 8008
 ```
 
-**Expected:** logs `iOS Simulator MCP server listening on http://127.0.0.1:8008/mcp`.
+**Expected:** logs `SimGadget MCP server listening on http://127.0.0.1:8008/mcp`.
+
+> `scripts/imsmd.sh` waits for the substring `listening on` in
+> `/tmp/simgadget-daemon.log`. If that sentence is ever reworded, `start` stops
+> waiting and reports success early.
 
 Point clients at it as a remote server — **not** the `command`/`args` stdio form:
 
 ```json
 {
   "mcpServers": {
-    "ios-multi-simulator": {
+    "simgadget": {
       "type": "http",
       "url": "http://127.0.0.1:8008/mcp"
     }
   }
 }
 ```
+
+The server reports itself to clients as `simgadget`; the key above is yours to
+name. A client that still has an `ios-multi-simulator` key pointing at a URL
+works exactly the same — only the display name changed.
 
 ---
 
@@ -71,26 +79,26 @@ An agent that dies mid-task should be able to pick its simulator back up.
 1. **Default is HTTP:**
 
    ```bash
-   node build/index.js
+   node packages/simgadget-mcp/build/index.js
    ```
 
    **Expected:** logs a listening URL.
 2. **`--stdio` selects stdio:**
 
    ```bash
-   node build/index.js --stdio
+   node packages/simgadget-mcp/build/index.js --stdio
    ```
 
    **Expected:** no listening line; the process speaks MCP on stdin/stdout. A client configured with the `command`/`args` form drives it, and `start_simulator`, `ui_describe_all` and `destroy_simulator` all behave as they do over HTTP.
 3. **A flag beats the environment**, both ways:
 
    ```bash
-   IOS_SIMULATOR_MCP_TRANSPORT=stdio node build/index.js --http --port 8009
-   IOS_SIMULATOR_MCP_TRANSPORT=http  node build/index.js --stdio
+   SIMGADGET_TRANSPORT=stdio node packages/simgadget-mcp/build/index.js --http --port 8009
+   SIMGADGET_TRANSPORT=http  node packages/simgadget-mcp/build/index.js --stdio
    ```
 
    **Expected:** HTTP for the first, stdio for the second.
-4. **Port is taken from `--port`, then `IOS_SIMULATOR_MCP_HTTP_PORT`, then 8008.**
+4. **Port is taken from `--port`, then `SIMGADGET_HTTP_PORT`, then 8008.**
 
 ## Cleanup on exit
 
@@ -102,7 +110,7 @@ Simulators the server created are its responsibility; ones it merely attached to
 2. Repeat with cleanup disabled:
 
    ```bash
-   IOS_SIMULATOR_MCP_CLEANUP_ON_EXIT=false node build/index.js
+   SIMGADGET_CLEANUP_ON_EXIT=false node packages/simgadget-mcp/build/index.js
    ```
 
    **Expected:** after Ctrl-C the simulator is **still present and booted**. Delete it by hand afterwards.
@@ -115,7 +123,11 @@ Simulators the server created are its responsibility; ones it merely attached to
 idb reports **one** error for two unrelated conditions: an accessibility bridge
 that is not answering, and a point read that found nothing. The second is an
 ordinary answer, and mistaking it for the first would have a caller's bridge
-restarted for tapping an empty patch of screen. Run the server verbose.
+restarted for tapping an empty patch of screen. Run the server verbose: the log
+must stay silent about restarts, and it can now say otherwise — the recovery
+lines were restored under TODO #100, so this absence check means something
+again. The timing corroborates it: a restart costs seconds, and a point read
+that answers in tens of milliseconds did not order one.
 
 1. `start_simulator` with `id: "wedge-test"`, install and launch `testapp/`, then
    `ui_find "Plain Button"` and `ui_describe_point` at the centre of its frame.
@@ -125,15 +137,21 @@ restarted for tapping an empty patch of screen. Run the server verbose.
    does nothing.
 2. `ui_describe_point` somewhere empty — `{x: 200, y: 600}` on that screen.
 
-   **Expected:** an error naming the coordinates —
+   **Expected:** an ordinary answer rather than an error (deliberate change 5),
+   in tens of milliseconds, and **nothing about restarting anything in the log**.
+   A restart here is the failure this step exists to catch, and it is the whole
+   point of the step — the reply's wording is not.
+
+   Today that answer is the four characters `null`. The spec asks for a
+   sentence —
 
    ```
    No accessibility element at (200, 600). The simulator is answering normally,
    so that point is empty or covered — check the coordinates against ui_describe_all.
    ```
 
-   — in tens of milliseconds, and **nothing about restarting anything in the
-   log**. A restart here is the failure this step exists to catch.
+   — and the gap between the two is **TODO #92**, open and undecided. Read
+   `null` as the current behaviour, not as this step failing.
 
 ## Recovering a wedged accessibility bridge
 
@@ -154,20 +172,35 @@ work — check that it cures itself. Any of `ui_tap {label}`, `ui_find`,
 `ui_describe_point`, `ui_describe_all` or `ui_view` should recover it, since they
 share one path.
 
-**Expected**, in the verbose log:
+**Expected:** the call that triggered it returns its answer rather than an
+error, after a pause of a few seconds — **and the log says what happened.**
+Run the server with `-v` (or `SIMGADGET_VERBOSE=1`) and watch
+`/tmp/simgadget-daemon.log` for:
 
 ```
 simulator <udid> stopped answering accessibility; restarting com.apple.CoreSimulator.bridge
 simulator <udid> recovered 11s after restarting com.apple.CoreSimulator.bridge
 ```
 
-and the call that triggered it returns its answer rather than an error. Two
-things worth checking while you have one: a second tool call during the same
-minute must not order its own restart (`not restarting again` in the log), and a
-recovery that fails must say so rather than hanging.
+A cure that was refused because one was already tried in the last minute says
+so instead, and this is the line whose absence would otherwise let you conclude
+the cure was never wired up:
+
+```
+simulator <udid> still not answering 12s after a bridge restart; not restarting again
+```
+
+A restart that fails outright reports `bridge restart for <udid> failed: …`.
+
+> The library is silent by default — writing to somebody else's stderr
+> uninvited is not a library's business — so these lines exist because the
+> *server* passes an `onLog` sink when it creates or attaches a handle. They
+> went missing in the port and were restored deliberately (TODO #100); the
+> absence check in "An empty point is not a wedged bridge" below depends on
+> them, and was passing vacuously while nothing could ever be written.
 
 ## Port already in use
 
 1. With a server running on 8008, start a second one on the same port.
 
-   **Expected:** it exits with a message naming the port and suggesting `--port`, rather than a raw `EADDRINUSE` stack trace.
+   **Expected:** it exits with a message naming the port and suggesting `--port`, rather than a raw `EADDRINUSE` stack trace — and it exits **1**, not 0. A configuration failure that exits 0 as the event loop drains is indistinguishable from a clean stop to anything supervising the process.

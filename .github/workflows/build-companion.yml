@@ -234,17 +234,18 @@ jobs:
           set -euo pipefail
           npm ci
           npm run gen
-          if ! git diff --quiet -- src/idb/generated src/idb/keymap.ts; then
-            echo "::error::src/idb/generated or src/idb/keymap.ts is stale for idb" \
+          GEN=packages/simgadget/src/idb
+          if ! git diff --quiet -- "$GEN/generated" "$GEN/keymap.ts"; then
+            echo "::error::$GEN/generated or $GEN/keymap.ts is stale for idb" \
                  "${{ steps.pins.outputs.idb_short }}. Run 'npm run gen' and commit."
-            git diff --stat -- src/idb/generated src/idb/keymap.ts
+            git diff --stat -- "$GEN/generated" "$GEN/keymap.ts"
             exit 1
           fi
 
       - name: Write companion.lock.json
         run: |
           set -euo pipefail
-          cat > companion.lock.json <<JSON
+          cat > packages/simgadget/companion.lock.json <<JSON
           {
             "idbSha": "${{ steps.pins.outputs.idb_sha }}",
             "xcode": "${{ steps.pins.outputs.xcode }}",
@@ -256,7 +257,7 @@ jobs:
             "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           JSON
-          cat companion.lock.json
+          cat packages/simgadget/companion.lock.json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -264,7 +265,7 @@ jobs:
           path: |
             ${{ runner.temp }}/${{ steps.package.outputs.name }}
             ${{ runner.temp }}/${{ steps.package.outputs.name }}.sha256
-            companion.lock.json
+            packages/simgadget/companion.lock.json
 
       # Never replace an asset a lock file may already pin. Even rebuilding the
       # identical pins produces a different artifact, because the companion
@@ -328,8 +329,9 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.publish
         run: |
           set -euo pipefail
-          if git diff --quiet -- companion.lock.json; then
-            echo "::notice::companion.lock.json already matches this build; nothing to commit."
+          LOCK=packages/simgadget/companion.lock.json
+          if git diff --quiet -- "$LOCK"; then
+            echo "::notice::$LOCK already matches this build; nothing to commit."
             exit 0
           fi
 
@@ -343,17 +345,17 @@ jobs:
           # Rebase is not an option here -- the checkout is shallow (and carries
           # the idb submodule, so deepening it is expensive) -- but nothing is
           # being merged: one generated file is replayed onto whatever is there.
-          cp companion.lock.json "$RUNNER_TEMP/companion.lock.json"
+          cp "$LOCK" "$RUNNER_TEMP/companion.lock.json"
           git fetch --depth=1 origin "$BRANCH"
           git checkout -B publish-lock FETCH_HEAD
-          cp "$RUNNER_TEMP/companion.lock.json" companion.lock.json
+          cp "$RUNNER_TEMP/companion.lock.json" "$LOCK"
 
-          if git diff --quiet -- companion.lock.json; then
+          if git diff --quiet -- "$LOCK"; then
             echo "::notice::Branch tip already carries this companion.lock.json."
             exit 0
           fi
 
-          git add companion.lock.json
+          git add "$LOCK"
           git commit -m "chore: pin companion to ${{ steps.pins.outputs.idb_short }} (Xcode ${{ steps.pins.outputs.xcode }})"
           git push origin "HEAD:$BRANCH"
-          echo "::notice::Committed companion.lock.json to $BRANCH — git pull before continuing."
+          echo "::notice::Committed $LOCK to $BRANCH — git pull before continuing."

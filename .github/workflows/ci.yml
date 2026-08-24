@@ -4,9 +4,14 @@ name: CI
 # repository at all: the build ran only as a side effect of publishing, so the
 # first environment to notice a broken package was npm.
 #
-# Ubuntu deliberately. Neither check needs a simulator -- one is a type check,
-# the other proves the packed module graph resolves and the server answers -- and
-# a macOS runner would cost 10x for no more signal.
+# Every step below is a workspace fan-out: the root package builds and publishes
+# nothing, and `npm test` / `npm run typecheck` there run each package's own.
+# A failing workspace fails the whole command, which is the property the fan-out
+# depends on and is worth knowing is true rather than assuming.
+#
+# Ubuntu deliberately. None of these needs a simulator -- they are type checks,
+# pure-logic tests, and a proof that the packed module graph resolves and the
+# server answers -- and a macOS runner would cost 10x for no more signal.
 on:
   push:
   pull_request:
@@ -19,17 +24,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24.x"
-      - run: npm ci
+      # `--force` is here for exactly one reason: `simgadget-mcp` declares
+      # `"os": ["darwin"]`, and npm refuses EBADPLATFORM for a workspace
+      # package on a Linux runner — before any check runs. The declaration is
+      # true and worth keeping for the people who install the server, and none
+      # of the checks below needs macOS: a typecheck, a fake-driven test suite
+      # and a packed install prove the module graph and the wiring, not a
+      # simulator. A macOS runner would cost 10x for no more signal.
+      - run: npm ci --force
 
       - name: Typecheck
         run: npm run typecheck
 
-      # The pure logic -- pruning rules, label matching, coordinate transforms.
-      # No simulator, no companion: the whole suite is under a second, against
-      # the several minutes a simulator boot costs to check the same rules.
+      # Both packages' unit tests. `simgadget`'s pure logic -- pruning rules,
+      # label matching, coordinate transforms -- and `simgadget-mcp`'s
+      # rendering, sessions and tool wiring against a fake handle. No simulator,
+      # no companion, seconds rather than the several minutes a simulator boot
+      # costs to check the same rules.
       - name: Unit tests
         run: npm test
 
-      # The check that 2.0.0 needed and did not have.
-      - name: Smoke test the packed package
+      # The check that 2.0.0 needed and did not have, now over both tarballs:
+      # the server must resolve the library from a packed `simgadget`, not from
+      # the workspace symlink it enjoys here.
+      - name: Smoke test the packed packages
         run: npm run smoke

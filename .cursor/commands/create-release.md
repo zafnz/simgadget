@@ -4,7 +4,7 @@ Create a GitHub release based on commits since the previous tag. Generate releas
 
 ## Gather Information
 
-1. **Get the new version** from `package.json` version key
+1. **Get the new version** from `packages/simgadget/package.json` version key — both packages publish in lockstep at the same version, and the workspace root is private and carries none
 2. **Get the previous tag** using `git describe --tags --abbrev=0`
 3. **Get the target commit SHA** using `git rev-parse HEAD`
 
@@ -19,7 +19,7 @@ Create a GitHub release based on commits since the previous tag. Generate releas
 2. **Format Release Notes:**
    Take the raw git diff and format it into Markdown using this structure:
    ```markdown
-   # iOS Simulator MCP <NEW_VERSION>
+   # SimGadget <NEW_VERSION>
 
    ## Features 
    - **Feature Name:** Description...

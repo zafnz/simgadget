@@ -5,7 +5,9 @@
 > someone else's source plus the usual arithmetic, not a measurement. Treat the
 > whole document as a proposal to argue with.
 
-Sketched 2026-08-14, from a survey of the two existing approaches.
+Sketched 2026-08-14, from a survey of the two existing approaches. Paths and
+env-var names below were updated on 2026-08-24 for the two-package split — the
+proposal itself is untouched, and still unimplemented.
 
 ## What we would be trying to do
 
@@ -60,8 +62,8 @@ an existing extension rather than ship one. `simcamctl set-source --image
 ./test.jpg` already exists in `dautovri/SimulatorCamera`, and its README names
 "AI agents that need to feed deterministic test fixtures" as a target use. A
 `set_camera` tool that shells out to it, with an
-`IOS_SIMULATOR_MCP_SIMCAMCTL_PATH` override in the style of
-`src/idb/companionBinary.ts`, is around two days of work and no signing burden.
+`SIMGADGET_SIMCAMCTL_PATH` override in the style of
+`packages/simgadget/src/idb/companionBinary.ts`, is around two days of work and no signing burden.
 It would have to be documented as machine-global — it would be the only tool in
 our surface that ignores `id`.
 
@@ -192,7 +194,7 @@ we have installed, which is already true of everything else here.
 |---|---|---|
 | `run()` gains optional `env` | It currently takes `(cmd, args)` only | ~10 |
 | `launch_app` camera plumbing | New param, container-path resolution, env construction | ~80 |
-| `camhook.lock.json` + resolver | Straight adaptation of `src/idb/companionBinary.ts`: explicit env override, else `vendor/`, else sha256-pinned download from our own release | ~200 |
+| `camhook.lock.json` + resolver | Straight adaptation of `packages/simgadget/src/idb/companionBinary.ts`: explicit env override, else `vendor/`, else sha256-pinned download from our own release | ~200 |
 | Validation and errors | Path checks in the style of `install_app` and `screenshot` | ~60 |
 
 **~350 lines**, every piece patterned on code already in the repo.
@@ -214,7 +216,7 @@ process) will not have it.
 
 The dylib is an Xcode build for the simulator platform, in a project whose
 build is otherwise `tsc`. That sounds like a bigger departure than it is: the
-pattern already exists twice over in `src/idb/`. `companion.lock.json` plus
+pattern already exists twice over in `packages/simgadget/src/idb/`. `companion.lock.json` plus
 `companionBinary.ts` is exactly this — build locally into `vendor/`, or fetch a
 sha256-pinned tarball from our own GitHub release, and never fall back to
 `$PATH`. The camera hook is copy-and-adapt, and unlike the companion it builds
@@ -228,7 +230,7 @@ to lie convincingly.
 ## Testing
 
 None of this can live in `npm test`. It is Objective-C running inside a
-simulator; `src/ax/` exists precisely because it is the part that can be tested
+simulator; `packages/simgadget/src/ax/` exists precisely because it is the part that can be tested
 without one, and this is the opposite of that.
 
 Verification is therefore the fixture app and a new section of
@@ -291,12 +293,17 @@ Order matters, because the first slice is also the riskiest:
 
 ## A note on scope
 
-This adds a third module and a second native toolchain to a project whose
-stated rule is that the two existing splits "are not a licence to keep
-splitting". The `src/idb/` precedent argues for it — "generated code plus
-process lifecycle rather than server logic" describes a vendored dylib fairly
-exactly — but this is the kind of change CLAUDE.md says to decide deliberately
-rather than drift into. Hence a document rather than a branch.
+This adds a module and a second native toolchain. ~~The project's stated rule is
+that the two existing splits "are not a licence to keep splitting", and the
+`src/idb/` precedent argues for it — "generated code plus process lifecycle
+rather than server logic" describes a vendored dylib fairly exactly.~~
+**Superseded 2026-08-24:** that single-file rule is gone, replaced by the split
+rule — state keyed by udid belongs to the library, state keyed by session id to
+the server. A camera hook is udid state, so it lands in `simgadget` and the
+`set_camera` tool renders it in `simgadget-mcp`; the argument this paragraph was
+having no longer needs having. What survives is the second half: a native
+toolchain is the kind of change CLAUDE.md says to decide deliberately rather
+than drift into. Hence a document rather than a branch.
 
 ## Prior art
 

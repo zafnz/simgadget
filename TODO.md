@@ -1,5 +1,13 @@
 # TODO — SimGadget library, 2026-08-16
 
+- [ ] **#89 `pressButton` is in the library and not on the MCP.** The handle
+  has `pressButton(name, {durationSeconds})` and the e2e drives it (`home`
+  leaves the app); no tool exposes it, and none did before the split, so
+  parity kept it out of the port — see SIMGADGET_PLAN_SERVER.md's open items.
+  Worth adding as a tool on its own merits afterwards: "press home" is
+  something an agent asks for and can currently only fake by other means.
+
+
 - [ ] **#68 Implement a toggle set-to-state call in the JS library.** Cut from
   the v1 API in SIMGADGET.md as its one speculative addition (no MCP consumer;
   `tap({label})` already flips a toggle and reads the state back). Open
@@ -11,6 +19,1068 @@
   read-then-flip-if-needed, which is racy if the screen changes between the
   read and the flip — decide whether that race is acceptable and how the
   result reports it before freezing a signature.
+
+- [ ] **#69 The bridge wedge can no longer be manufactured on demand, so
+  nothing about it is regression-testable.** Found 2026-08-16 while adding
+  contract check 8, which was specified to compare an empty point read's error
+  text against a wedged bridge's.
+
+  **The measurement.** `xcrun simctl spawn <udid> launchctl stop
+  com.apple.CoreSimulator.bridge` — the exact recipe `restartSimulatorBridge`
+  uses — produces **no observable read failure at all** on iOS 26.5 with the
+  pinned companion. Three independent ways, on a throwaway iPhone 16 Pro:
+
+  | probe | result |
+  |---|---|
+  | 250ms polling across the stop, 15s | 0 failures |
+  | tight sequential loop, 8s | 98/98 OK |
+  | 300 concurrent reads staggered over 3s spanning the stop | 0/300 failed |
+
+  `launchctl list` confirmed the bridge pid genuinely changed (98313 → 98517),
+  so the stop-and-respawn really happened — there is simply no window to sample.
+
+  **What it does not mean.** It is not evidence the wedge is gone, and not a
+  reason to touch the recovery machinery. Stopping the bridge is the *cure*;
+  the wedge in BOOT_BUG.md is a bridge that never comes back on its own, and
+  running the cure on a healthy simulator was never the same thing as
+  reproducing the disease. `isWedgeError` matching `no translation object`
+  still rests on field evidence, and check 8's empty-point half — which does
+  pass — is the load-bearing half anyway: it establishes that the same message
+  means both things, which is what makes `describePoint`'s disambiguation
+  necessary in the first place.
+
+  **What it does mean, and is worth someone's judgement.**
+  - The wedge half of check 8 was dropped rather than shipped red; the evidence
+    above lives in the comment above that check so nobody re-adds it.
+  - **Two comments in the recovery code now assert a measurement that no longer
+    reproduces**: `RECOVERY_PROBE_TIMEOUT_MS`'s "took ~5s to return, and the
+    device answered ~11s after the restart was ordered", and
+    `RECOVERY_TAIL_MS`'s "a recovered simulator answered within ~5s in
+    testing". Deliberately left alone for now — they are the argument for
+    numbers that are merely generous rather than wrong, and rewriting them
+    from one machine's reading would trade recorded evidence for a fresh guess.
+    Worth revisiting the next time a real wedge is caught in the wild.
+  - There is no way to prove the recovery path works end to end short of
+    catching a wedge in the wild. That is the honest state of it, and it should
+    be said out loud rather than implied by a green suite.
+
+- [ ] **#73 Do TESTING_TOOLS.md Part 6's timings in the e2e, where they can
+  finally measure the thing itself.** Requested 2026-08-17.
+
+  Part 6 measures how long the *work* takes. The MCP round trip in those
+  figures was never the subject — it was overhead nobody could subtract,
+  because until this branch there was no way to call the functions directly.
+  There is now, so the numbers get sharper and the current expected bands
+  (which include HTTP, JSON-RPC and a server hop) need re-deriving against
+  direct calls rather than copied across.
+
+  **Two of the rows are the only thing that would catch their regression**,
+  which is what makes this worth automating rather than leaving as a table
+  someone eyeballs:
+
+  - **A tap that costs less than the 100 ms hold means the floor has been
+    lost.** `MIN_TAP_HOLD_SECONDS` exists because an instantaneous touch
+    actuates a control about 40% of the time (#62). Lose it and every tap still
+    reports success, every assertion in the e2e still passes, and taps merely
+    become unreliable — the timing is the only witness.
+  - **A point read at ~300 ms instead of single digits means `isRemotelyHosted`
+    is firing on ordinary elements**, so every point read is paying for a
+    whole-screen fallback while still returning the right answer. Nothing
+    fails. Measured at 313 ms once, because a hit-test at x=200 returned the
+    home screen's Health icon, whose frame ends at x=188.67.
+
+  **Assert load-robustly, or this will be the flaky part of the suite** — and
+  SIMGADGET_PLAN.md is explicit that flakiness is not acceptable and must not
+  be retried away. Absolute milliseconds on a machine that might be building
+  something else are exactly the wrong shape. Both regressions above are
+  reachable without them:
+  - the hold floor is a **lower bound** — `tap({x, y})` must take *at least*
+    `MIN_TAP_HOLD_SECONDS`. A busy machine only makes a lower bound safer.
+  - the fallback is a **ratio** — `describePoint` must be substantially cheaper
+    than `describeScreen` on the same screen. Load moves both together, which
+    is precisely what the doc means by "the ratios are what matter".
+  Anything wanting absolute figures belongs in a reported table rather than an
+  assertion.
+
+  **Methodology already learned the hard way, in Part 6's own notes:** measure
+  against a screen that does not change (three tools alter what is on screen,
+  and a `ui_find` hit silently becoming a miss reads as a fast-path regression
+  — it happened three times while writing that table); tap something inert;
+  take medians of several runs; and discard the first call after a boot, which
+  includes connecting to the companion and runs an order of magnitude slower.
+
+  Worth reporting the full table as output even where it is not asserted, so a
+  human running the suite sees the same figures Part 6 tabulates today.
+
+- [ ] **#72 The e2e suite has no counterpart to TESTING_TOOLS.md Part 3 —
+  remote-hosted views.** Noted 2026-08-17 while checking the new
+  `test:e2e` journey against the manual plan it is the library-level analogue
+  of. Parts 1, 2 and 4 map across closely; Part 5 is
+  `check-companion-contract.mjs`; Part 6 is #73 below. Part 3 has nothing.
+
+  **Why this is the gap worth naming.** It is the machinery behind #60, the one
+  bug on this list that reached production. iOS draws the "Use Strong
+  Password?" sheet, the photo and document pickers and share sheets from a
+  *separate process*, hosted inside the app's window, so their elements arrive
+  in one tree with the app's own while their frames are measured from the
+  hosting window rather than the screen. Untranslated, `tap({label})` resolved
+  the label, tapped its centre, reported success, and landed 476 points away —
+  in the fixture, "Fill Strong Password" tapped "Login Submit". **Every frame
+  involved was correct in its own space**, so nothing in the tree could
+  contradict it, which is what makes this failure mode a confident false
+  success rather than an error.
+
+  **What is covered, so the gap is precise.** `translateRemoteSubtrees`,
+  `isRemotelyHosted` and `locateInTree` are all ported and unit-tested against
+  captured tree shapes, including the picker case where the hosting window sits
+  at the screen origin and the offset is legitimately zero — the case that kills
+  "sheets are wrong, shift them". `check-companion-contract.mjs --remote`
+  checks that the companion still emits the type-83 boundary node. **What
+  nothing checks is our translation of it against a real hosted view.**
+
+  **What an implementation would need.** The sheet has to be raised by
+  interaction (the fixture's login screen, `ShowLoginButton`, then the password
+  field), and it does not appear reliably on demand — which is the reason the
+  manual plan has it as its own part rather than a step in Part 1. The picker
+  (`ShowPickerButton`) is the more reproducible half and is also the
+  zero-offset case, so it proves the guard rather than the shift. Assert a
+  frame inside the hosted view is in screen space, and that a tap by name
+  actually lands, which is the assertion #60 would have failed.
+
+  **Smaller omissions found in the same pass**, none of them load-bearing:
+  TESTING_TOOLS #45 (tapping a toggle by *coordinate* — the e2e taps by
+  coordinate only in landscape), #46 (a name that resolves to something that is
+  not a control), and #19 (activity while a recording runs). `ui_view` has no
+  library equivalent by design — it is an MCP wire shape.
+
+- [ ] **#70 A script needs to be able to read, and to assert where it is.** The
+  motivating shape: `tap the button, then make sure we are on the XYZ screen`.
+  Requested 2026-08-17. A v1-API addition, so it needs a SIMGADGET.md amendment
+  before it is written, not a note afterwards.
+
+  **What already exists, so this is not built from nothing.** `findByLabel`
+  matches against an element's label, its visible text (`AXValue`) *and* its
+  identifier, and returns the element or `null` — so "is XYZ on screen" is
+  already answerable, and a text field's contents already come back in
+  `AXValue`. `describeScreen()` returns the whole pruned tree. The gap is
+  ergonomics and, more importantly, **timing and identity**:
+
+  - **Reading text by name has no first-class verb.** `findByLabel("Total")`
+    then `?.AXValue` is the whole implementation, but every caller writing it
+    themselves will get the `null` case wrong. A `readText(name)` returning
+    `string | null` is a two-line method and a real improvement in what scripts
+    look like.
+  - **The race is the hard part, not the read.** A tap is followed by an
+    animation, and reading immediately is measurably wrong: #53 found dismiss
+    taps fired straight after a presentation failed in 2 of 3 rounds, and 4 of 4
+    with a 1s settle. So the useful primitive is not `read` but **`waitFor`** —
+    a predicate with a budget, polling a cheap read. Without it every script
+    grows its own `sleep(1000)`, which is the thing this library exists to stop.
+    Open: what the predicate takes (a label? an element test?), what it returns
+    on timeout (throw, or a `false` a caller must check — design rule 3 says
+    absent is an answer, but a timed-out *wait* is arguably different), and
+    whether it shares the ~13ms cheap read or needs the ~350ms AXBridge one.
+  - **"What screen am I on" has no answer in the accessibility tree, and that is
+    the genuinely open question.** iOS publishes no screen identity. Candidates,
+    in rough order of promise:
+      - **`pid`.** The companion returns it per element and `DESCRIBE_KEYS`
+        deliberately drops it (`ax/tree.ts:59`) as near-constant. It is not
+        constant across a *process* boundary, which is exactly the case that
+        matters: #37 records that a system alert replaces the app in the tree
+        entirely, and the whole remote-hosted-view mechanism (#60) is about
+        subtrees drawn by another process. Cheapest lead, and it is being thrown
+        away today.
+      - **The navigation bar's title**, which is what a human means by "the XYZ
+        screen". Only AXBridge sees nav bar contents at all (contract check 4),
+        so this costs the expensive read.
+      - **The set of visible labels** as a fingerprint. Crude, and brittle
+        against any dynamic content.
+    Worth an investigation session against the fixture before designing an API:
+    the question "what can we actually know about where we are" has never been
+    asked directly, and the answer decides whether this is a `currentScreen()`
+    verb or just documentation telling scripts to assert on a landmark.
+
+  **What it must not become:** a general assertion framework. The library's job
+  is to answer accurately; `expect`/`should` belongs to whatever test runner the
+  caller already has.
+
+- [ ] **#71 Swipe to a label — scroll until XYZ is on screen, then tap it.**
+  Requested 2026-08-17. Also a v1-API addition needing a spec amendment first.
+
+  **The subtlety that makes this worth designing rather than scripting:** being
+  in the tree is not the same as being on screen. A scrolled-out control keeps
+  its place in the accessibility tree with a perfectly correct frame — that is
+  precisely why `tap({label})` hit-tests before touching and refuses with
+  `TapObstructedError` (#64a; the fixture's stepper under the toolbar tapped the
+  *search field* and reported success). So **the stopping predicate must be the
+  hit-test, not `findByLabel` returning non-null**, or this will confidently
+  stop scrolling while the target is still under a toolbar. The machinery to
+  decide it already exists inside `tap`; this needs it factored out rather than
+  reinvented.
+
+  Open questions, none of them settled:
+  - **Where to swipe.** A screen can hold several scrollable regions, and a
+    swipe in the wrong one does nothing at all — which is indistinguishable from
+    "not scrollable" and would burn the whole budget. Does the caller name a
+    container, do we swipe the largest scrollable frame, or the one containing a
+    landmark?
+  - **When to give up.** Two conditions, and both are needed: a step budget, and
+    *no progress* — the tree stopping changing means the end of the list, and
+    continuing past it is pure cost. Detecting "the tree did not change" cheaply
+    is its own small problem.
+  - **Direction.** Caller-specified, or inferred from where the element already
+    is in the tree when it is present but off screen? The second is much nicer
+    and only works when the target is in the tree at all.
+  - **Overshoot.** Fast scrolling can carry a target past the viewport between
+    reads; a smaller final step, or scrolling back, may be needed.
+  - **What it answers.** Per design rule 1, not a bare success: how far it
+    scrolled, how many steps, and the element it ended up with — so a caller
+    that then taps is not re-resolving from scratch.
+
+  **Relationship to #70:** these are the same primitive underneath — swipe,
+  re-read, test a predicate, repeat within a budget. Design them together or the
+  second will duplicate the first's polling loop.
+
+# TODO — Code review: MCP server port (step 3), 2026-08-23
+
+Full review of step 3 — `a0ceb9c`..`8d3afb0`, seventeen commits, four agents —
+against SIMGADGET_PLAN_SERVER.md, SIMGADGET.md and DECISIONS.md, with every
+tool body read against `git show a0ceb9c^:src/index.ts`.
+
+**Verified clean and not repeated per-item below.** All seventeen tool bodies
+diffed against their originals: **every optional argument reaches the library**
+— `launch_app`'s `terminate_running`→`terminateRunning`, `record_video`'s
+`codec`/`display`/`mask`/`force`, `screenshot`'s `type`→`format` plus
+`display`/`mask`, `ui_view`'s `quality: 80` and `resizeTo: "points"`,
+`ui_swipe`'s `delta`/`duration` including the `|| undefined` that keeps a zero
+meaning "say nothing", and `ui_tap`'s `count`/`duration` including the subtlety
+that `duration: "0"` still makes the gesture a *hold* (`holdSeconds` floors it
+at 0.1s while `decideTapVerb` keys off `!== undefined`, exactly as
+index.ts:1834 and :1899 did). The premise that "nothing proves the arguments
+reach the library" turned out to be false: `tools.test.mts` asserts the
+passthrough per tool with `fake.argsFor(...)`, and the fake records arguments,
+not just names. The `--` separators survived into `screenshotArgs`/
+`recordingArgs`. `index.ts`: one registry constructed once and closed over by
+`createServer`, which `runHttp` calls per request; `shutdown` reachable from
+SIGINT, SIGTERM and stdin close behind a once-latch; `assertIdbPathUnset()`
+called first in `runServer`; `PACKAGE_VERSION` read exactly as index.ts:43 read
+it; the deliberate absence of `capabilities` matches the old constructor.
+`transport.ts` is faithful: the 403 keeps its whole explanation with the new
+variable name, no `allowedOrigins`, the EADDRINUSE listener, the stdin-close
+shutdown, and the `listening on` sentence `imsmd.sh` greps for. Seams: all
+fourteen non-lifecycle tools go through `withSession`; all seventeen pass a
+`RenderContext` except `attach_simulator`, which is documented and has a test
+asserting the sentence is absent; no agent-facing prose is duplicated between
+`tools.ts` and `render.ts`, and `describeFrame` exists only in the server.
+Rules: no deep imports (grep and `imports.test.mts`), no `as any` in `src/`
+(`summarizeRpc`'s `msg: any` is verbatim from index.ts:2776), the fake tethered
+through `Pick<Simulator, …>` with the single cast confined to `asSimulator`,
+and the baseline fixture has exactly one commit in its history (`a0ceb9c`) with
+no diff since. Deletion: every top-level declaration of the 3038-line original
+traces to a destination — `TMP_ROOT_DIR`'s cleanup is now `capture.ts`'s own
+`mkdtemp`/`finally`, the freeze check had nothing left to guard, and
+`verify-companion-download.mjs`, `check-companion-contract.mjs` and
+`gen-keymap.mjs` all point into `packages/`. Suites re-run here: `npm run
+typecheck` clean, `npm test` 523 + 414 green, `npm run smoke` green over both
+tarballs — matching the counts every handoff entry claims. **Not checked:**
+`npm run check:companion` and `npm run test:e2e` (both need a booted simulator;
+I created none), the manual TESTING_TOOLS.md / TESTING_SERVER.md runs, and
+agent B's three simulated fake-drifts, which cannot be re-run without editing
+the library.
+
+## Bugs
+
+- [x] **#90 FIXED 2026-08-23. A clean checkout is red: nothing builds `packages/simgadget` before
+  `npm test` and `npm run typecheck` run against it.** The 3.6 commit correctly
+  stripped `"prepare": "npm run build"` from the root `package.json` — the root
+  builds nothing now — but **neither package gained one**, and the workspace
+  fan-outs do not build either. So after `npm ci` from a fresh clone,
+  `packages/simgadget/build/index.d.ts` does not exist, and `simgadget-mcp`
+  cannot resolve the library through its `exports` map.
+
+  **Reproduced**, in a clean-room copy of both packages with the third-party
+  `node_modules` linked in and the two `build/` directories removed:
+
+  ```
+  src/render.ts(59,8):  error TS2307: Cannot find module 'simgadget' or its
+                        corresponding type declarations.
+  src/sessions.ts(42,8): error TS2307: ...
+  src/tools.ts(84,45):   error TS2307: ...
+  ```
+
+  and at runtime `ERR_MODULE_NOT_FOUND … node_modules/simgadget/build/index.js`
+  from the first `.mts` test that touches the library.
+
+  **This is invisible to every developer and fatal to CI.** Anyone who has run
+  `npm run build --workspaces` once has a warm tree forever; `npm run smoke` is
+  green because `smoke-packed.sh` builds first. `ci.yml` does `npm ci` →
+  `typecheck` → `test` → `smoke`, so it fails at step two and never reaches the
+  one check that would have passed. `publish.yml` does `npm ci` → `npm test`
+  and fails there too, before the `npm publish` against a private root that
+  agent D deliberately left broken. **The branch has never been pushed**
+  (`origin/simgadget-impl` does not exist), which is why nobody has seen it.
+  It also means exit condition 1 — "`npm test` and `npm run typecheck` green in
+  **both** packages, from the workspace root" — has only ever been demonstrated
+  on a tree that was already built.
+
+  **Fix:** `"prepare": "npm run build"` on `packages/simgadget/package.json`.
+  npm runs `prepare` for linked workspace packages during `npm ci`, `tsc` is a
+  hoisted root devDependency so it is present, and the extra run during
+  `npm pack` is harmless (`smoke-packed.sh` builds explicitly anyway). Adding
+  one to `simgadget-mcp` is optional — `mcp.test.mts` builds that package
+  itself — but is the symmetric choice and costs a second.
+
+  **Test:** the check that catches this cannot live in a suite that runs in the
+  warm tree. A CI step is the honest place: either add `npm run build
+  --workspaces` before Typecheck in `ci.yml` **and** the `prepare` (belt and
+  braces, since a contributor's first `npm test` deserves to work too), or a
+  workflow job that runs `npm ci && npm run typecheck` in a container with no
+  prior build. **TESTING_TOOLS.md:** not applicable — no tool behaviour is
+  involved. CONTRIBUTING.md's "Unit tests" section is where a contributor meets
+  it, and that section currently promises "No simulator, **no build step**, well
+  under a second" — the exact claim this falsifies for `simgadget-mcp`.
+
+
+  **Fixed, and the fix is not the obvious one.** Adding `prepare` to both
+  packages does *not* work: npm does not order workspace lifecycle scripts by
+  dependency, and in a clean room it ran `simgadget-mcp`'s build first — three
+  `TS2307`s, and `tsc` emitted anyway, so the failure left a `build/index.js`
+  that looked like success. The ordering belongs where it can be stated:
+
+  - the root gains `"build": "npm run build --workspace=simgadget && npm run
+    build --workspace=simgadget-mcp"` and a `prepare` that runs it, so `npm ci`
+    alone leaves a usable tree and CI needs no new step;
+  - `simgadget` keeps its own `prepare` — it has no workspace dependency, so it
+    is always safe, and it covers `npm publish -w simgadget`;
+  - `simgadget-mcp` deliberately has **no** `prepare`, because a standalone one
+    cannot be made correct. **Step 7's publish workflow must therefore build
+    before packing**, exactly as `smoke-packed.sh` does.
+  - `smoke-packed.sh` stopped using `npm run build --workspaces`, which had the
+    same unordered hazard and only ever passed because `build/` already existed.
+
+  **Verified the way the finding was**: a clean room built from `git ls-files`
+  only, `npm ci` from nothing, then typecheck, 523 + 415 tests and the packed
+  smoke — all green, none of it on a pre-built tree.
+
+- [x] **#91 FIXED 2026-08-23. `start_simulator` no longer recovers a session whose simulator was
+  deleted out from under it; it refuses, and its advice loops.** The old resume
+  branch called `findDevice(existing.udid)` and treated **both** "gone" and
+  "not booted" as stale: *"Stale entry — the simulator is gone or shut down.
+  Drop it and recreate below"* (index.ts:1234). The port replaced `findDevice`
+  with `sim.state()`, which does not return `null` for a missing device — it
+  throws `SimulatorNotFoundError` (simulator.ts:544), and `start_simulator`
+  deliberately does not use `withSession`, so nothing catches it. Only the
+  "shut down" half of the branch survives. The comment above it still claims
+  both: *"Stale: the simulator is shut down or gone."*
+
+  **Failing case**, driven through the real `registerTools` and
+  `SessionRegistry` against a handle that throws as the library does:
+
+  ```
+  1. start_simulator {id:"qa"} -> Error starting simulator: No simulator found with
+     UDID "AAAA-1111". Session "qa" can no longer use it — call destroy_simulator,
+     then start_simulator for a fresh one.
+  2. destroy_simulator {id:"qa"} -> Error destroying simulator: No simulator found
+     with UDID "AAAA-1111". Session "qa" can no longer use it — call
+     destroy_simulator, then start_simulator for a fresh one.
+  3. start_simulator {id:"qa"} -> Simulator started: "qa_iphone" (…, BBBB-2222).
+  ```
+
+  Three calls and two errors where the old server took one call and none — and
+  step 2's answer tells the agent to call the tool it has just called and which
+  has just failed. (It does work: `destroy` drops the session before rethrowing.
+  But an agent reading that sentence has no way to know the failure was
+  progress.)
+
+  **How it is reached.** Any deletion the server did not perform: a human using
+  Simulator.app's Delete, `xcrun simctl delete`, or — most likely of all — the
+  development loop CLAUDE.md documents, where `SIMGADGET_CLEANUP_ON_EXIT=false`
+  leaves orphans that "accumulate silently until you delete them yourself".
+  The same throw also arrives from `assertNotDeleted()` on a handle this server
+  already deleted, which wants the same answer.
+
+  **Fix:** in `tools.ts`'s resume branch, treat `SimulatorNotFoundError` from
+  the probe as "gone", not as a failure:
+
+  ```ts
+  let state: SimulatorState | undefined;
+  try { state = await existing.sim.state(); }
+  catch (error) { if (!(error instanceof SimulatorNotFoundError)) throw error; }
+  if (state === "Booted") { … } else sessions.drop(id);
+  ```
+
+  Better still, put it in the registry as `resume(id)` so `tools.ts` keeps its
+  one-call shape and the rule lives beside the other stale-handle rule in
+  `withSession`.
+
+  **Unit test** (`packages/simgadget-mcp/test/tools.test.mts`, beside "a
+  shut-down simulator is dropped and recreated"): a fake whose `state` fails
+  with `new SimulatorNotFoundError(udid)`; assert `isError === false`, that
+  `create` was called a second time, and that the answer names the new udid.
+  The fake already supports it — `fails: { state: … }`.
+
+  **TESTING_TOOLS.md step** (Part 1, after the attach/detach pair): start a
+  simulator for id `gone`, note the udid, then — with the user's permission,
+  since this is the one place the "never use simctl" rule is deliberately
+  broken — `xcrun simctl delete <udid>`, then `start_simulator {id: "gone"}`
+  again. **Expected:** a new simulator with a new udid, not an error.
+
+## Spec / plan deviations needing sign-off or a doc fix
+
+
+  **Fixed** in `tools.ts`: the `state()` call in the resume branch catches
+  `SimulatorNotFoundError` and treats it as the stale case, which is what
+  `findDevice` returning `null` did for both causes in the old server. The
+  comment that claimed both cases were handled is now true.
+
+  The regression test drives the real `registerTools` through the in-memory
+  client: a session whose fake throws `SimulatorNotFoundError` from `state()`
+  is dropped, a second simulator is created, no window is raised for the dead
+  one, and the answer does not mention `destroy_simulator`. **Proved
+  non-vacuous** — reverting the catch turns it red.
+
+- [ ] **#92 `ui_describe_point` on empty space answers the four characters
+  `null`, where the spec asks for a sentence.** SIMGADGET.md's "The MCP on top"
+  mapping table is explicit: *`ui_describe_point` | `sim.describePoint(x, y)`;
+  **null → the "empty or covered" answer**.* SIMGADGET_PLAN.md's deliberate
+  change 3 makes the same split — the *library* stops throwing, *"the wedge
+  disambiguation is unchanged; only the reporting is"* — leaving the reporting
+  to the server. The port renders it as `JSON.stringify(null)`.
+
+  ```
+  ui_describe_point on empty space -> isError: false | text: "null"
+  ui_find with no match            -> isError: false | text: "No element found
+    whose label contains "Sign In". Use ui_describe_all to see what is on screen."
+  ```
+
+  The two "absent is an answer" tools now disagree about what an answer is, and
+  the one that says nothing is the one whose old message told the caller what
+  to do next: *"No accessibility element at (200, 400). The simulator is
+  answering normally, so that point is empty or covered — check the coordinates
+  against ui_describe_all."* (index.ts:341). SIMGADGET_PLAN_SERVER.md row 5
+  authorises "answers rather than erroring" — it does not authorise dropping
+  the sentence, and no row records that it was dropped, which makes this a
+  quiet deviation rather than a decided one (plan rule 3).
+
+  **Not certain it is wrong**, and that is why it is here rather than under
+  Bugs: `null` is a legitimate machine-readable answer, and `ui_describe_point`
+  otherwise returns raw JSON, so a caller parsing it gets a uniform shape. But
+  it is the spec that decides, and the spec says otherwise.
+
+  **Fix:** `renderNoElementAtPoint(x, y)` in `render.ts` carrying index.ts:341's
+  wording, returned as a *successful* text result; `ui_describe_point` uses it
+  when `describePoint` answers `null`. If instead the bare `null` is what is
+  wanted, it needs a row in "Deliberate behaviour changes" and a line in
+  SIMGADGET.md's mapping table, because those two documents currently say
+  something else.
+
+  **Unit test:** `render.test.mts` for the sentence; `tools.test.mts`'s
+  "empty space answers null rather than failing" already has the fake in place
+  (`createdFake({ atPoint: null })`) and currently asserts `text === "null"` —
+  that assertion is the one that changes.
+
+  **TESTING_TOOLS.md step:** #4 already queries a coordinate; add a sibling
+  that queries a deliberately empty patch (the fixture's background) and states
+  the expected sentence. There is no such step today, which is why nothing in
+  the manual plan would have caught this either.
+
+- [ ] **#93 Two tool descriptions still tell agents to set
+  `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`, and following that advice earns a
+  deprecation warning.** `screenshot`'s `output_path` and `record_video`'s
+  `output_path` both name the old variable, verbatim from the baseline — which
+  is correct under the parity rule and wrong under the rename. A user who
+  follows the description gets `[simgadget]
+  IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR is deprecated; use
+  SIMGADGET_DEFAULT_OUTPUT_DIR instead` on stderr. These are the most-read
+  strings in the server: `tools/list` is sent to every agent at connect.
+
+  Agent D's handoff lists README, TROUBLESHOOTING and CAMERA as the stale
+  env-var docs; it does not list these two, and they are not docs — they are
+  the wire surface, pinned by a fixture whose README says it must never be
+  regenerated. So this cannot be quietly fixed at step 5: changing them turns
+  `mcp.test.mts`'s whole-surface `deepEqual` red on purpose.
+
+  **Fix:** a decision, then three small edits together — the two descriptions,
+  a new row in "Deliberate behaviour changes" ("the two output-path
+  descriptions name `SIMGADGET_DEFAULT_OUTPUT_DIR`; the shim keeps the old name
+  working"), and a third entry in `mcp.test.mts`'s `ALLOWED_DIFFERENCES` citing
+  that row. Doing it any other way either leaves the advice wrong or
+  regenerates the baseline.
+
+  **Test:** the allowlist entry *is* the test — it names what changed and
+  fails if anything else does. No TESTING_TOOLS step: nothing behavioural moves.
+
+- [ ] **#94 The wedge message lost idb's own text, and no row records it.**
+  `clarify()` ended with `\n\nOriginal error: ${message}` (index.ts:730), so the
+  underlying idb sentence travelled with the rewritten one. `renderError`'s
+  `"not-answering"` row reproduces the first half verbatim and the second half
+  branches on `recoveryTried` — which is documented, as row 10 — but the
+  `Original error:` tail is simply gone, and no row in "Deliberate behaviour
+  changes" mentions it.
+
+  It is arguably right: design rule 2 exists so idb's vocabulary never leaves
+  the idb client, and pasting its message back in is a way of leaking it. But
+  it is the only text an operator had for distinguishing one wedge from
+  another, and dropping it was not a decision anyone wrote down.
+
+  **Fix:** either a row in the table saying it was dropped and why, or — if it
+  is wanted — `SimulatorNotAnsweringError` carrying a `cause`/`detail` the
+  renderer appends. The second is a library change and therefore the owner's
+  call. **Test:** one `render.test.mts` case either way. **TESTING_TOOLS.md:**
+  the wedge cannot be manufactured on demand (#69), so there is no step to add.
+
+## Risks
+
+- [ ] **#95 A second signal exits the process in the middle of the first
+  signal's cleanup.** `shutdown()` latches on `cleaningUp`, so it runs at most
+  once — that part is right, and is what the handoff asked to be checked. But
+  the *handlers* do not share the latch: a SIGINT arriving while a SIGTERM's
+  `sessions.shutdown()` is still awaiting `simctl delete` finds `cleaningUp`
+  already true, returns immediately, and runs `process.exit(0)` underneath the
+  first pass. Every simulator not yet deleted is orphaned.
+
+  **Pre-existing** — index.ts:3037 had exactly this shape — and unlikely, since
+  `imsmd.sh stop` sends one signal and waits 5s. Listed because the port made
+  `sessions.shutdown()` the *only* thing that deletes simulators, where the old
+  server also had `companions.shutdownAll()` and a synchronous `'exit'` hook
+  covering part of the ground.
+
+  **Fix:** one line — hold the promise rather than a boolean:
+  `let cleanup: Promise<void> | undefined; const shutdown = () => (cleanup ??=
+  sessions.shutdown().catch(() => {}));` — so a second caller awaits the first
+  instead of racing past it. **Test:** `index.ts` has no test by construction,
+  which is the argument for moving the latch into a two-line exported helper
+  (or into `SessionRegistry`) where `sessions.test.mts` can call it twice
+  concurrently and assert one pass and two resolutions. **TESTING_SERVER.md:**
+  its process-lifecycle section is the place — "send SIGTERM, then SIGINT
+  immediately; every owned simulator is gone".
+
+## Comments that do not match the code
+
+- [ ] **#96 Four claims in the new files that the code contradicts.** None
+  changes behaviour; all four would mislead the next reader, and two of them
+  are the kind of thing someone "fixes".
+
+  1. **`paths.ts`'s header and `tools.ts`'s `screenshot` body both say the
+     library "takes absolute paths only" and "resolves nothing".** It does
+     resolve: `Simulator.startRecording` and `captureScreenshot` both call
+     `path.resolve()`, per DECISIONS.md #12 — which is the authority, and which
+     says exactly that. What is true is the useful half: `~/` expansion and the
+     `DEFAULT_OUTPUT_DIR` fallback are host policy and stay in the server. Say
+     that instead. (`install_app`'s comment already gets it right: "the
+     library — which resolves identically".)
+  2. **`env.ts` says the four CLI-overridable settings "are combined with
+     `parseArgs` in `index.ts`, which is the only place that knows a command
+     line exists".** Agent D's own deviation 1 moved `parseArgs` and
+     `resolveConfig` into `transport.ts`; `index.ts` calls them and knows
+     nothing else. Written before that move and not revisited.
+  3. **`test/harness/mcp.ts` says its server is built "the way `index.ts` will
+     build it — same instructions, same `tools` capability".** `index.ts`
+     deliberately passes **no** `capabilities`, with a comment explaining that
+     `server.tool()` declares it and that the baseline came from a server that
+     passed none. The harness passes `capabilities: { tools: {} }`. The
+     practical difference is nil and the parity gate does not compare
+     capabilities — which is precisely why the claim of sameness should either
+     be true or be dropped.
+  4. **`tools.ts`'s header states the rule "One library call and one render"**,
+     and four of its own bodies are not that: `start_simulator` (get, `state`,
+     `showWindow`, `create` and two branches), `attach_simulator` (`attach` +
+     `waitReady`), `ui_tap` (target selection and a refusal), and the two
+     capture tools (path resolution first). Each departure is justified inline
+     and correct; the rule as written is the plan's softer "bodies **mostly**
+     become one library call" (SIMGADGET_PLAN_SERVER.md:81). Restate it as the
+     boundary it actually is — no element resolution, no coordinate maths, no
+     deciding what a toggle is — which is the sentence the rest of that header
+     already argues for.
+
+## Housekeeping
+
+- [x] **#97 FIXED 2026-08-24, at step 5. TESTING_TOOLS.md had a dead link and
+  one expected string that predated a deliberate change — both in a document
+  step 6 is about to run.**
+
+  All four items closed. The link is `packages/simgadget/src/ax/tree.ts`; step
+  #8 expects `App com.example.mcptestapp launched successfully with PID: <pid>`
+  with a note saying why the pid is a fix and not an addition; both env vars are
+  `SIMGADGET_*`. Three further strings were found *abridged* rather than wrong
+  and are now quoted in full — #49's obstruction refusal stopped mid-sentence,
+  and #1 and #27 paraphrased where the reply is exact — since a step-6 reader
+  comparing a paraphrase to a real reply is the same negotiation this entry
+  exists to prevent. The document also gained a preface naming the four
+  deliberate changes that move a string in it, and the two open items (#92,
+  #93) that would otherwise read as fresh regressions on the day.
+
+  `.DS_Store` (#88) is still untracked and still absent from `.gitignore`; not
+  touched here, because `.gitignore` is not documentation.
+
+  - Line 670 links `[src/ax/tree.ts](src/ax/tree.ts)`, deleted at 3.6. It is
+    now `packages/simgadget/src/ax/tree.ts`, and the surrounding paragraph is
+    the diagnosis for a real regression this row has caught before — so it is
+    the one link in the file worth having work.
+  - Line 95 expects `"App com.example.mcptestapp launched successfully"`. With
+    deliberate change 12 the answer now carries a pid, so a step-6 run reads a
+    mismatch and has to decide on the spot whether it is a regression —
+    exactly what the plan's step 5 says to prevent ("derived from the table
+    **before** the step 6 run, not during it, or the run becomes a negotiation
+    with itself"). Row 12 is in the table; the string was not updated from it.
+  - Lines 189 and 613 still name `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` and
+    `IOS_SIMULATOR_MCP_COMPANION_PATH`. Both still work through the shims —
+    verified, the library's `readEnv` covers `COMPANION_PATH` — so these are
+    stale rather than broken, and are step 5's along with README and
+    TROUBLESHOOTING. Listed so they stay on the list.
+
+  Also still true from the library review: **#88's `.DS_Store`** is untracked
+  and absent from `.gitignore`.
+
+- [x] **#98 FIXED 2026-08-24. The first push failed CI: `EBADPLATFORM`.**
+  `npm ci` on the Ubuntu runner refused the whole install — *"Unsupported
+  platform for simgadget@0.0.1: wanted {"os":"darwin"} (current:
+  {"os":"linux"})"* — before a single check ran.
+  - **The declaration did not change; its meaning did.** npm enforces `os` on
+    a package installed *as a dependency*, not on a project or a workspace
+    package for itself. One package meant the field was decorative on the
+    runner; two means `simgadget` is a dependency of `simgadget-mcp` and is
+    checked. Nothing about it was visible until the branch was pushed, because
+    every local install is on macOS.
+  - **Fixed by dropping `os` from the library and keeping it on the server**,
+    with the reasoning in SIMGADGET.md's decisions register. The library still
+    refuses non-darwin loudly at resolve time
+    (`assertSupportedArchitecture` → `UnsupportedArchitectureError`, unit
+    tested), which is the same arrangement it already has for arm64 — it
+    declares no `cpu` field either.
+  - **Watch the smoke step on the next run.** The old CI installed a
+    darwin-only tarball on Linux without complaint (run 31915294749), so the
+    packed install is expected to stay green; if it does not, it is the same
+    cause and the same fix one layer down.
+
+- [x] **#100 FIXED 2026-08-24. The wedge recovery went silent in the port, and no row recorded
+  it.** Found 2026-08-24 at step 5, while checking TESTING_SERVER.md's
+  "Recovering a wedged accessibility bridge" section against the code it
+  describes.
+
+  The old server logged three lines through `vlog` (index.ts:963, 969, 989):
+
+  ```
+  simulator <udid> stopped answering accessibility; restarting com.apple.CoreSimulator.bridge
+  simulator <udid> recovered 11s after restarting com.apple.CoreSimulator.bridge
+  simulator <udid> ... a bridge restart; not restarting again
+  ```
+
+  `recoverWedgedAccessibility` moved into the library
+  (`packages/simgadget/src/simulator.ts:938`), which has **no logging seam** —
+  its only two writers are `env.ts`'s deprecation warning and
+  `companionManager.ts`'s `[simgadget]` prefix — so all three lines are gone.
+  Nothing in "Deliberate behaviour changes" mentions it, which makes this a
+  quiet deviation rather than a decided one (plan rule 3).
+
+  **What it costs.** Two manual checks lose their only observable:
+  TESTING_SERVER.md's recovery section asserted all three lines, and its
+  "an empty point is not a wedged bridge" step checks for *absence* of a restart
+  in the log — which now passes vacuously, since nothing is ever logged either
+  way. Both have been annotated to say so rather than left to fail on the day.
+  Operationally it is worse than the manual plans: a restart is a ~5s pause
+  inside an otherwise-normal call, and with no line in the log there is nothing
+  to correlate it against.
+
+  **Not obviously wrong.** Design rule 5 says library messages are
+  host-agnostic, and a library writing to stderr on its own initiative is a
+  reasonable thing to have refused. But that argues for a *seam* — a
+  `deps`-injected `onRecovery` the server's `vlog` subscribes to — not for
+  silence.
+
+  **Fix:** either a row in the table recording the loss and why, or an event the
+  server can log. The second is a library change and therefore the owner's call.
+  **Test:** the `deps` seam already records calls, so a unit test asserting the
+  notification fires once per restart (and not at all under the cooldown) is
+  microseconds. **TESTING_SERVER.md:** the two annotated sections are where it
+  goes back to being an assertion.
+
+
+  **Fixed by an injected sink rather than by the library taking up logging.**
+  `HandleOptions.onLog`, reachable as `CreateOptions.onLog` and
+  `AttachOptions.onLog`; the library stays silent unless a caller asks, and
+  `simgadget-mcp` asks — its registry constructors pass `vlog` to every handle
+  it creates or attaches. All four lines are back verbatim, including the
+  restart-failed one that had no test before.
+
+  **One line moved on purpose.** The cooldown's *"not restarting again"* used
+  to print inside `recoverWedgedAccessibility`. In the library that decision is
+  made a turn earlier by `shouldRecover`, so a line in the old place could
+  never be reached; it now sits in `withAccessibilityRecovery`'s refusal
+  branch, and only when the simulator has answered before — a device that has
+  never answered is booting, not a recovery being refused, and the boot ladder
+  is already narrating that.
+
+  Three unit tests in `reading.test.mts` (527 in the library now): the cure
+  names the simulator, the service and its duration; the cooldown says why it
+  refused; and a read that never wedges says nothing at all — which is the one
+  that keeps TESTING_SERVER's absence check honest. Both TESTING_SERVER
+  sections were rewritten around the restored observable, and row 13 of
+  "Deliberate behaviour changes" records it.
+
+- [ ] **#99 `verify-companion-download.mjs` drives whatever simulator happens
+  to be booted.** Noticed 2026-08-24 while running it for step 4: its step 7
+  picks `simctl list devices booted` and attaches to the first result, which on
+  this machine was `whisky-autofill_iphone-16-pro` — a simulator belonging to
+  another session's daemon. Two read-only calls, and it detaches rather than
+  deleting, so nothing was disturbed; but "never touch a simulator you did not
+  create" is a rule this repository states in DECISIONS.md and CLAUDE.md, and
+  the script breaks it by design on any machine where somebody else is working.
+  - **Fix:** create a throwaway simulator the way the e2e suite does and delete
+    it in a `finally`, or require an explicit `--udid` / `--allow-attach` before
+    adopting one it did not create. Skipping when nothing is booted is already
+    the behaviour, so the fallback path exists.
+  - Not urgent — it is a script a human runs deliberately — but it is the kind
+    of thing that eventually deletes somebody's afternoon rather than reading
+    from it.
+
+- [ ] **#101 On the home screen, `ui_describe_point` and `ui_describe_all`
+  disagree about the same element's frame.** Found 2026-08-24 during the step-6
+  TESTING_TOOLS run, at step #4, which reads a point on the home screen.
+
+  The Maps widget's image is `{x: 26.67, y: 90.33}` in the tree and
+  `{x: 0.33, y: 0.33}` from the point read — the widget's own local space,
+  untranslated. An agent that reads a frame from a point and taps its centre
+  lands ~26 x 90 points off.
+
+  **It is not the #60 regression, and the app-level case is clean.** Verified in
+  the same run: inside the photo picker both tools report `Cancel` at
+  `{x: 20, y: 92}`, `ui_tap {label: "Cancel"}` lands at (38, 110) and dismisses
+  it, and `Fill Strong Password` reads `y: 715.33` from both tools with the tap
+  landing at 737. The gap is SpringBoard's *own* widgets, which are hosted by a
+  different process again, and which the point path returns raw.
+
+  - **Why it is worth fixing anyway:** two tools disagreeing about one element
+    is the inconsistency #58 and #60 both exist to end, and TESTING_TOOLS #4
+    reads a point on the home screen, so it is reachable from the documented
+    path.
+  - **Fix:** the translation `describeAll` applies for a remote-hosted subtree
+    (`isRemotelyHosted` / the type-83 boundary) has no counterpart on the point
+    path. **Test:** a fake-client unit test in the library — a point answer
+    whose frame is local to a hosting window comes back in screen space —
+    plus a TESTING_TOOLS step comparing the two tools on a home-screen widget.
+  - Not a regression: the point path is a faithful port, so the old server did
+    this too.
+
+- [x] **#102 FIXED 2026-08-24. `start_simulator` blamed the wedge when two simulators booted at
+  once.** Found 2026-08-24 during the step-6 TESTING_SERVER run, doing the
+  thing this fork exists for: two concurrent `start_simulator` calls on one
+  machine.
+
+  Both exceeded the 55s budget, and both answered with the *unexplained-wedge*
+  message — "Restarting the simulator bridge did not recover it, **which is
+  not expected: that fixes this in every case seen so far.** Please ask the
+  user to file a bug…". One of the two then answered `ui_view` immediately
+  afterwards, exactly as the message's own fallback advice suggests, so it was
+  never wedged: it was slow, because two cold boots were competing for one
+  machine.
+
+  **Why it matters:** the message sends an agent to the issue tracker for
+  ordinary contention, and the population it fires on is precisely the fork's
+  reason to exist. It also devalues the real signal — a genuine unexplained
+  wedge now looks like every busy afternoon.
+
+  - **Fix, roughly:** distinguish "the budget ran out" from "the cure was tried
+    and the device still will not answer". `ReadyResult` already carries
+    `recoveryTried` and `recovered`; what it cannot say is whether anything was
+    *making progress*. Cheapest honest change is to soften the wording when
+    another simulator on this machine booted concurrently, or simply to stop
+    claiming "not expected" unless the device was the only one booting.
+  - **Test:** a fake-deps unit test over the message builder — `renderStarted`
+    with `{ready: false, recoveryTried: true}` should not assert that the case
+    is unexpected. **TESTING_SERVER step:** two concurrent `start_simulator`
+    calls, and the answer must not tell the reader to file a bug.
+
+
+  **Fixed in `render.ts`, both places** — `renderStarted` and `renderAttached`
+  said the same thing. The order is now the honest one: *"Its accessibility
+  bridge was restarted and it still had not answered by then. Poll ui_view: a
+  simulator that was merely slow — which is usual when several are booting on
+  one machine — answers within a few more seconds. If it is still silent after
+  that, it is the wedge described at <issues>…"*. The advice that usually works
+  leads; the bug report is conditional on that advice failing.
+
+  **The third occurrence was left alone deliberately.**
+  `AccessibilityUnreadableError{"unrecoverable"}` — booted, answering point
+  queries, tree empty after *both* cures — keeps "that is not expected", because
+  it genuinely never has been. A budget expiring is not that condition.
+
+  Row 14 of "Deliberate behaviour changes". The test asserts the ordering as
+  well as the words: `Poll ui_view` must appear before the issues URL, and
+  "not expected" must not appear at all.
+
+# TODO — Code review: library rewrite, 2026-08-18
+
+Full review of the step-2 library (`packages/simgadget`) against SIMGADGET.md
+and SIMGADGET_PLAN.md. Verified clean and not repeated per-item below: port
+fidelity against the frozen originals (no smuggled behaviour changes; every
+diff traces to a deliberate change), rename completeness, sun_path headroom,
+error-vocabulary containment in `ax/recovery.ts`, the exports boundary, the
+tether rule (all twelve fake beliefs map to contract checks 1–12), plan test
+coverage for steps 1.1–8, the step-9 e2e journey item-for-item, and the exit
+conditions: typecheck, 495/495 unit tests, root build + frozen manifest, and
+the e2e suite re-run during the review — 32/32 in 110s unattended. The one
+thing not re-run: `check:companion` against a booted fixture (exit condition 5).
+
+## Bugs
+
+- [x] **#74 DONE 2026-08-18. DECISIONS.md recovered and committed at the repo
+  root.** It survived intact in the session scratchpad it was written in
+  (`d15f9e10-.../scratchpad/DECISIONS.md`); the committed copy is
+  byte-identical, sha256 `e6883300…`. Its numbering matches every citation, so
+  all 40-odd `DECISIONS.md #N` references across `src/`, the fakes and
+  TESTING_LIBRARY.md now resolve — including #1 (boot opens Simulator.app,
+  settled with the owner), #2 (`(string & {})`), #12 (`path.resolve`-only),
+  #19 (companion close/reopen on the deps seam) and #21 (registry fresh per
+  test). No prose was rewritten: the sign-off trail is the original document,
+  not a reconstruction of it — which is what makes #83's and the
+  `(string & {})` deviation's sign-off claims checkable (items 26 and 2).
+
+  Original finding: cited 82 times and absent from the repo. At least 18
+  distinct numbered decisions (#1–#24) were cited as load-bearing authority
+  across `src/internal/deps.ts`, `internal/registry.ts`, `lifecycle.ts`,
+  `simulator.ts`, the test fakes and TESTING_LIBRARY.md — including decisions
+  the spec does not record.
+
+- [x] **#75 DONE 2026-08-18. `waitForBootStatus` waits on a cancellable timer,
+  and cancels it whichever way the race goes.** `lifecycle.ts`'s
+  `deps.sleep(BOOTSTATUS_CAP_MS)` race is now `deps.setTimer` with a `settle`
+  that calls the loser off, the same shape `waitForRecordingStart` already
+  used. Landed with #81 in one rewrite. Tests: `test/lifecycle.test.mts`,
+  "the cap timer is cancelled when bootstatus exits first" (asserts
+  `timers[0].cancelled`) and "the cap fires, and kills the child rather than
+  leaving it" (fires the timer by hand, asserts nothing is armed after it) —
+  the fake's `setTimer` log proves both directions in microseconds.
+  TESTING_LIBRARY.md's "does not cover" section records why the suite's wall
+  clock is the only device-level sign of this class of defect.
+
+  The fake's default spawned child now exits on the next turn, as
+  `bootstatus -b` does against an already-booted device — the case that paid
+  the full 30s tail, and now the case the fake models.
+
+  Original finding: `lifecycle.ts:400` raced the bootstatus child's exit
+  against `deps.sleep(BOOTSTATUS_CAP_MS)` (30s) and never cancelled the losing
+  timer, holding the event loop open. Confirmed empirically: a raced
+  `realDeps.sleep(3000)` resolves at 0ms and the process exits at 3002ms —
+  the same measurement that motivated `setTimer` for the recording path.
+
+- [x] **#76 DONE 2026-08-18. The companion path maps external deletion too, by
+  asking simctl who exists.** Every companion call the handle makes now goes
+  through one private `Simulator.withClient`, which on a failure consults
+  `findDevice`: only a udid simctl no longer lists becomes
+  `SimulatorNotFoundError`, and everything else is rethrown exactly as it
+  arrived — a companion that could not start against a simulator still sitting
+  there keeps its own error and its `stderrTail`. The wedge vocabulary is
+  exempt and never pays the round trip: those errors are about a bridge
+  belonging to a simulator that plainly exists, `withAccessibilityRecovery`
+  reads them to choose the cure, and they are the only companion failure
+  frequent enough for the cost to matter.
+
+  **The e2e is what settled the mechanism, and it contradicted the review.**
+  Written first as the finding described — catch `CompanionStartError`, look
+  the udid up — it passed every fake-layer test and failed against a real
+  simulator: a handle that *already has* a companion never reaches a spawn, so
+  it fails on the block `delete()` puts on the udid, as an untyped `IdbError`.
+  An external `simctl delete` against a live companion lands the same way.
+  Chasing error shapes is how half of this went missing the first time, so the
+  question is now asked of the only thing that can answer it. Widening past the
+  finding's letter was checked with the owner before it was written.
+
+  Tests: `test/simulator.test.mts`, "a failed companion call is resolved
+  against simctl" — gone → `SimulatorNotFoundError` (both a start failure and
+  the closed-udid refusal), present → the original error untouched, a wedge
+  error asks simctl nothing, and `findByLabel` throws rather than answering
+  `null` through its tree fallback. The e2e case at
+  `test/e2e/lifecycle.e2e.mts` drives the stale handle by all three routes
+  instead of `state()` alone; TESTING_LIBRARY.md's Part 1 row says why.
+
+  Original finding: the spec promises that after external deletion "every
+  method throws SimulatorNotFoundError — a clear error, never a gRPC timeout",
+  and only the simctl half existed (`mapSimctlError`). A read on a stale handle
+  spawned a companion against the vanished udid, which exited failing target
+  resolution → `CompanionStartError` with the misleading code
+  `companion-start-failed`. The e2e knew: it tested external deletion only
+  through `state()`, the one method that goes through simctl.
+
+- [x] **#77 DONE 2026-08-18. A `delete()` that fails no longer leaves the udid
+  wedged shut.** The shutdown/delete pair is wrapped: any failure other than
+  `SimulatorNotFoundError` calls `reopenCompanion` before rethrowing, so a
+  simulator that is still there is still drivable. A mapped
+  `SimulatorNotFoundError` — someone else deleted it first — instead marks the
+  handle deleted and runs `recovery.forget`, so the thrown error is the only
+  difference between that and a delete that worked, and the companion stays
+  blocked because there is nothing left to drive. Tests:
+  `test/simulator.test.mts`, "a delete that fails for a real reason reopens the
+  companion" (asserts the reopen lands *after* the failed simctl call, via the
+  fake's ordered call log, and that the handle still works) and "a delete that
+  finds it already gone marks the handle stale anyway" (no reopen, recovery
+  forgotten, and the handle touches deps no further). TESTING_LIBRARY.md
+  records why the e2e cannot reach either path.
+
+  Original finding: `closeCompanion` ran first (correctly), but a `simctl
+  delete` that then failed for a real reason threw without `reopenCompanion`,
+  so every later read on the still-existing simulator, from any handle in the
+  process, failed inside `companionFor` with an untyped `IdbError` ("is being
+  shut down"). Related edge: an already externally deleted simulator propagated
+  the mapped `SimulatorNotFoundError` while `this.deleted` stayed false and
+  `recovery.forget` never ran.
+
+- [x] **#78 DONE 2026-08-18. `parseLaunchPid` requires a delimiter before the
+  pid.** `/[:\s](\d+)\s*$/` rather than `/(\d+)\s*$/`, so the digits have to be
+  separated from the bundle identifier by the colon or space simctl puts there.
+  Every real reply parses exactly as it did; a reply that is only a
+  digit-ending identifier now stays null instead of reporting its own suffix as
+  a process id. Test: `test/lifecycle.test.mts`, "does not read a digit-ending
+  bundle id as a pid". TESTING_LIBRARY.md's item 4 records why the fixture
+  cannot show this one — `com.example.mcptestapp` does not end in a digit.
+
+  Original finding: `lifecycle.ts:229` matched `/(\d+)\s*$/`. The doc claimed a
+  no-pid reply "stays null", but if such a reply is just the bundle id and the
+  id ends in digits (`com.example.app2`), the trailing digits parse as a pid.
+
+- [ ] **#79 Custom `resizeTo: {width, height}` is applied before rotation, so
+  a landscape screenshot comes back transposed.** In `captureScreenshot`
+  (`capture.ts:260`) the resize acts on the portrait capture and the rotation
+  follows — correct by construction for `"points"`, but a caller asking for
+  `{width: 800, height: 600}` in landscape receives 600×800. Decide the
+  contract: either document that explicit dimensions are interpreted in
+  portrait space, or swap them when a rotation is coming. Either way the
+  `ScreenshotOptions.resizeTo` doc should say which.
+
+- [x] **#80 DONE 2026-08-18. `startRecording` arranges everything it owes the
+  child in the same window as the spawn.** `trackRecording` and the `close`
+  handler are attached before `await started`, keeping the identity guard. The
+  early listener alone turned out not to be enough, and the test is what said
+  so: a close arriving before the handle has published the recording finds
+  nothing of its own to clear, and the publish that follows would store a
+  process that had already gone. So the same handler sets a `closed` flag and
+  the publish is skipped — the handle ends the call with no active recording
+  rather than with a corpse, which is the stated observable ("able to start a
+  new recording"). Test: `test/capture.test.mts`, "a recording that dies the
+  instant it starts releases the handle too", verified to fail against the
+  previous ordering before being kept. TESTING_LIBRARY.md records why the
+  fixture cannot stage this.
+
+  Original finding: `simulator.ts:1870` attached the `close` cleanup after
+  `await started`, so a recording that said "Recording started" and then died
+  while `started` was being awaited emitted `close` before the listener
+  existed; `this.recording` then held a dead child and the handle refused new
+  recordings until a manual `stopRecording()`.
+
+- [x] **#81 DONE 2026-08-18. The spawned bootstatus child has an `error`
+  listener.** Folded into #75's rewrite of the same function, as that item
+  said to. Treated exactly like an exit — stop waiting, let the poll decide
+  readiness — rather than propagated, since there is nothing here a caller
+  could act on. Test: `test/lifecycle.test.mts`, "a spawn that cannot run the
+  binary is a wait ended, not a crash", which emits `error` on the fake child
+  and would take the test process down without the listener.
+
+  Original finding: if `deps.spawn` cannot execute the binary, the unhandled
+  `error` event crashes the process (EventEmitter semantics). Effectively
+  unreachable on a working macOS box, but it was the only unguarded spawn in
+  the library — `awaitReadiness` and `waitForRecordingStart` both handle it.
+
+- [x] **#82 DONE 2026-08-20. Both named sites carry codes; one further site is
+  deliberately left untyped and now says so.**
+  - **The closed-udid refusal is `SimulatorNotFoundError`.** `delete()` is the
+    only thing that closes a udid, so a call arriving at the refusal is a call
+    racing a teardown, and the caller's remedy is the one the stale-handle
+    check gives it a moment later. The prose is kept as an override, so
+    "being shut down" still distinguishes it from a udid that was never there.
+    Overstated only by a `delete()` that then fails and reopens — a caller who
+    asked for the deletion, getting a momentary "gone" instead of an
+    unbranchable error.
+  - **The window this closes is narrow and was the whole bug.** `withClient`
+    resolves a companion failure by asking simctl, so a udid already gone came
+    back typed anyway; between `closeCompanion` and the end of `simctl delete`
+    the device is *still listed*, so the raw error was rethrown as caught.
+    That path now has its own test.
+  - **`readLock`'s two failures are `CompanionDownloadError`.** The lock file
+    is what a download is made from, so missing or unparseable is the download
+    path failing before the network, with the same remedy. The code's gloss
+    widened to "HTTP failure, checksum mismatch, or no readable pin to fetch"
+    in both `errors.ts` and SIMGADGET.md. `readLock` takes an optional path now
+    — the shipped file always exists, so neither branch was reachable in a test
+    otherwise.
+  - **Left untyped on purpose, with a comment saying why:
+    `SIMGADGET_COMPANION_PATH` pointing at a missing file**
+    (`companionBinary.ts`). Nothing in the frozen `ErrorCode` union is honest
+    about it: no download was wanted — avoiding one is what the override is for
+    — and nothing was spawned. Typing it means *adding* a code, which is a spec
+    change and your call, not a tidy-up. Same reasoning covers the three
+    remaining `IdbError`s in `companionManager.ts` (socket dir not ours, uid
+    mismatch, sun_path overrun), which are environment pathologies a caller can
+    only read.
+
+## Spec / plan deviations needing sign-off or a doc fix
+
+- [ ] **#83 Contract check 8's `--wedge` flag was never implemented, and the
+  variation is unsigned.** The plan specifies it; the script instead documents
+  (convincingly — see #69's measurements) that a wedge cannot be manufactured
+  on demand and that the empty-point half is the load-bearing half. The plan's
+  rule is sign-off *before* the variation is written; nothing in the repo
+  records it. Same story as `(string & {})` replacing the spec's `| string`.
+  Both are probably right; both are currently unverifiable — see #74.
+
+- [x] **#84 DONE 2026-08-20. The doc carries the caveat; the behaviour is
+  unchanged.** `TapOptions.durationSeconds` now says that passing less than the
+  floor changes nothing *about the touch*, and that setting it at all makes a
+  `{label}` tap at a toggle a hold — refused with `ToggleGestureError` even
+  below the floor, because asking for a duration is what marks a caller as
+  wanting a real press. SIMGADGET.md's copy of the type says the same in one
+  sentence.
+  - **Not fixed the other way round on purpose.** Treating a sub-floor duration
+    as plain would hand a caller who asked for a press an activation instead —
+    a different verb, quietly. The refusal is the honest answer.
+  - The pure layer already pinned it (`tap.test.mts`, "a switch, held for less
+    than the floor"); the public layer now does too, at the exact call in this
+    entry.
+
+- [ ] **#85 Plan step 5's `describeObstruction(atPoint)` pure extraction does
+  not exist.** The behaviour lives in `TapObstructedError`'s constructor and
+  is covered at the fake layer and in the e2e — missing named extraction, not
+  missing coverage. Extract or strike it from the plan with a note.
+
+## Comments that do not match the code
+
+- [x] **#86 DONE 2026-08-18. All six corrected; no behaviour changed.**
+  - `ax/tree.ts` — the closed type's doc now says `index.ts` publishes it as
+    `AXElement`, and names `RawAXElement` as the internal open one.
+  - `simulator.ts:46` — the import comment described an aliasing that is not
+    there: `ax/tree.ts` exports both names itself, and the comment now says
+    which is which without inventing a rename.
+  - `lifecycle.ts` — `deriveDeviceName`'s doc moved back onto
+    `deriveDeviceName`; `parseLaunchPid` and its own doc had been inserted
+    between the two.
+  - `simulator.ts` — `HID_BUTTON`'s "unlike `HID_ORIENTATION` above" is now
+    "further down this file", which is where it is.
+  - `test/fakes/idb.ts` — the action-API "found no element" wording is pinned
+    by contract check 12, so the header no longer claims it is unpinned; the
+    flag is now a pointer to the check.
+  - `lifecycle.ts:25` and `internal/registry.ts` — both step-narrating headers
+    rewritten in the present tense, describing what the files hold rather than
+    the order they were built in and then patching themselves.
+
+- [x] **#87 DONE 2026-08-18. TESTING_LIBRARY.md's duplicate item 4 and its
+  test count.** The stale second copy — which claimed the `launchApp` pid parse
+  was "faithfully ported" and unasserted, contradicting the corrected item
+  immediately above it — is deleted. The heading now says 507 unit tests, which
+  is what the suite reports after this session's additions.
+
+## Housekeeping
+
+- [ ] **#88 Repo hygiene.** `.DS_Store` is untracked and not in `.gitignore`.
+  (`companion.lock.json` and `package.json` still pointing at the old repo
+  path is **correct** for this phase — plan Risks says so; do not "fix" it.)
+  - **Corrected 2026-08-20:** this entry also claimed
+    `packages/simgadget/build/` was committed alongside `src/`. It is not —
+    `git ls-files` returns nothing under it and `.gitignore` has `build/`.
+    The real hazard is the opposite one: `exports.test.mts` does
+    `require("simgadget")`, which resolves through `build/index.js`, so the
+    exports assertions run against **whatever was last compiled**. Change the
+    public surface without rebuilding and that test passes on yesterday's
+    output. Worth wiring a build into `npm test` for the library, or having
+    that test fail loudly when `build/` is older than `src/`.
 
 # TODO — Production bug, reported 2026-08-15
 

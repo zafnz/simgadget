@@ -7,7 +7,7 @@
  * downloaded, ad-hoc-signed binary actually runs elsewhere, and whether macOS
  * quarantines it. Run this on a second Mac.
  *
- *   npm run build
+ *   npm run build --workspaces
  *   node scripts/verify-companion-download.mjs            # needs a booted simulator
  *   node scripts/verify-companion-download.mjs --keep-cache
  *
@@ -24,6 +24,10 @@ import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// The two packages this script drives: the library owns the companion cache and
+// the lock file, the server is what an MCP client actually speaks to.
+const LIB = path.join(REPO, "packages/simgadget");
+const MCP = path.join(REPO, "packages/simgadget-mcp");
 const keepCache = process.argv.includes("--keep-cache");
 
 let failures = 0;
@@ -34,14 +38,17 @@ const ok = (cond, msg) => {
 const info = (msg) => console.log(`    ${msg}`);
 
 function buildDirPresent() {
-  return fs.existsSync(path.join(REPO, "build", "idb", "companionBinary.js"));
+  return (
+    fs.existsSync(path.join(LIB, "build", "idb", "companionBinary.js")) &&
+    fs.existsSync(path.join(MCP, "build", "index.js"))
+  );
 }
 
 async function main() {
   console.log("Companion download verification\n");
 
   if (!buildDirPresent()) {
-    console.error("build/ is missing — run `npm run build` first.");
+    console.error("a package build is missing — run `npm run build --workspaces` first.");
     process.exit(1);
   }
 
@@ -58,16 +65,22 @@ async function main() {
       ? "a local companion build EXISTS here — this machine may have built it, so the download path will be skipped. Move vendor/idb/Build aside to test properly."
       : "no local companion build present, so the download path will be used"
   );
+  // Both spellings: the library reads SIMGADGET_COMPANION_PATH and falls back to
+  // the deprecated name, so checking only one lets the download be bypassed by
+  // the other while this line says everything is fine.
+  const companionPathVar = ["SIMGADGET_COMPANION_PATH", "IOS_SIMULATOR_MCP_COMPANION_PATH"].find(
+    (name) => process.env[name]
+  );
   ok(
-    !process.env.IOS_SIMULATOR_MCP_COMPANION_PATH,
-    process.env.IOS_SIMULATOR_MCP_COMPANION_PATH
-      ? "IOS_SIMULATOR_MCP_COMPANION_PATH is set — unset it, or the download is bypassed"
-      : "IOS_SIMULATOR_MCP_COMPANION_PATH is not set"
+    !companionPathVar,
+    companionPathVar
+      ? `${companionPathVar} is set — unset it, or the download is bypassed`
+      : "no COMPANION_PATH override is set"
   );
 
   // 2. The lock file must be present and readable.
   console.log("\n2. companion.lock.json");
-  const lockPath = path.join(REPO, "companion.lock.json");
+  const lockPath = path.join(LIB, "companion.lock.json");
   ok(fs.existsSync(lockPath), `present at ${path.relative(REPO, lockPath)}`);
   if (!fs.existsSync(lockPath)) {
     console.log("\nNo lock file, so there is nothing to download. Stopping.");
@@ -78,7 +91,7 @@ async function main() {
   info(lock.url);
 
   // 3. Clear the cache so the download really happens.
-  const { cacheRoot, resolveCompanion } = require(path.join(REPO, "build/idb/companionBinary.js"));
+  const { cacheRoot, resolveCompanion } = require(path.join(LIB, "build/idb/companionBinary.js"));
   const root = cacheRoot();
   const installed = path.join(root, "companion", lock.sha256);
   if (!keepCache) {
@@ -156,7 +169,7 @@ async function main() {
     // socket instead of talking over the pipe.
     const transport = new StdioClientTransport({
       command: "node",
-      args: [path.join(REPO, "build/index.js"), "--stdio"],
+      args: [path.join(MCP, "build/index.js"), "--stdio"],
       stderr: "pipe",
     });
     const client = new Client({ name: "verify", version: "1" }, { capabilities: {} });

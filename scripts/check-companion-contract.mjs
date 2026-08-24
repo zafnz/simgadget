@@ -4,7 +4,7 @@
  *
  * Not a test of our code — `npm test` covers that, and cannot reach a
  * companion. These are behavioural contracts with somebody else's binary, each
- * one load-bearing for a decision in `src/`, and none of them is written down
+ * one load-bearing for a decision in `packages/simgadget/src/`, and none of them is written down
  * anywhere upstream promises to keep. idb is under active development; a change
  * to any of them would leave this server quietly doing the wrong thing rather
  * than failing, because every one of these assumptions is invisible when it
@@ -20,7 +20,8 @@
  *
  * It spawns its own companion for that udid, which is fine alongside the
  * server's — that is how every probe in this project has been run — and it only
- * reads, apart from one switch it toggles and toggles back.
+ * reads, apart from one switch it toggles and toggles back, and one button
+ * whose whole effect is a line of text in the fixture's own status label.
  */
 import { createRequire } from "module";
 import path from "path";
@@ -28,8 +29,11 @@ import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const { companions } = require(path.join(REPO, "build/idb/companionManager.js"));
-const idb = require(path.join(REPO, "build/idb/generated/idb.js"));
+// The library's build, not the server's: the companion and its generated
+// protocol both belong to `simgadget`. Needs `npm run build --workspaces` first.
+const LIB = path.join(REPO, "packages/simgadget");
+const { companions } = require(path.join(LIB, "build/idb/companionManager.js"));
+const idb = require(path.join(LIB, "build/idb/generated/idb.js"));
 
 const Format = idb.AccessibilityInfoRequest_Format;
 const Backend = idb.AccessibilityInfoRequest_Backend;
@@ -160,6 +164,19 @@ await companions.withClient(udid, async (client) => {
   // The entire reason `findByLabel` has a fallback, and that it costs ~300ms
   // only on a miss. If the default backend ever gained this, the fallback
   // becomes dead weight; if AXBridge lost it, toolbars go unreachable again.
+  //
+  // **This one is true eventually, not immediately, and the difference is not
+  // visible from here.** Measured by the e2e suite over 40 consecutive reads of
+  // one unchanging screen, 2026-08-17: for the first few reads after the app
+  // reaches the foreground, a marker query on the default backend *does* answer
+  // for a toolbar control; then it stops, permanently. Run this check promptly
+  // after launching the fixture and it fails, and the conclusion drawn would be
+  // that the companion had changed when nothing had.
+  //
+  // It is safe here only because checks 1-3 have already issued several reads
+  // by the time it runs. That ordering is therefore load-bearing: do not move
+  // this check earlier in the file, and be suspicious of a lone failure here on
+  // a freshly launched app before believing the assumption has broken.
   {
     let axSaw = true;
     try {
@@ -241,6 +258,250 @@ await companions.withClient(udid, async (client) => {
       !error && after !== before,
       "accessibility_action activates a switch without a touch",
       error ? `error: ${error}` : `AXValue ${JSON.stringify(before)} -> ${JSON.stringify(after)} (restored)`
+    );
+  }
+
+  // --- 7. An absent marker fails with "found no element". -------------------
+  // `findByLabel`/`findByIdentifier` (index.ts) match this wording to tell an
+  // empty result from a real failure, and turn it into a `null` — which
+  // `tap({label})` turns into `ElementNotFoundError`. If the wording changes,
+  // absence becomes a thrown gRPC error and every lookup in the library breaks.
+  {
+    let message = null;
+    try {
+      await marker(client, "Definitely Not On Screen — Contract Check 7");
+    } catch (e) {
+      message = e.message;
+    }
+    record(
+      message !== null && /found no element/i.test(message),
+      'an absent marker fails with "found no element"',
+      message ? `-> ${JSON.stringify(message)}` : "no error was thrown"
+    );
+  }
+
+  // --- 8. A point read with nothing there fails with "no translation object" —
+  // the *same* text a wedged bridge produces (BOOT_BUG.md). This is the whole
+  // reason `describePoint` (index.ts ~330-345) disambiguates by asking for the
+  // screen before treating a failure as a wedge: an ordinary caller tapping an
+  // empty patch of screen would otherwise have the simulator's bridge restarted
+  // underneath them.
+  //
+  // The point is the gap the stack view's spacing leaves between two known
+  // controls — chosen from the layout, not from the outcome, so this cannot
+  // quietly start passing by finding some other empty spot.
+  //
+  // **Only this half of the belief is checkable, and deliberately so.** The
+  // symmetric half — that a wedged bridge produces the same text — cannot be
+  // manufactured on demand, because the only recipe available is
+  // `simctl spawn <udid> launchctl stop com.apple.CoreSimulator.bridge`, and
+  // that is the *cure*, not the disease: launchd answers it by bringing a fresh
+  // bridge straight up. Measured three ways on iOS 26.5 with the pinned
+  // companion, 2026-08-16 — 250ms polling over 15s, 98 sequential reads over
+  // 8s, and 300 concurrent reads staggered across the stop — all with zero
+  // failures, while `launchctl list` confirmed the bridge pid really did change.
+  // There is no observable window to sample. The wedge in BOOT_BUG.md is a
+  // bridge that never recovers on its own, which no deliberate stop reproduces.
+  //
+  // That costs nothing here, because this half is the load-bearing one: it
+  // establishes that `isWedgeError` alone *cannot* tell the two apart, which is
+  // exactly what makes the disambiguation necessary. See TODO #69.
+  let emptyPointMessage = null;
+  {
+    const btn1 = labelled("Plain Button").find((e) => e.frame?.width);
+    const btn2 = labelled("Disabled Button").find((e) => e.frame?.width);
+    let detail;
+    if (btn1?.frame && btn2?.frame) {
+      const gapX = Math.round(btn1.frame.x + btn1.frame.width / 2);
+      const gapTop = btn1.frame.y + btn1.frame.height;
+      const gapBottom = btn2.frame.y;
+      const gapY = Math.round(gapTop + (gapBottom - gapTop) / 2);
+      try {
+        const hit = await client.accessibilityInfo({
+          point: { x: gapX, y: gapY },
+          format: Format.LEGACY,
+        });
+        detail = `point (${gapX}, ${gapY}), the gap between Plain Button and Disabled ` +
+          `Button, unexpectedly hit ${JSON.stringify(hit?.AXLabel ?? hit)}`;
+      } catch (e) {
+        emptyPointMessage = e.message;
+        detail = `point (${gapX}, ${gapY}), the gap between Plain Button and Disabled ` +
+          `Button -> ${JSON.stringify(emptyPointMessage)}`;
+      }
+    } else {
+      detail = "could not locate Plain Button / Disabled Button frames to compute an empty gap";
+    }
+    record(
+      emptyPointMessage !== null && /no translation object/i.test(emptyPointMessage),
+      'a point read with nothing there fails with "no translation object"',
+      detail
+    );
+  }
+
+
+  // --- 9. `describe` returns screen dimensions in both pixels and points. ---
+  // The coordinate contract's cached portrait point dimensions (spec decision
+  // 6, DECISIONS.md) come from here rather than from an accessibility read, so
+  // they are available before the bridge is driveable. Assert both units are
+  // present and non-zero.
+  {
+    const description = await client.describe();
+    const dims = description.screenDimensions;
+    const ok =
+      !!dims &&
+      dims.width > 0 &&
+      dims.height > 0 &&
+      dims.widthPoints > 0 &&
+      dims.heightPoints > 0;
+    record(
+      ok,
+      "describe() returns screen dimensions in both pixels and points",
+      dims
+        ? `width=${dims.width} height=${dims.height} widthPoints=${dims.widthPoints} ` +
+          `heightPoints=${dims.heightPoints} density=${dims.density}`
+        : "screenDimensions missing from describe() response"
+    );
+  }
+
+  // --- 10. A marker query at depth 0 searches only the root. ----------------
+  // This is why `MARKER_DEFAULT_DEPTH` exists (packages/simgadget/src/idb/client.ts): a
+  // silent change here makes every deep control "not found". `IdbClient`
+  // deliberately rewrites a falsy `depth` on a marker query to
+  // `MARKER_DEFAULT_DEPTH`, so this has to bypass that and go to the raw gRPC
+  // client to actually send depth 0 — going through the wrapper would silently
+  // prove nothing.
+  {
+    const target = "Settings Switch"; // nested: scroll -> stack -> settingsRow -> switch
+    const rawMarker = (depth) =>
+      new Promise((resolve, reject) => {
+        client.client.accessibilityInfo(
+          idb.AccessibilityInfoRequest.fromPartial({
+            format: Format.NESTED,
+            marker: target,
+            matchKey: Key.LABEL,
+            depth,
+          }),
+          (err, res) => (err ? reject(err) : resolve(res))
+        );
+      });
+
+    let foundAtDepth0 = false;
+    let depth0Detail;
+    try {
+      const res = await rawMarker(0);
+      const parsed = res?.json ? JSON.parse(res.json) : null;
+      foundAtDepth0 = !!parsed?.elements;
+      depth0Detail = foundAtDepth0 ? "found (unexpected)" : "absent, no error";
+    } catch (e) {
+      depth0Detail = `error: ${e.message.slice(0, 80)}`;
+    }
+
+    // Through the normal wrapped call — this is what `findByLabel` actually
+    // issues, and it is what proves MARKER_DEFAULT_DEPTH is doing its job.
+    let foundAtDefault = false;
+    let defaultDetail;
+    try {
+      const hit = await marker(client, target);
+      foundAtDefault = !!hit?.elements;
+      defaultDetail = foundAtDefault
+        ? JSON.stringify(hit.elements.AXLabel)
+        : "absent (unexpected)";
+    } catch (e) {
+      defaultDetail = `error: ${e.message.slice(0, 80)}`;
+    }
+
+    record(
+      !foundAtDepth0 && foundAtDefault,
+      "a marker query at depth 0 searches only the root; the default depth reaches a deep control",
+      `"${target}" at depth 0 -> ${depth0Detail}; at default depth -> ${defaultDetail}`
+    );
+  }
+
+  // --- 11. A UNIQUE_ID marker matches a substring, exactly as a label does. -
+  // Measured, not assumed, and the measurement contradicts the code:
+  // `findByIdentifier` (index.ts ~172) is written as "exact, where a label is a
+  // substring that can drift onto something else". It is not exact. The
+  // companion's own refusal reads `found no element whose AXUniqueId contains
+  // "..."`, and a marker of "lainSwitch" — not even a prefix — resolves to
+  // `PlainSwitch`.
+  //
+  // Two call sites ride on this. `findByLabel` falls back to an identifier
+  // lookup when the label misses (index.ts ~274), so a caller's partial name
+  // can silently resolve an identifier it never spelled out; and `tap`'s toggle
+  // read-back re-reads by identifier, which lands on the first element whose
+  // identifier *contains* the one asked for rather than necessarily the one
+  // tapped. Both resolve first-hit-in-tree-order (check 2), so neither can
+  // report the ambiguity. If upstream ever makes UNIQUE_ID exact this goes red;
+  // that would be a safer world, but the fake and those two sites have to be
+  // told about it rather than find out in production.
+  //
+  // The control case is what stops this proving nothing: an exact identifier
+  // must resolve too, or a substring miss would look the same as a broken query.
+  {
+    const probe = async (value) => {
+      try {
+        const hit = await marker(client, value, Key.UNIQUE_ID);
+        return { label: hit?.elements?.AXLabel ?? null };
+      } catch (e) {
+        return { error: e.message.slice(0, 120) };
+      }
+    };
+    // A strict substring: no prefix or suffix match can explain a hit on this.
+    const partial = await probe("lainSwitch");
+    const exact = await probe("PlainButton");
+    record(
+      partial.label === "Plain Switch" && exact.label === "Plain Button",
+      "a UNIQUE_ID marker matches a substring, not just an exact identifier",
+      `"lainSwitch" (strictly inside PlainSwitch) -> ${JSON.stringify(partial.label ?? partial.error)}; ` +
+        `exact "PlainButton" -> ${JSON.stringify(exact.label ?? exact.error)}`
+    );
+  }
+
+  // --- 12. The action API reports an unreachable element with "found no
+  // element" too — the same wording a read uses (check 7). ------------------
+  // `AccessibilityActionRequest` has no `backend` field, so an action always
+  // runs on the default backend: the one blind to toolbar and nav-bar contents
+  // (check 4). A toolbar switch is therefore findable through AXBridge and not
+  // activatable, and `ui_tap {label}` depends on recognising exactly this to
+  // fall back to a real touch. If the wording drifts, an unreachable element
+  // becomes an opaque gRPC failure and a toolbar switch stops being tappable by
+  // name — the failure mode check 7 guards against on the read path.
+  //
+  // The reachable half is what separates "unreachable" from "broken": Plain
+  // Button is activated the same way, and its only effect is the fixture's own
+  // status label.
+  {
+    const act = (value) =>
+      new Promise((resolve, reject) => {
+        client.client.accessibilityAction(
+          idb.AccessibilityActionRequest.fromPartial({
+            marker: value,
+            matchKey: Key.LABEL,
+            depth: 50,
+            tap: {},
+          }),
+          (err, res) => (err ? reject(err) : resolve(res))
+        );
+      });
+
+    let unreachable = null;
+    try {
+      await act("Toolbar Switch");
+    } catch (e) {
+      unreachable = e.message;
+    }
+    let reachable = null;
+    let reachableError = null;
+    try {
+      reachable = await act("Plain Button");
+    } catch (e) {
+      reachableError = e.message.slice(0, 120);
+    }
+    record(
+      unreachable !== null && /found no element/i.test(unreachable) && !reachableError,
+      'an action on an element the default backend cannot reach fails with "found no element"',
+      `"Toolbar Switch" -> ${JSON.stringify(unreachable ?? "no error was thrown")}; ` +
+        `"Plain Button" (reachable) -> ${reachableError ? `error: ${reachableError}` : JSON.stringify(reachable ?? null)}`
     );
   }
 

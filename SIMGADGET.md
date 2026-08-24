@@ -127,7 +127,8 @@ Concretely, out of today's `src/index.ts`:
   `waitUntilDriveable`, `restartSimulatorBridge`,
   `diagnoseEmptyAccessibilityTree`) **and the udid-keyed state that binds
   them** (`hasAnsweredAccessibility`, `lastRecoveryAt`, `recoveryInFlight` —
-  these move into the `Simulator` handle, their one honest home),
+  these move into a udid-keyed registry internal to the library, reached
+  through the handle; see the Decisions register for why not per-handle),
   `detectOrientation`, the coordinate transforms' call sites, the tap/swipe/
   type/toggle semantics currently inlined in tool bodies, and the simctl
   lifecycle helpers (`findDevice`, `findDeviceType`, `findLatestRuntime`).
@@ -237,7 +238,7 @@ export class SimGadgetError extends Error {
 export type ErrorCode =
   // environment / companion
   | "unsupported-architecture"   // not Apple Silicon; message names the arch
-  | "companion-download-failed"  // HTTP failure or checksum mismatch
+  | "companion-download-failed"  // HTTP failure, checksum mismatch, or no readable pin to fetch
   | "companion-start-failed"     // spawned but never bound / never ready
   // simulator lifecycle
   | "simulator-not-found"        // bad udid on attach, or a stale handle after delete()
@@ -361,10 +362,14 @@ export function prefetchCompanion(
 
 One handle per simulator. Not a bag of udid-taking functions (a repeated
 first argument on twenty functions is an object spelled worse) and not a
-god-object facade; the handle is also the one honest home for per-simulator
-state — the orientation hint, the cached portrait point dimensions, and the
-recovery bookkeeping (`hasAnsweredAccessibility`, cooldown timestamps) that
-today live in module-global maps.
+god-object facade; the handle is also the honest home for per-*handle* state:
+the orientation hint, the cached portrait point dimensions, the recording in
+progress. The recovery bookkeeping (`hasAnsweredAccessibility`, cooldown
+timestamps, in-flight recovery dedup) is deliberately **not** per-handle: it
+describes the *simulator*, and two handles on one udid must share one
+recovery attempt — "a wedge looks like several things failing at once" is
+the reason the dedup exists. It lives in a udid-keyed registry internal to
+the library, reached through the handle, cleared by `delete()`.
 
 Handles are deliberately **not deduplicated per udid**: recording state and
 the orientation hint are per-handle, and the MCP's sessions depend on that
@@ -400,8 +405,11 @@ export type TapTarget = { x: number; y: number } | { label: string };
 export interface TapOptions {
   /** Press duration in seconds. A floor of 0.1s is always applied — an
    * instantaneous touch actuates a control about half the time (measured
-   * 5/12; with the floor 12/12) — so passing less changes nothing. Above
-   * ~0.5s UIKit reads it as a long press. */
+   * 5/12; with the floor 12/12) — so passing less changes nothing about the
+   * touch itself. Above ~0.5s UIKit reads it as a long press. Setting it at
+   * all makes a `{label}` tap at a toggle a hold, which is refused with
+   * `ToggleGestureError` even below the floor: asking for a duration is what
+   * marks the caller as wanting a real press. */
   durationSeconds?: number;
   /** Number of taps; 2 = double-tap. Default 1. */
   count?: number;
@@ -478,6 +486,11 @@ export interface RecordingOptions {
 export class Simulator {
   readonly udid: string;
   readonly name: string;
+  /** The model this was created as — `{identifier, name}`, where `name` is
+   * what a person says ("iPhone 16 Pro"). Undefined on an attached handle,
+   * which never resolves one; `listSimulators()` has the identifier at the
+   * cost of a `simctl list`, and the name at no price at all. */
+  readonly deviceType?: DeviceTypeInfo;
   /** How the last boot/waitReady went; set by createSimulator, boot() and
    * waitReady(). Undefined on a fresh attach. */
   readonly lastBoot?: ReadyResult;
@@ -496,6 +509,19 @@ export class Simulator {
    * real frame. Costs nothing when the simulator is already up. This is
    * what the MCP's attach_simulator does after adopting. */
   waitReady(opts?: { budgetMs?: number }): Promise<ReadyResult>;
+
+  /** Where this handle's diagnostics go: today, the wedge recovery's four
+   * lines. Omitted means silent, which is a library's right default — the
+   * server passes its own `vlog`. Set through `createSimulator`,
+   * `attachSimulator` or the constructor. */
+  readonly onLog?: (message: string) => void;
+
+  /** Brings Simulator.app to the front. No boot, no wait — this is what a
+   * session resuming an already-running simulator needs, and `boot()` is
+   * the only other thing that opens the app. Raises whatever window is
+   * showing rather than choosing a device: with several booted, the
+   * frontmost one is not necessarily this handle's. */
+  showWindow(): Promise<void>;
 
   shutdown(): Promise<void>;
 
@@ -660,8 +686,12 @@ thing it cannot. Three classes of state:
 
 - **Portrait point dimensions: cached forever, safely.** A udid's device
   type is fixed at creation; the dimensions are a property of the model.
-  Sourced from the companion's `describe` call (pixels *and* points — cheaper
-  and more direct than deriving them from an accessibility read).
+  Sourced from the companion's `describe` call (pixels *and* points) —
+  **confirmed as deliberate new code**, not a port: today they come from the
+  accessibility root frame. `describe` is cheaper, and it answers from
+  target metadata while the bridge is still silent, so dimensions are
+  available before the simulator is driveable — the accessibility-read
+  source never was. Contract check #9 pins the both-units belief.
 - **Orientation aspect (portrait-family vs landscape-family): re-derived per
   describe, for free.** Every describe returns the root frame; its aspect
   refreshes the hint as a side effect. `rotate()` refreshes it
@@ -707,7 +737,7 @@ equivalent (TESTING_TOOLS.md is the arbiter). The mapping:
 
 | tool | library calls |
 |---|---|
-| `start_simulator` | resume: `sim.state()`; create: `createSimulator({deviceType, name})`, message from `sim.lastBoot` |
+| `start_simulator` | resume: `sim.state()` + `sim.showWindow()`; create: `createSimulator({deviceType, name})`, message from `sim.lastBoot` and `sim.deviceType` |
 | `destroy_simulator` | owned: `sim.delete()`; attached: `sim.releaseCompanion()` + drop from registry |
 | `attach_simulator` | `attachSimulator(udid)` + `sim.state()` check + `sim.waitReady()` |
 | `rotate` | `sim.rotate(o)` → message from `requested` vs `adopted` |
@@ -940,3 +970,70 @@ phase-by-phase sequencing — is deliberately gone; git has it.
   55s honest-return behaviour (return the UDID, say "poll") is built on
   exactly this, and it predates the library for a measured reason: an MCP
   client cancels a long call, and a cancelled call tells the caller nothing.
+- **Recovery state is udid-keyed, not per-handle** (decided 2026-08-16,
+  resolving a contradiction between "state moves into the handle" and
+  "handles are not deduplicated"). `hasAnsweredAccessibility`, the recovery
+  cooldown and the in-flight dedup are facts about a simulator; per-handle
+  copies would let two handles on one udid each order a bridge restart —
+  losing the dedup that exists because a wedge presents as several
+  simultaneous failures. Internal registry, reached through the handle,
+  behind the deps seam (so tests drive the cooldown via a fake clock),
+  cleared by `delete()`.
+- **Portrait point dimensions come from `describe`** (decided 2026-08-16) —
+  the one piece of the coordinate contract that is new code rather than a
+  port. See the contract section; contract check #9 is its gate.
+- **The wedge recovery reports itself through an injected `onLog`** (decided
+  2026-08-24, closing TODO #100). The recovery restarts a service inside the
+  guest, waits, and retries the caller's read; the old server narrated all four
+  outcomes through `vlog`, and the port dropped them because a library writing
+  to somebody else's stderr uninvited is not acceptable. Silence was worse: the
+  restart, the cooldown's refusal and an outright failure had no observable at
+  all, and TESTING_SERVER.md's "no restart for an empty point" step was
+  checking for the absence of a line nothing could ever write. So the sink is
+  the caller's to supply — `CreateOptions.onLog`, `AttachOptions.onLog`, or
+  `HandleOptions` at the constructor — the library stays silent by default, and
+  `simgadget-mcp` passes its `vlog`. The refusal line lives where the decision
+  is actually made (`shouldRecover`, one turn before the cure is asked for),
+  not where the old server happened to print it.
+- **`os: ["darwin"]` stays on the server, comes off the library, and CI
+  installs with `--force`** (decided 2026-08-24, forced by the first push, and
+  corrected once when the first explanation turned out to be wrong).
+
+  The measured behaviour: **npm enforces `os` on every workspace package during
+  `npm ci`, whether or not anything depends on it.** The first attempt assumed
+  the check applied only to a dependency relationship and dropped the field
+  from the library alone; the next run failed identically, naming
+  `simgadget-mcp`. Before the split there was one package, npm does not check a
+  project against itself, and the field sat there costing nothing — so the
+  declaration never changed, only what it now means.
+
+  So the Linux runner needs `--force` regardless, and the field is kept where
+  it earns its place: on `simgadget-mcp`, which is what a person installs, and
+  where a Linux user typing `npm i -g` is better served by an immediate refusal
+  than by a runtime error. It comes off the library on its own merits — a hard
+  `os` on a *library* breaks legitimate install-on-Linux, run-on-macOS
+  workflows and Docker builds — and the correctness it stood in for is already
+  covered better by `assertSupportedArchitecture`, which throws
+  `UnsupportedArchitectureError` at resolve time naming the platform and the
+  remedy. That is the same arrangement the library already has for arm64, where
+  it declares no `cpu` field either.
+- **`deviceType` is a field on the handle, not a lookup** (decided
+  2026-08-21, found by agent A while writing `render.ts`). `start_simulator`'s
+  answer names the model — an agent asks for `"iPhone"` and the reply is where
+  it learns which iPhone it got — and `createSimulator` resolves exactly that
+  on its way to `simctl create` and used to drop it. Nothing downstream can
+  recover the *name* from a udid: `SimInfo` carries `deviceTypeIdentifier`
+  only, and at the cost of a `simctl list`. So the creator keeps what it
+  already knew, and an attached handle says `undefined` rather than paying for
+  a half-answer nobody asked for. Additive: no existing signature changed.
+- **`showWindow()` is on the handle** (decided 2026-08-20, from the step-3
+  planning pass). The MCP's resume path raises the window of a simulator that
+  is already up; before this, the only thing in the library that ran `open -a
+  Simulator.app` was `boot()`, which then charges the full driveability
+  ladder — and `BOOT_SETTLE_MS` is unconditional, so a sub-second resume
+  became an eight-second one on the call an agent makes most after a
+  disconnect. The two alternatives were rejected on the same ground: a fast
+  path in the boot ladder means retiming a wait that sits underneath
+  BOOT_BUG.md's unexplained wedge, and accepting the eight seconds is wrong
+  where users feel it. `boot()` now calls `showWindow()` rather than
+  repeating the line.

@@ -1,4 +1,4 @@
-# Contributing to iOS Multi Simulator MCP
+# Contributing to SimGadget
 
 **Important Note**:
 This is a fork of the original [joshuayoes/ios-simulator-mcp](https://github.com/joshuayoes/ios-simulator-mcp) MCP. The changes this fork makes are fundamentally different to Joshua's intent, so I chose to fork as Open Source ecology intended. If you wish to contribute to this project that is wonderful, but I highly encourage you to see if your contributions can also benefit the original project too. 
@@ -7,10 +7,33 @@ This is a fork of the original [joshuayoes/ios-simulator-mcp](https://github.com
 
 This project is **intentionally simple** and follows these core principles:
 
+### One rule decides where code goes
+
+This repository is two packages — `packages/simgadget`, the library, and
+`packages/simgadget-mcp`, the MCP server built on it — and the rule that keeps
+them apart is short:
+
+> **State keyed by udid belongs to the library. State keyed by session id
+> belongs to the server.**
+
+A simulator's companion connection, its orientation, its recovery bookkeeping
+are facts about a *device*: library. Session ids, the `owned` flag,
+delete-on-exit, tool filtering, transports are facts about *a server*.
+
+Two things fall out of it that are worth knowing before you open a file:
+
+- **The server imports `"simgadget"` and never a deep path.** The library's
+  `exports` map makes a deep path unresolvable, and a test asserts the import
+  stays shallow. If a tool cannot be built from the public API, that is a
+  library API bug to fix in `simgadget` — say so rather than reaching around it.
+- **The 17 tool registrations stay together in `tools.ts`.** They are
+  repetitive and read better side by side. That half of the old single-file
+  rule survives; the rest of it is gone, and [CLAUDE.md](CLAUDE.md#architecture)
+  has the current layout.
+
 ### Simplicity First
 
-- **Single file architecture**: The server and every tool live in `src/index.ts`, to simplify bundling and maintenance. Two narrow exceptions: `src/idb/` (the generated gRPC client and companion process lifecycle) and `src/ax/` (pure tree and coordinate logic, split out so it can be unit tested — see [CLAUDE.md](CLAUDE.md#architecture))
-- **Minimal dependencies**: We keep dependencies minimal to ensure fast installs and small footprint on user machines
+- **Minimal dependencies**: We keep dependencies minimal to ensure fast installs and small footprint on user machines. The library's runtime dependencies are gRPC and protobuf, and nothing else — that is why the MCP SDK and Zod live in a separate package rather than in front of every library user
 - **Standard tooling**: We use `npm` (universally available) and `tsc` (simple, already available) for building
 
 ### Real Use Cases Only
@@ -19,6 +42,32 @@ This project is **intentionally simple** and follows these core principles:
 - We are **not trying to include every possible tool** - additional tools can pollute context windows and confuse AI agents
 - The original use case: Give AI editors the ability to interact with iOS simulators like a user, similar to [playwright-mcp](https://github.com/microsoft/playwright-mcp) for browsers
 - This enables autonomous agent loops where AI can validate its own work in the iOS simulator
+
+### Every action answers with what happened
+
+No success strings. A call that acted says what it did and what it read back;
+a call that failed throws a typed error with a `code` and a payload, and
+nothing anywhere regexes a message. "Absent" is an answer, not an error —
+`findByLabel` and `describePoint` return `null` for a clean miss.
+
+This is not style. Silent success is the bug class this codebase has spent the
+most simulator boots on: a tap delivered to a control that was covered,
+disabled, or scrolled out of view looks exactly like a tap that worked.
+
+### The regression rule
+
+**A newly discovered bug lands three things, not one:**
+
+1. the fix,
+2. a step added or adjusted in [TESTING_TOOLS.md](TESTING_TOOLS.md) that would
+   have caught it against the `testapp/` fixture,
+3. a unit test that catches it in milliseconds.
+
+A unit test is only possible when the broken rule is pure logic. When it is
+not, that is the signal to extract the decision into a pure function first —
+which is exactly how `packages/simgadget/src/ax/recovery.ts` came to exist.
+Every rule in `ax/` traces back to a bug that cost simulator boots to find, and
+this is the difference between tests that validate and tests that decorate.
 
 ### Architectural Stability
 
@@ -33,7 +82,7 @@ Before contributing, ensure you have:
 - **Xcode** and iOS simulators installed
 - An **MCP client** (like Cursor) for testing
 
-You do not install `idb_companion` — the server resolves it itself (env var, then a local build of the vendored submodule, then a pinned download). No Python `fb-idb` and no `brew install idb-companion`; this server talks to the companion directly over gRPC. See [How `idb_companion` is obtained](README.md#how-idb_companion-is-obtained) for the full precedence order, and [Building the companion](#building-the-companion) below if you want the developer path.
+You do not install `idb_companion` — the library resolves it itself (env var, then a local build of the vendored submodule, then a pinned download), and the server gets it through the library. No Python `fb-idb` and no `brew install idb-companion`; this talks to the companion directly over gRPC. See [How `idb_companion` is obtained](README.md#how-idb_companion-is-obtained) for the full precedence order, and [Building the companion](#building-the-companion) below if you want the developer path.
 
 For additional context and references, see [CONTEXT.md](CONTEXT.md) which contains helpful links for MCP development, iOS simulator commands, and security considerations.
 
@@ -45,8 +94,8 @@ For additional context and references, see [CONTEXT.md](CONTEXT.md) which contai
    sha, so clone recursively:
 
    ```bash
-   git clone --recurse-submodules https://github.com/your-username/ios-simulator-mcp.git
-   cd ios-simulator-mcp
+   git clone --recurse-submodules https://github.com/your-username/simgadget.git
+   cd simgadget
    ```
 
    If you already cloned without it, run `git submodule update --init`.
@@ -57,17 +106,22 @@ For additional context and references, see [CONTEXT.md](CONTEXT.md) which contai
    npm install
    ```
 
-3. **Build the project**
+3. **Build the project** — a workspace root, so both packages at once
 
    ```bash
    npm run build
    ```
 
+   Use the root script rather than `npm run build --workspaces`: npm does not
+   order workspace lifecycle scripts by dependency, and `simgadget-mcp`'s `tsc`
+   needs the library's declarations to already exist. The root's `build` is
+   where that order is written down.
+
 4. **Test during development**
 
    ```bash
-   # Watch mode for development
-   npm run watch
+   # Watch mode for development, one package at a time
+   npm run watch --workspace=simgadget-mcp
 
    # Test with MCP inspector
    npm run dev
@@ -77,7 +131,8 @@ For additional context and references, see [CONTEXT.md](CONTEXT.md) which contai
 
 `vendor/idb` is [facebook/idb](https://github.com/facebook/idb) pinned to a
 specific sha. It is the source of two things: the `idb_companion` binary the
-server talks to, and the generated gRPC client and keymap under `src/idb/`.
+library talks to, and the generated gRPC client and keymap under
+`packages/simgadget/src/idb/`.
 
 ### Bumping to a newer idb
 
@@ -146,10 +201,24 @@ To maintain maximum compatibility with the MCP ecosystem, we align our dependenc
 
 ### Current Dependency Strategy
 
-- **`@modelcontextprotocol/sdk`**: Always use the latest stable version
-- **`zod`**: Match the version used by `@modelcontextprotocol/sdk` (currently `^3.23.8`)
-- **`typescript`**: Match the version used by `@modelcontextprotocol/sdk` (currently `^5.5.4`)
-- **`@types/node`**: Match the version used by `@modelcontextprotocol/sdk` (currently `^22.0.2`)
+- **`@modelcontextprotocol/sdk`**: pinned exactly (currently `1.18.2`) —
+  the tool surface is diffed against a captured baseline, and an SDK that
+  changes how a Zod schema becomes JSON Schema turns that test red
+- **`zod`**: match the version used by `@modelcontextprotocol/sdk`
+- **`typescript`**: match the version used by `@modelcontextprotocol/sdk`
+- **`@types/node`**: match the version used by `@modelcontextprotocol/sdk`
+
+Where we currently sit, checked 2026-08-24:
+
+| dep | ours | the SDK's |
+|---|---|---|
+| `zod` | `^3.23.8` | `^3.25 \|\| ^4.0` |
+| `typescript` | `^5.5.4` | `^5.5.4` |
+| `@types/node` | `^22.0.2` | `^22.12.0` |
+
+The two mismatched ranges resolve to versions inside the SDK's, so nothing is
+broken today; they are drift rather than a fault, and the table exists so the
+next person checking does not have to re-derive it.
 
 ### Checking for Updates
 
@@ -192,7 +261,7 @@ npm ls --depth=0
 4. **Verify compatibility**:
    - Test all existing functionality
    - Run through [TESTING_TOOLS.md](TESTING_TOOLS.md), and [TESTING_SERVER.md](TESTING_SERVER.md) if transports or sessions are affected
-   - Ensure no new TypeScript errors
+   - Ensure no new TypeScript errors (`npm run typecheck`)
 
 ### Why This Matters
 
@@ -216,8 +285,10 @@ In such cases, document the deviation and reasoning in the pull request.
 ### Code Style
 
 - Follow the existing TypeScript patterns in the codebase
-- Use the existing error handling patterns with `toError()` and `errorWithTroubleshooting()`
-- Maintain the single-file architecture - server logic and tools stay in `src/index.ts`. Pure logic that could be unit tested belongs in `src/ax/`, which must stay free of dependencies on simulators, companions and the filesystem
+- **Comments explain why, never what.** Nearly every constant here is what it is because a simulator boot was spent finding out the obvious value is wrong; the comment is the evidence
+- In the server, error text comes from `render.ts` — `toError()`, `handleToolError()` and `errorWithTroubleshooting()` — and never from a tool body. It is the only pure part of the server, which is what makes it the only part that can be tested exhaustively
+- In the library, pure logic that can be unit tested belongs in `packages/simgadget/src/ax/`, which must stay free of dependencies on simulators, companions, the filesystem — and on each other
+- Library error messages never name an MCP tool, a GitHub issue URL, or any remedy that assumes a particular host. Hosts render their own guidance from `code` plus payload
 
 ### Adding New Tools
 
@@ -233,7 +304,12 @@ If adding a new tool:
 2. Use proper Zod schemas for input validation
 3. Include comprehensive error handling with troubleshooting links
 4. Use the `--` separator when passing user input to commands (security best practice)
-5. Add the tool to the README.md documentation
+5. Add the tool to the README.md and AGENT_INSTRUCTIONS.md documentation, and a step to TESTING_TOOLS.md
+6. A tool's description and `SERVER_INSTRUCTIONS` are pinned by
+   `packages/simgadget-mcp/test/fixtures/tools-list.baseline.json`, which must
+   never be regenerated. A new tool is a new baseline entry; a *changed*
+   description needs an explicit allowance in `mcp.test.mts` saying what
+   changed and why
 
 ### Dependency Updates in Pull Requests
 
@@ -255,23 +331,55 @@ For more security context, see the command injection resources in [CONTEXT.md](C
 
 ## Testing Requirements
 
-### Unit tests
+Three layers, and they answer different questions. Run them in cost order — a
+cheap failure is worth finding first.
 
-The pure logic in `src/ax/` — pruning rules, label matching, coordinate
-transforms — is unit tested:
+### 1. Unit tests — `npm test`
+
+Both packages: the library's pure logic (pruning rules, label matching,
+coordinate transforms, recovery decisions) and the server's rendering, sessions
+and tool wiring against a fake `Simulator` handle.
 
 ```bash
-npm test
+npm test        # both packages
+npm run typecheck
 ```
 
-No simulator, no build step, well under a second. Run it on every change, and
-extend it whenever you change a rule in `src/ax/`. It needs Node ≥ 22.6, which
-runs the TypeScript directly; the published package still supports Node 18.
+No simulator, no companion, no build step; seconds. **Run it on every change**,
+and extend it whenever you change a rule in `packages/simgadget/src/ax/` or a
+string in `packages/simgadget-mcp/src/render.ts`. It needs Node ≥ 22.6, which
+runs the TypeScript directly; the published packages still support Node 18.
 
-### Manual testing
+The fake handle is **tethered to the real one by the compiler**: it is declared
+as implementing a `Pick<Simulator, …>`, so a signature change in the library
+breaks the test build instead of the server at runtime. Never widen it with
+`any` — that throws the whole guarantee away.
 
-Everything else still needs a real simulator, so **manual testing is required**
-for all changes:
+### 2. The library end-to-end suite — `npm run test:e2e`
+
+```bash
+npm run test:e2e
+```
+
+~110 seconds, unattended, from a cold start. It creates two throwaway
+simulators against the `testapp/` fixture, deletes them in `after()` including
+on failure, and never touches a simulator it did not create. This is the layer
+that answers whether the library actually drives a device — the fake companion
+cannot tell you whether an AXBridge read really does see inside a toolbar. See
+[TESTING_LIBRARY.md](TESTING_LIBRARY.md).
+
+### 3. The companion contract — `npm run check:companion -- <udid>`
+
+Six things this codebase believes about somebody else's binary, none of which
+upstream has promised to keep, and all of which are invisible while they hold.
+**Run it after bumping `companion.lock.json` or the submodule**, before
+trusting the new binary. See TESTING_TOOLS.md Part 5.
+
+### 4. Manual testing
+
+The server as an agent meets it — parity of response text, transports,
+sessions — is not covered by anything cheaper, so **manual testing is required**
+for changes that touch it:
 
 ### Why Manual Testing?
 
@@ -293,9 +401,9 @@ for all changes:
    ```json
    {
      "mcpServers": {
-       "ios-simulator": {
+       "simgadget": {
          "command": "node",
-         "args": ["/full/path/to/your/ios-simulator-mcp/build/index.js"]
+         "args": ["/full/path/to/your/checkout/packages/simgadget-mcp/build/index.js"]
        }
      }
    }
@@ -312,7 +420,7 @@ for all changes:
    - Test all affected functionality
    - Test error conditions
    - Verify the tool works as expected with AI agents
-   - Consider running [TESTING_TOOLS.md](TESTING_TOOLS.md) to ensure existing functionality still works, and [TESTING_SERVER.md](TESTING_SERVER.md) for transport or session changes
+   - Run [TESTING_TOOLS.md](TESTING_TOOLS.md) to ensure existing functionality still works, and [TESTING_SERVER.md](TESTING_SERVER.md) for transport or session changes
 
 ### Required Documentation for Contributions
 
@@ -337,8 +445,10 @@ Include in your pull request:
 
 4. **Update documentation** if needed:
 
-   - Add new tools to README.md
-   - Update any relevant documentation
+   - Add new tools to README.md and AGENT_INSTRUCTIONS.md
+   - Add a step to TESTING_TOOLS.md — required if the change is a bug fix, per
+     the regression rule above
+   - Update any other relevant documentation
 
 5. **Submit a pull request** with:
    - Clear description of the change and motivation
@@ -350,6 +460,10 @@ Include in your pull request:
 
 - Releases are managed through the GitHub releases page
 - The pipeline uses standard `npm publish` commands
+- **Both packages move in lockstep** — same version number, `simgadget`
+  published first because `simgadget-mcp` depends on it at that exact version.
+  This publishes some meaningless server bumps and in exchange nobody ever
+  reasons about version skew
 - Version bumping and release timing are handled by the maintainer
 
 ## Questions or Discussions
@@ -367,4 +481,4 @@ For significant changes or questions:
 - Respect the project's philosophy of intentional simplicity
 - Provide thorough testing and documentation for contributions
 
-Thank you for helping make iOS Simulator MCP better! 🚀
+Thank you for helping make SimGadget better! 🚀

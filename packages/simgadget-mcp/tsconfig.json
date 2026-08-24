@@ -1,0 +1,26 @@
+// Deliberately the same shape as packages/simgadget/tsconfig.json, so both
+// packages are built and type-checked by identical machinery. The comment on
+// `rewriteRelativeImportExtensions` there explains the flag; the reason is the
+// same here, minus the generated-proto part.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "outDir": "./build",
+    "rootDir": "./src",
+    "declaration": true,
+    // Relative imports in `src/` carry a `.ts` extension and this rewrites them
+    // to `.js` on the way out. That is what lets `node --test` run the sources
+    // directly with nothing built first: a `src/` file with ESM syntax is
+    // loaded as ESM, and ESM resolution never guesses an extension, so
+    // `from "./render"` simply does not resolve there.
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "build"]
+}
