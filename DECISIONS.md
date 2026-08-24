@@ -262,8 +262,11 @@ your report rather than implementing something else.
   line being moved is the way it is because a simulator boot was spent finding
   out that the obvious version is wrong. Port the comments too — they are the
   evidence, and they are why the constants are what they are.
-- **Comments explain why, never what.** Match `src/ax/tree.ts` and
-  `src/idb/companionManager.ts` for register. Do not add comments that restate
+- **Comments explain why, never what.** Match
+  `packages/simgadget/src/ax/tree.ts` and
+  `packages/simgadget/src/idb/companionManager.ts` for register. (Paths updated
+  2026-08-24: these were `src/ax/` and `src/idb/` when this was written, and the
+  files moved to the library at step 2. The instruction is unchanged.) Do not add comments that restate
   the code.
 - Verify with `npm run typecheck -w simgadget` and `npm test -w simgadget` from
   the repo root. Both green before you report.

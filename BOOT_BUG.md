@@ -130,7 +130,7 @@ one. Untested here.
    attempt, because a wedged simulator under an agent fails every few hundred
    milliseconds and restarting under each failure would leave the bridge
    permanently mid-restart. The rules are a pure function, `shouldRecover` in
-   [src/ax/recovery.ts](src/ax/recovery.ts), and are unit tested.
+   [packages/simgadget/src/ax/recovery.ts](packages/simgadget/src/ax/recovery.ts), and are unit tested.
 
    The boot wedge is what this file is about, but nothing says the bridge can
    only wedge at boot; before this, a session that wedged mid-run got a clearer
