@@ -759,8 +759,49 @@ Two literals in the document were device-specific and read as mismatches on
 current hardware: the device model in #1 and the x coordinate in #13. Both are
 now written as placeholders with the reason.
 
-**What is left of step 6**: TESTING_SERVER.md — transports,
-two-agents-one-server, and process lifecycle.
+#### Step 6 — TESTING_SERVER.md (2026-08-24)
+
+**Passed**, with one substitution stated plainly: the document opens *"a human
+has to run these… an agent calling tools cannot drive any of it"*, which
+assumes two MCP client windows and Ctrl-C. Sessions live in the server, so two
+`curl` clients with different ids exercise exactly the same state, and a fresh
+connection per request *is* the disconnect case. That substitution is what
+caught both of this run's findings, so it earned itself.
+
+- **Two agents, two simulators, one server** — `agent-a` on an iPhone and
+  `agent-b` on an iPad, started concurrently: different udids, different device
+  types, neither disturbing the other.
+- **Disconnect and resume** — same id, new connection: `Resumed existing
+  simulator…` with the **same udid**, and the fixture still on screen.
+- **Transport selection** — `--stdio` speaks MCP on stdout and logs no
+  listening line; `SIMGADGET_TRANSPORT=http … --stdio` still chose stdio, so
+  the flag beats the environment. The `--http --port 8009` half was
+  deliberately **not** run: binding a port this checkout does not own is
+  against CLAUDE.md's rule, and agent D's unit tests already pin CLI > env >
+  default for all four settings.
+- **Port already in use** — a second server on 8008 answered *"Port 8008 on
+  127.0.0.1 is already in use. Another simgadget-mcp is probably already
+  running…"* and exited **1**, not 0.
+- **Cleanup on exit, all three cases.** Default: the created simulator was gone
+  from `simctl list` after SIGTERM. `SIMGADGET_CLEANUP_ON_EXIT=false`: it
+  survived. **Attached**: a simulator created outside the server survived a
+  shutdown with cleanup *on* — the server deletes only what it owns, which is
+  the case that would cost somebody their afternoon.
+- **An empty point is not a wedged bridge** — `null` in 100 ms with **no
+  restart line in the log**, and the check means something again now that the
+  log can say otherwise (TODO #100). The `null` itself is TODO #92, already
+  known.
+- **Recovering a wedged bridge** — still cannot be induced on demand, as the
+  document says. But the boot-time cure fired twice on real simulators during
+  this run and both restarts are in the daemon log by udid, which is the
+  closest evidence this behaviour has ever had.
+
+**Step 6 is complete.** Its six gate items: both suites and the typecheck
+green, the packed smoke over both tarballs, `check:companion` (twelve checks
+plus `--remote`), `test:e2e` 32/32, TESTING_TOOLS.md and TESTING_SERVER.md.
+Two findings came out of it and both are fixed — the boot ladder's silent cure
+(#100's second half) and the wedge message blaming contention (#102) — plus
+#101 and #99 filed.
 
 ## Implementation order
 
