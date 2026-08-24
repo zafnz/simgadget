@@ -653,7 +653,7 @@ the library.
     packed install is expected to stay green; if it does not, it is the same
     cause and the same fix one layer down.
 
-- [ ] **#100 The wedge recovery went silent in the port, and no row records
+- [x] **#100 FIXED 2026-08-24. The wedge recovery went silent in the port, and no row recorded
   it.** Found 2026-08-24 at step 5, while checking TESTING_SERVER.md's
   "Recovering a wedged accessibility bridge" section against the code it
   describes.
@@ -694,6 +694,29 @@ the library.
   notification fires once per restart (and not at all under the cooldown) is
   microseconds. **TESTING_SERVER.md:** the two annotated sections are where it
   goes back to being an assertion.
+
+
+  **Fixed by an injected sink rather than by the library taking up logging.**
+  `HandleOptions.onLog`, reachable as `CreateOptions.onLog` and
+  `AttachOptions.onLog`; the library stays silent unless a caller asks, and
+  `simgadget-mcp` asks — its registry constructors pass `vlog` to every handle
+  it creates or attaches. All four lines are back verbatim, including the
+  restart-failed one that had no test before.
+
+  **One line moved on purpose.** The cooldown's *"not restarting again"* used
+  to print inside `recoverWedgedAccessibility`. In the library that decision is
+  made a turn earlier by `shouldRecover`, so a line in the old place could
+  never be reached; it now sits in `withAccessibilityRecovery`'s refusal
+  branch, and only when the simulator has answered before — a device that has
+  never answered is booting, not a recovery being refused, and the boot ladder
+  is already narrating that.
+
+  Three unit tests in `reading.test.mts` (527 in the library now): the cure
+  names the simulator, the service and its duration; the cooldown says why it
+  refused; and a read that never wedges says nothing at all — which is the one
+  that keeps TESTING_SERVER's absence check honest. Both TESTING_SERVER
+  sections were rewritten around the restored observable, and row 13 of
+  "Deliberate behaviour changes" records it.
 
 - [ ] **#99 `verify-companion-download.mjs` drives whatever simulator happens
   to be booted.** Noticed 2026-08-24 while running it for step 4: its step 7

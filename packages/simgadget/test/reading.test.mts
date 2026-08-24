@@ -55,6 +55,24 @@ function harness(options: FakeIdbOptions = {}, answered = false): Harness {
   return { sim: new Simulator(UDID, "iPhone", deps), deps, client };
 }
 
+/** A harness whose handle has somewhere to write, so what the cure says out
+ * loud can be asserted rather than assumed. */
+function loggingHarness(
+  options: FakeIdbOptions = {},
+  answered = false
+): Harness & { logged: string[] } {
+  const client = createFakeIdbClient(options);
+  const deps = createFakeDeps({ client });
+  if (answered) deps.recovery.markAnswered(UDID);
+  const logged: string[] = [];
+  return {
+    sim: new Simulator(UDID, "iPhone", deps, { onLog: (m) => logged.push(m) }),
+    deps,
+    client,
+    logged,
+  };
+}
+
 const bridgeRestarts = (deps: FakeDeps) =>
   deps.calls.order.filter((entry) => entry === BRIDGE_RESTART).length;
 
@@ -625,5 +643,68 @@ test("a marker hit is typed the way the tree types it", async (t) => {
 
     const found = await sim.findByIdentifier("PlainSwitch");
     assert.equal((found as Record<string, unknown>).subrole, undefined);
+  });
+});
+
+// ---- what the cure says out loud -------------------------------------------
+
+test("the wedge recovery reports itself to the caller's sink", async (t) => {
+  // TODO #100: the old server logged four lines through `vlog` and the port
+  // dropped them, because a library has no business writing to stderr
+  // uninvited. `onLog` is the caller asking. The lines matter beyond taste:
+  // TESTING_SERVER.md's recovery section has no other observable, and its
+  // companion step -- that an *empty point* orders no restart -- checks for the
+  // absence of one, which a silent recovery turns into a check that cannot
+  // fail.
+  await t.test("names the simulator, the service and how long it took", async () => {
+    const { sim, logged } = loggingHarness(
+      {
+        screen: inOrder(
+          wedgeError(), // the caller's read
+          screenTree(390, 844), // the recovery probe: the bridge is back
+          screenTree(390, 844), // the retry, which works
+          screenTree(390, 844)
+        ),
+      },
+      true
+    );
+
+    await sim.screenSize();
+
+    assert.equal(
+      logged[0],
+      `simulator ${UDID} stopped answering accessibility; restarting com.apple.CoreSimulator.bridge`
+    );
+    assert.match(
+      logged[1] ?? "",
+      new RegExp(`^simulator ${UDID} recovered \\d+s after restarting com\\.apple\\.CoreSimulator\\.bridge$`)
+    );
+  });
+
+  await t.test("says so when the cooldown refuses a second restart", async () => {
+    // The line that stops a reader concluding the cure was never tried.
+    const { sim, logged } = loggingHarness(
+      { screen: () => { throw wedgeError(); } },
+      true
+    );
+
+    await assert.rejects(sim.screenSize());
+    logged.length = 0;
+    await assert.rejects(sim.screenSize());
+
+    assert.match(
+      logged[0] ?? "",
+      new RegExp(`^simulator ${UDID} still not answering \\d+s after a bridge restart; not restarting again$`)
+    );
+  });
+
+  await t.test("a read that never wedges says nothing at all", async () => {
+    // The absence this makes checkable: an empty point read is not a wedge, and
+    // must not order a restart or claim one.
+    const { sim, logged } = loggingHarness({ screen: () => screenTree(390, 844) }, true);
+
+    await sim.screenSize();
+
+    assert.deepEqual(logged, []);
   });
 });

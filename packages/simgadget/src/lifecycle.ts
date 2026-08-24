@@ -34,7 +34,7 @@ import {
 } from "./errors.ts";
 import { realDeps, type SimulatorDeps } from "./internal/deps.ts";
 import { Format } from "./idb/client.ts";
-import { Simulator } from "./simulator.ts";
+import { Simulator, type HandleOptions } from "./simulator.ts";
 
 // ---- Shared types (spec "Shared types" / the Simulator handle) -----------
 //
@@ -109,6 +109,15 @@ export interface CreateOptions {
   /** Budget for boot-and-become-driveable. Default 55_000. Only meaningful
    * with boot: true. */
   budgetMs?: number;
+  /** Where the handle's diagnostics go. Omitted means silent. See
+   * `HandleOptions.onLog`. */
+  onLog?: (message: string) => void;
+}
+
+/** What `attachSimulator` accepts. Adopting a simulator decides nothing about
+ * it, so this is the log sink and nothing else. */
+export interface AttachOptions {
+  onLog?: (message: string) => void;
 }
 
 // ---- Pure extractions -----------------------------------------------------
@@ -340,7 +349,7 @@ export const BOOT_SETTLE_MS = 8_000;
 
 /** The guest service that owns the accessibility bridge, and the one to
  * restart when it wedges — what `remediateSpringBoard` does inside idb. */
-const BRIDGE_SERVICE = "com.apple.CoreSimulator.bridge";
+export const BRIDGE_SERVICE = "com.apple.CoreSimulator.bridge";
 
 /**
  * Budget for the recovery attempt and the probes after it, carved out of the
@@ -575,11 +584,11 @@ export type HandleFactory = (
   udid: string,
   name: string,
   deps: SimulatorDeps,
-  deviceType?: DeviceTypeInfo
+  opts?: HandleOptions
 ) => Simulator;
 
-export const defaultHandleFactory: HandleFactory = (udid, name, deps, deviceType) =>
-  new Simulator(udid, name, deps, deviceType);
+export const defaultHandleFactory: HandleFactory = (udid, name, deps, opts) =>
+  new Simulator(udid, name, deps, opts);
 
 // ---- createSimulator / attachSimulator -------------------------------------
 
@@ -644,7 +653,7 @@ export async function createSimulatorWith(
   // create the simulator, and nothing downstream can recover the model *name*
   // from a udid without another `simctl list` (`SimInfo` carries the
   // identifier, not the name).
-  const handle = makeHandle(udid, deviceName, deps, deviceType);
+  const handle = makeHandle(udid, deviceName, deps, { deviceType, onLog: opts?.onLog });
 
   // `boot: true` (the default) both boots the device and opens Simulator.app
   // — DECISIONS.md #1, settled with the owner: `simctl boot` alone leaves no
@@ -674,7 +683,8 @@ export function createSimulator(opts?: CreateOptions): Promise<Simulator> {
 export async function attachSimulatorWith(
   udid: string,
   deps: SimulatorDeps,
-  makeHandle: HandleFactory = defaultHandleFactory
+  makeHandle: HandleFactory = defaultHandleFactory,
+  opts?: AttachOptions
 ): Promise<Simulator> {
   const device = await findDevice(deps, udid);
   if (!device) {
@@ -683,9 +693,11 @@ export async function attachSimulatorWith(
 
   deps.reopenCompanion(udid);
 
-  return makeHandle(udid, device.name, deps);
+  // No `deviceType`: attaching resolves one from nothing, and a handle that
+  // says `undefined` is more use than one that guesses.
+  return makeHandle(udid, device.name, deps, { onLog: opts?.onLog });
 }
 
-export function attachSimulator(udid: string): Promise<Simulator> {
-  return attachSimulatorWith(udid, realDeps);
+export function attachSimulator(udid: string, opts?: AttachOptions): Promise<Simulator> {
+  return attachSimulatorWith(udid, realDeps, defaultHandleFactory, opts);
 }

@@ -510,6 +510,12 @@ export class Simulator {
    * what the MCP's attach_simulator does after adopting. */
   waitReady(opts?: { budgetMs?: number }): Promise<ReadyResult>;
 
+  /** Where this handle's diagnostics go: today, the wedge recovery's four
+   * lines. Omitted means silent, which is a library's right default — the
+   * server passes its own `vlog`. Set through `createSimulator`,
+   * `attachSimulator` or the constructor. */
+  readonly onLog?: (message: string) => void;
+
   /** Brings Simulator.app to the front. No boot, no wait — this is what a
    * session resuming an already-running simulator needs, and `boot()` is
    * the only other thing that opens the app. Raises whatever window is
@@ -976,6 +982,19 @@ phase-by-phase sequencing — is deliberately gone; git has it.
 - **Portrait point dimensions come from `describe`** (decided 2026-08-16) —
   the one piece of the coordinate contract that is new code rather than a
   port. See the contract section; contract check #9 is its gate.
+- **The wedge recovery reports itself through an injected `onLog`** (decided
+  2026-08-24, closing TODO #100). The recovery restarts a service inside the
+  guest, waits, and retries the caller's read; the old server narrated all four
+  outcomes through `vlog`, and the port dropped them because a library writing
+  to somebody else's stderr uninvited is not acceptable. Silence was worse: the
+  restart, the cooldown's refusal and an outright failure had no observable at
+  all, and TESTING_SERVER.md's "no restart for an empty point" step was
+  checking for the absence of a line nothing could ever write. So the sink is
+  the caller's to supply — `CreateOptions.onLog`, `AttachOptions.onLog`, or
+  `HandleOptions` at the constructor — the library stays silent by default, and
+  `simgadget-mcp` passes its `vlog`. The refusal line lives where the decision
+  is actually made (`shouldRecover`, one turn before the cure is asked for),
+  not where the old server happened to print it.
 - **`os: ["darwin"]` stays on the server, comes off the library, and CI
   installs with `--force`** (decided 2026-08-24, forced by the first push, and
   corrected once when the first explanation turned out to be wrong).

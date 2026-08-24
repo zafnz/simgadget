@@ -53,8 +53,10 @@ export type {
   DeviceTypeInfo,
   ReadyResult,
   CreateOptions,
+  AttachOptions,
 } from "./lifecycle.ts";
 export type {
+  HandleOptions,
   ScreenRead,
   TapTarget,
   TapOptions,

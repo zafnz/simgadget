@@ -123,10 +123,11 @@ Simulators the server created are its responsibility; ones it merely attached to
 idb reports **one** error for two unrelated conditions: an accessibility bridge
 that is not answering, and a point read that found nothing. The second is an
 ordinary answer, and mistaking it for the first would have a caller's bridge
-restarted for tapping an empty patch of screen. Run the server verbose — but see
-TODO #100: recovery no longer logs, so the log half of this check is currently
-vacuous and the **timing** is what carries it. A restart costs seconds; a point
-read that answers in tens of milliseconds did not order one.
+restarted for tapping an empty patch of screen. Run the server verbose: the log
+must stay silent about restarts, and it can now say otherwise — the recovery
+lines were restored under TODO #100, so this absence check means something
+again. The timing corroborates it: a restart costs seconds, and a point read
+that answers in tens of milliseconds did not order one.
 
 1. `start_simulator` with `id: "wedge-test"`, install and launch `testapp/`, then
    `ui_find "Plain Button"` and `ui_describe_point` at the centre of its frame.
@@ -172,18 +173,31 @@ work — check that it cures itself. Any of `ui_tap {label}`, `ui_find`,
 share one path.
 
 **Expected:** the call that triggered it returns its answer rather than an
-error, after a pause of a few seconds. That is the whole observable — see the
-warning below.
+error, after a pause of a few seconds — **and the log says what happened.**
+Run the server with `-v` (or `SIMGADGET_VERBOSE=1`) and watch
+`/tmp/simgadget-daemon.log` for:
 
-> **The recovery is now silent, and this is a finding rather than a design.**
-> The old server logged three lines through `vlog` — `simulator <udid> stopped
-> answering accessibility; restarting com.apple.CoreSimulator.bridge`, `…
-> recovered 11s after restarting …`, and `… a bridge restart; not restarting
-> again` when the cooldown refused. The recovery moved into the library, which
-> has no logging seam and writes none of them, and no row of "Deliberate
-> behaviour changes" records the loss. **TODO #100.** Until that is settled,
-> the only evidence a restart happened is the delay and the eventual answer;
-> the cooldown and the failure path have no observable at all.
+```
+simulator <udid> stopped answering accessibility; restarting com.apple.CoreSimulator.bridge
+simulator <udid> recovered 11s after restarting com.apple.CoreSimulator.bridge
+```
+
+A cure that was refused because one was already tried in the last minute says
+so instead, and this is the line whose absence would otherwise let you conclude
+the cure was never wired up:
+
+```
+simulator <udid> still not answering 12s after a bridge restart; not restarting again
+```
+
+A restart that fails outright reports `bridge restart for <udid> failed: …`.
+
+> The library is silent by default — writing to somebody else's stderr
+> uninvited is not a library's business — so these lines exist because the
+> *server* passes an `onLog` sink when it creates or attaches a handle. They
+> went missing in the port and were restored deliberately (TODO #100); the
+> absence check in "An empty point is not a wedged bridge" below depends on
+> them, and was passing vacuously while nothing could ever be written.
 
 ## Port already in use
 

@@ -23,6 +23,7 @@ import {
   BOOT_READY_TIMEOUT_MS,
   findDevice,
   parseLaunchPid,
+  BRIDGE_SERVICE,
   isAlreadyBootedError,
   isInvalidDeviceError,
   restartSimulatorBridge,
@@ -333,6 +334,20 @@ function toError(input: unknown): Error {
   return new Error(JSON.stringify(input));
 }
 
+/**
+ * What a handle needs beyond its udid, name and dependencies. An options bag
+ * rather than more positional parameters: this is the second thing to be added
+ * here and there will be a third.
+ */
+export interface HandleOptions {
+  /** The model this simulator was created as. `createSimulator` knows it for
+   * free; an attached handle never resolves one. */
+  deviceType?: DeviceTypeInfo;
+  /** Where the handle's own diagnostics go — today, the wedge recovery's.
+   * Omitted means silent, which is what a library should be by default. */
+  onLog?: (message: string) => void;
+}
+
 export class Simulator {
   readonly udid: string;
   readonly name: string;
@@ -441,12 +456,31 @@ export class Simulator {
     udid: string,
     name: string,
     deps: SimulatorDeps,
-    deviceType?: DeviceTypeInfo
+    opts: HandleOptions = {}
   ) {
     this.udid = udid;
     this.name = name;
     this.deps = deps;
-    this.deviceType = deviceType;
+    this.deviceType = opts.deviceType;
+    this.onLog = opts.onLog;
+  }
+
+  /**
+   * Where this handle's diagnostics go, if anywhere.
+   *
+   * Silence is the default and the right one for a library: a `console.error`
+   * a caller did not ask for is a library writing to somebody else's stdout.
+   * But the wedge recovery is the one thing here that acts on its own — it
+   * restarts a service inside the guest, waits, and retries the caller's read
+   * — and it did so invisibly after the port, which cost TESTING_SERVER.md's
+   * recovery section its only observable and turned one of its steps into a
+   * check that could never fail (TODO #100).
+   */
+  private readonly onLog?: (message: string) => void;
+
+  /** One line of diagnostics, dropped when nobody is listening. */
+  private log(message: string): void {
+    this.onLog?.(message);
   }
 
   /** The one writer for `_lastBoot`. Private: `boot()` and `waitReady()` are
@@ -939,12 +973,21 @@ export class Simulator {
     const inFlight = this.deps.recovery.recoveryInFlight(this.udid);
     if (inFlight) return inFlight;
 
+    // Belt and braces: `withAccessibilityRecovery` has already asked
+    // `shouldRecover` the same question, and says so out loud when the answer
+    // is no. This guard stays for any future caller that has not.
     if (this.msSinceRecovery() < RECOVERY_COOLDOWN_MS) return false;
 
+    this.log(
+      `simulator ${this.udid} stopped answering accessibility; restarting ${BRIDGE_SERVICE}`
+    );
+
+    const startedAt = this.deps.now();
     const attempt = (async () => {
       try {
         await restartSimulatorBridge(this.deps, this.udid);
-      } catch {
+      } catch (error) {
+        this.log(`bridge restart for ${this.udid} failed: ${toError(error).message}`);
         return false;
       }
       const deadline = this.deps.now() + RECOVERY_PROBE_TIMEOUT_MS;
@@ -953,6 +996,12 @@ export class Simulator {
         await this.deps.sleep(RECOVERY_PROBE_INTERVAL_MS);
         recovered = await this.accessibilityIsAnswering();
       } while (!recovered && this.deps.now() < deadline);
+      const took = Math.round((this.deps.now() - startedAt) / 1000);
+      this.log(
+        recovered
+          ? `simulator ${this.udid} recovered ${took}s after restarting ${BRIDGE_SERVICE}`
+          : `simulator ${this.udid} did not recover within ${took}s of restarting ${BRIDGE_SERVICE}`
+      );
       return recovered;
     })();
 
@@ -1006,6 +1055,18 @@ export class Simulator {
         cooldownMs: RECOVERY_COOLDOWN_MS,
       });
       if (!decided) {
+        // Say which "no" this is, and only for the cooldown: a device that has
+        // never answered is not a recovery being refused, it is a boot in
+        // progress, and the boot ladder is already narrating that. This is the
+        // line whose absence would let a reader conclude the cure was never
+        // wired up.
+        if (answered) {
+          this.log(
+            `simulator ${this.udid} still not answering ` +
+              `${Math.round(this.msSinceRecovery() / 1000)}s after a bridge restart; ` +
+              `not restarting again`
+          );
+        }
         // A device that has never answered is booting, not broken — the boot
         // ladder owns that case and has its own budget for the same cure — so
         // the default "restarted too recently" wording would be actively

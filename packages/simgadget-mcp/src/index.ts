@@ -34,6 +34,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import fs from "node:fs";
 import path from "node:path";
 
+import { attachSimulator, createSimulator } from "simgadget";
+
 import { assertIdbPathUnset } from "./env.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { registerTools, SERVER_INSTRUCTIONS } from "./tools.ts";
@@ -65,8 +67,18 @@ const vlog = createVlog(config.verbose);
 
 /**
  * Every session this process owns. One registry, deliberately: see the header.
+ *
+ * The constructors are wrapped rather than defaulted so every handle gets
+ * `onLog: vlog`. The wedge recovery is the one thing in the library that acts
+ * on its own — it restarts a service inside the guest and retries the caller's
+ * read — and after the port it did so in silence, which cost TESTING_SERVER.md
+ * its only observable for that behaviour (TODO #100). The library stays silent
+ * by default, as a library should; the server is the caller that asks.
  */
-const sessions = new SessionRegistry();
+const sessions = new SessionRegistry({
+  create: (opts) => createSimulator({ ...opts, onLog: vlog }),
+  attach: (udid) => attachSimulator(udid, { onLog: vlog }),
+});
 
 /**
  * Builds a server carrying the full tool surface over the shared registry.
