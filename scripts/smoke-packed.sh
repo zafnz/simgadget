@@ -43,7 +43,14 @@ echo "packed $LIB_TGZ and $MCP_TGZ"
 
 cd "$WORK"
 npm init -y >/dev/null
-npm install "./$LIB_TGZ" "./$MCP_TGZ" --no-audit --no-fund >/dev/null
+# `--force` bypasses one check and one only: `simgadget-mcp` declares
+# `"os": ["darwin"]`, and this script has to run on the Linux CI runner, where
+# npm would otherwise refuse the install before proving anything. Everything
+# this check exists for is untouched by that -- the module graph resolving
+# outside the repository, the library coming from its tarball rather than the
+# workspace, and the `bin` starting -- and none of it needs macOS. On a Mac the
+# flag is a no-op.
+npm install "./$LIB_TGZ" "./$MCP_TGZ" --force --no-audit --no-fund >/dev/null
 
 # A symlink here means the install reached back into the workspace and the rest
 # of this script would prove nothing about what users receive.
