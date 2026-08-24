@@ -71,7 +71,45 @@ const ALLOWED_DIFFERENCES = {
    * package it actually ships in.
    */
   serverInfoVersion: { was: "2.2.0", now: PACKAGE_VERSION },
+  /**
+   * Row 15: the two output-path descriptions name `SIMGADGET_DEFAULT_OUTPUT_DIR`.
+   * They are the most-read strings the server has — `tools/list` goes to every
+   * agent at connect — and following the old advice earned a deprecation
+   * warning on stderr. The shim keeps the old spelling working; only the
+   * advice moved (TODO #93).
+   */
+  outputDirVariable: {
+    was: "IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR",
+    now: "SIMGADGET_DEFAULT_OUTPUT_DIR",
+    tools: ["screenshot", "record_video"],
+  },
 };
+
+/**
+ * The baseline's tools with the allowlisted substitutions applied, so the
+ * comparison stays a whole-surface `deepEqual` rather than a set of exclusions.
+ * Asserts the baseline really did carry the old spelling: a fixture that had
+ * been regenerated would silently agree with whatever the server now says,
+ * which is the one thing it must never do.
+ */
+function expectedTools(
+  tools: { name: string; description: string; inputSchema: unknown; annotations: unknown }[]
+) {
+  const { was, now, tools: affected } = ALLOWED_DIFFERENCES.outputDirVariable;
+  return tools.map((tool) => {
+    if (!affected.includes(tool.name)) return tool;
+    // The variable is named in the *input schema*'s `output_path` description,
+    // not the tool's own — which is where an agent reads it, and where the
+    // first version of this substitution failed to look.
+    const schema = JSON.stringify(tool.inputSchema);
+    assert.match(
+      schema,
+      new RegExp(was),
+      `the baseline no longer names ${was} in ${tool.name} — has the fixture been regenerated?`
+    );
+    return { ...tool, inputSchema: JSON.parse(schema.split(was).join(now)) };
+  });
+}
 
 // ---- talking to a built server ----------------------------------------------
 
@@ -234,7 +272,7 @@ test("the built server", async (t) => {
           version: ALLOWED_DIFFERENCES.serverInfoVersion.now,
         },
         instructions: BASELINE.instructions,
-        tools: byName(BASELINE.tools),
+        tools: byName(expectedTools(BASELINE.tools)),
       }
     );
   });

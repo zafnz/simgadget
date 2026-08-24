@@ -10,8 +10,11 @@
  *
  * ## What a tool body is allowed to be
  *
- * One library call and one render. That is not a style preference, it is the
- * split rule: the old `ui_tap` body was 215 lines of element resolution,
+ * Mostly one library call and one render, and where a body is more than that
+ * — `start_simulator`'s resume branch, `attach_simulator`'s readiness wait,
+ * `ui_tap`'s choice of target, the two capture tools' path resolution — the
+ * reason is written where it happens. What matters is not the line count but
+ * the boundary: the old `ui_tap` body was 215 lines of element resolution,
  * coordinate transformation, hit-testing and toggle detection, and every one
  * of those lines is now `sim.tap()`, tested against a fake companion in the
  * package next door. **A tool body that starts branching on element types,
@@ -24,9 +27,10 @@
  *    contract and are copied verbatim from the captured baseline.
  *  - **Session lookup**, via the registry, because a session id is a server
  *    concept the library has never heard of.
- *  - **Path resolution**, for the two tools that take an output path: the
- *    library takes absolute paths only and `~/Downloads` is host policy
- *    (DECISIONS.md #12).
+ *  - **Path resolution**, for the two tools that take an output path. The
+ *    library resolves too (DECISIONS.md #12); what it will not do is expand
+ *    `~/` or invent a default directory, because neither is a fact about a
+ *    simulator. Those are host policy and live in `paths.ts`.
  *  - **Rendering**, all of it delegated to `render.ts`.
  *  - **The MCP wire shapes**: a text block, or in `ui_view`'s case a base64
  *    image block, which is the one thing here with no JavaScript use at all.
@@ -663,7 +667,7 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
           .string()
           .max(1024)
           .describe(
-            "File path where the screenshot will be saved. If relative, it uses the directory specified by the `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` env var, or `~/Downloads` if not set."
+            "File path where the screenshot will be saved. If relative, it uses the directory specified by the `SIMGADGET_DEFAULT_OUTPUT_DIR` env var, or `~/Downloads` if not set."
           ),
         type: z
           .enum(["png", "tiff", "bmp", "gif", "jpeg"])
@@ -690,10 +694,11 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
           "Error taking screenshot",
           () =>
             sessions.withSession(id, async ({ sim }) => {
-              // Resolved here and nowhere else: the library takes absolute
-              // paths only, on purpose, because guessing at a caller's home
-              // directory is host policy (DECISIONS.md #12). What crosses into
-              // `simgadget` is always already absolute.
+              // Resolved here because `~/` expansion and the default output
+              // directory are host policy (DECISIONS.md #12). The library
+              // resolves as well, against the process's directory — what it
+              // will not do is guess at a home directory or a default, which
+              // is exactly the difference this call makes.
               const absolutePath = ensureAbsolutePath(output_path);
               await sim.screenshot({ format: type, display, mask, path: absolutePath });
               // Composed rather than echoed. The old server read simctl's own
@@ -718,7 +723,7 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
           .max(1024)
           .optional()
           .describe(
-            `Optional output path. If not provided, a default name will be used. The file will be saved in the directory specified by \`IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR\` or in \`~/Downloads\` if the environment variable is not set.`
+            `Optional output path. If not provided, a default name will be used. The file will be saved in the directory specified by \`SIMGADGET_DEFAULT_OUTPUT_DIR\` or in \`~/Downloads\` if the environment variable is not set.`
           ),
         codec: z
           .enum(["h264", "hevc"])

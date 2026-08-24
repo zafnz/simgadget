@@ -9,12 +9,15 @@
  * a test cannot reach it while it is inlined in a tool body that needs a
  * simulator to run.
  *
- * It is also the whole of the server's side of the file-path contract. The
- * library takes absolute paths only, deliberately: `screenshot({path})` and
- * `startRecording(path)` resolve nothing, because a library has no business
- * guessing at a home directory on its caller's behalf. So `screenshot` and
- * `record_video` run their arguments through here first, and what crosses into
- * `simgadget` is always already absolute.
+ * It is also the whole of the server's side of the file-path contract, and the
+ * line is not where it first appears to be. The library does resolve — both
+ * `screenshot({path})` and `startRecording(path)` call `path.resolve`
+ * (DECISIONS.md #12) — so a relative path reaching it is taken as relative to
+ * the process's own directory. What the library deliberately will *not* do is
+ * guess: `~/` is not expanded, and there is no default directory, because
+ * neither is a fact about a simulator. Both are host policy, so `screenshot`
+ * and `record_video` run their arguments through here first and what crosses
+ * into `simgadget` is already absolute.
  */
 
 import os from "node:os";

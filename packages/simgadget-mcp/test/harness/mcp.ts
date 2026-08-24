@@ -67,9 +67,15 @@ export interface ToolHarness {
 /**
  * Connects a client to a server carrying `sessions`' tools.
  *
- * The server is built the way `index.ts` will build it — same instructions,
- * same `tools` capability — because a `tools/list` that a test diffs against
- * the parity baseline has to be the same list an agent would receive.
+ * The server carries the same `SERVER_INSTRUCTIONS` and the same registrations
+ * `index.ts` gives it, because a `tools/list` a test diffs against the parity
+ * baseline has to be the list an agent would receive.
+ *
+ * It is *not* built identically: this passes `capabilities: { tools: {} }` and
+ * `index.ts` deliberately passes none, because `server.tool()` declares the
+ * capability itself and the baseline came from a server that passed none. The
+ * difference does not reach `tools/list`, which is what is compared here —
+ * `mcp.test.mts` covers the real entry point over stdio.
  */
 export async function connectTools(sessions: SessionRegistry): Promise<ToolHarness> {
   const server = new McpServer(

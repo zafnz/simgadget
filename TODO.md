@@ -484,7 +484,7 @@ the library.
   the expected sentence. There is no such step today, which is why nothing in
   the manual plan would have caught this either.
 
-- [ ] **#93 Two tool descriptions still tell agents to set
+- [x] **#93 FIXED 2026-08-24. Two tool descriptions told agents to set
   `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`, and following that advice earns a
   deprecation warning.** `screenshot`'s `output_path` and `record_video`'s
   `output_path` both name the old variable, verbatim from the baseline — which
@@ -509,6 +509,16 @@ the library.
 
   **Test:** the allowlist entry *is* the test — it names what changed and
   fails if anything else does. No TESTING_TOOLS step: nothing behavioural moves.
+
+
+  **Fixed, and the substitution goes where the string actually is.** The
+  variable is named in the input schema's `output_path` description, not in the
+  tool's own — the first version of the allowlist patched the tool description
+  and both baseline checks stayed red, which is the fixture doing its job.
+  Row 15 of "Deliberate behaviour changes"; `ALLOWED_DIFFERENCES.outputDirVariable`
+  in `mcp.test.mts` and `OUTPUT_DIR_RENAME` in `tools.test.mts`. Both assert the
+  baseline still carries the *old* spelling before substituting, so a
+  regenerated fixture fails rather than agreeing with whatever the server says.
 
 - [ ] **#94 The wedge message lost idb's own text, and no row records it.**
   `clarify()` ended with `\n\nOriginal error: ${message}` (index.ts:730), so the
@@ -557,7 +567,7 @@ the library.
 
 ## Comments that do not match the code
 
-- [ ] **#96 Four claims in the new files that the code contradicts.** None
+- [x] **#96 FIXED 2026-08-24. Four claims in the new files that the code contradicted.** None
   changes behaviour; all four would mislead the next reader, and two of them
   are the kind of thing someone "fixes".
 
@@ -808,6 +818,19 @@ the library.
   Row 14 of "Deliberate behaviour changes". The test asserts the ordering as
   well as the words: `Poll ui_view` must appear before the issues URL, and
   "not expected" must not appear at all.
+
+
+  **All four corrected.** The path one was the interesting half: the library
+  *does* resolve — `path.resolve`, per DECISIONS.md #12 — and what it refuses
+  to do is guess, so `~/` expansion and the default directory are the host
+  policy that lives in `paths.ts`. Both the header and the `screenshot` body
+  now say that rather than "absolute paths only", which was the version someone
+  would eventually have "fixed" by deleting the call. `env.ts` points at
+  `transport.ts` where `parseArgs` actually lives; the harness says plainly
+  that it passes a `tools` capability `index.ts` does not, and why that does
+  not reach the comparison; and `tools.ts`'s rule is stated as the boundary it
+  is — no element resolution, no coordinate maths, no deciding what a toggle
+  is — rather than a line count four of its own bodies exceed.
 
 # TODO — Code review: library rewrite, 2026-08-18
 

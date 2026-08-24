@@ -127,6 +127,19 @@ async function listedTools(sessions = registryOver(new FakeSimulator())) {
  * connect-time surface of that tool, which is precisely what an agent reads
  * and validates against.
  */
+/**
+ * The one authorised difference between a registration and the baseline: the
+ * two output-path descriptions name `SIMGADGET_DEFAULT_OUTPUT_DIR` where the
+ * old server named `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` (row 15, TODO #93).
+ * `mcp.test.mts` carries the same substitution against the built server; this
+ * one keeps the per-tool check honest in the millisecond suite.
+ */
+const OUTPUT_DIR_RENAME = {
+  was: "IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR",
+  now: "SIMGADGET_DEFAULT_OUTPUT_DIR",
+  tools: ["screenshot", "record_video"],
+};
+
 async function assertMatchesBaseline(name: string): Promise<void> {
   const expected = BASELINE.tools.find((tool) => tool.name === name);
   assert.ok(expected, `no baseline entry for ${name} — the fixture has 17 tools`);
@@ -134,8 +147,21 @@ async function assertMatchesBaseline(name: string): Promise<void> {
   const actual = (await listedTools()).get(name);
   assert.ok(actual, `${name} was not registered`);
 
+  // The renamed variable is named in the input schema's `output_path`
+  // description, not in the tool's own description.
+  let inputSchema = expected.inputSchema;
+  if (OUTPUT_DIR_RENAME.tools.includes(name)) {
+    const schema = JSON.stringify(inputSchema);
+    assert.match(
+      schema,
+      new RegExp(OUTPUT_DIR_RENAME.was),
+      `the baseline no longer names ${OUTPUT_DIR_RENAME.was} in ${name} — regenerated?`
+    );
+    inputSchema = JSON.parse(schema.split(OUTPUT_DIR_RENAME.was).join(OUTPUT_DIR_RENAME.now));
+  }
+
   assert.equal(actual.description, expected.description, `${name}: description`);
-  assert.deepEqual(actual.inputSchema, expected.inputSchema, `${name}: inputSchema`);
+  assert.deepEqual(actual.inputSchema, inputSchema, `${name}: inputSchema`);
   assert.deepEqual(actual.annotations, expected.annotations, `${name}: annotations`);
 }
 

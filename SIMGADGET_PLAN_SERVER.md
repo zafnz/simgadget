@@ -1204,6 +1204,7 @@ strings are updated from this table and nowhere else.
 | 12 | `launch_app` now reports the pid it was given | the old regex was anchored at the start of the line and simctl prints the bundle id first, so it matched nothing and *every* successful launch answered without a pid. Fixed in the library (`parseLaunchPid`, found by the e2e 2026-08-17); the server's message was always able to say it |
 | 13 | the wedge recovery's four log lines are back, through an `onLog` sink the server supplies | they were dropped in the port with no row authorising it, and their absence made a TESTING_SERVER absence-check vacuous (TODO #100) |
 | 14 | a boot that outran its budget says "poll ui_view" first and offers the bug report second, instead of asserting the wedge | two simulators booting at once blow the 55s budget routinely, and that is what this fork is for (TODO #102) |
+| 15 | `screenshot` and `record_video` describe their `output_path` in terms of `SIMGADGET_DEFAULT_OUTPUT_DIR` | the old spelling still works through the shim, but following the *advice* earned a deprecation warning, and these are the most-read strings the server has (TODO #93) |
 
 ## Open items — need your call
 

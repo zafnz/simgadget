@@ -178,7 +178,7 @@ hr.hair { border: 0; border-top: 1px solid var(--line); margin: 0; }
 .nav-in { display: flex; align-items: center; gap: 26px; height: 62px; }
 
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 660; letter-spacing: -0.03em; font-size: 1.06rem; }
-.brand svg { width: 24px; height: 24px; flex: none; }
+.brand svg, .brand img { width: 24px; height: 24px; flex: none; }
 .brand .dim { color: var(--ink-3); font-weight: 500; }
 
 .nav-links { display: flex; gap: 22px; margin-left: auto; align-items: center; }

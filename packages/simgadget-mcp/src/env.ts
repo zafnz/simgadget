@@ -28,7 +28,8 @@
  * documented default when neither spelling is set, so "what does an unset
  * TRANSPORT mean" has exactly one answer. The four that a CLI flag can also
  * override — transport, host, port, verbose — are combined with `parseArgs` in
- * `index.ts`, which is the only place that knows a command line exists.
+ * `transport.ts`'s `parseArgs`/`resolveConfig`, which are the only things that
+ * know a command line exists; `index.ts` calls them and nothing more.
  */
 
 /**
