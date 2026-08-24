@@ -1,6 +1,9 @@
-# iOS Simulator MCP - TROUBLESHOOTING
+# SimGadget — Troubleshooting
 
-If you encounter errors or issues using this MCP server, try the following troubleshooting steps before reporting a bug:
+If you hit errors using the `simgadget` library or the `simgadget-mcp` server,
+try these before reporting a bug. Where a step says "the server", the same is
+true of the library — companion resolution is the library's, and the server
+reaches it through the library.
 
 ## 1. Prerequisites
 - **macOS on Apple Silicon Only:** This server only works on macOS with Xcode and iOS simulators installed, and the companion binary is arm64 only.
@@ -10,11 +13,15 @@ If you encounter errors or issues using this MCP server, try the following troub
 
 You do not install it. The server picks the first of these that it finds:
 
-1. `IOS_SIMULATOR_MCP_COMPANION_PATH`, if set — used verbatim.
+1. `SIMGADGET_COMPANION_PATH`, if set — used verbatim.
 2. A local build at `vendor/idb/Build/Distribution/idb_companion` (developer path).
 3. The companion pinned in `companion.lock.json`, downloaded, sha256-verified and
-   cached under `~/Library/Caches/ios-multi-simulator-mcp/companion/<sha256>/`
-   (`IOS_SIMULATOR_MCP_COMPANION_CACHE` overrides the cache root).
+   cached under `~/Library/Caches/simgadget/companion/<sha256>/`
+   (`SIMGADGET_COMPANION_CACHE` overrides the cache root; `$XDG_CACHE_HOME`, if
+   set, moves the default there).
+
+   You can front-run that download: `npx simgadget prefetch` resolves it and
+   prints the absolute path, with progress on stderr.
 
 There is **no fallback to an `idb_companion` on your PATH**, so
 `brew install idb-companion` neither helps nor hurts — it is ignored. This is
@@ -22,10 +29,22 @@ deliberate: an older companion silently ignores request fields it does not
 understand instead of rejecting them, so falling back would give you
 wrong-but-plausible results rather than a clean failure.
 
-**No Python is required either.** This server speaks gRPC to `idb_companion`
-directly, so `pipx install fb-idb` and the `idb` command line tool are not used.
-If you installed `fb-idb` for an older version of this server,
+**No Python is required either.** This speaks gRPC to `idb_companion`
+directly, so `pipx install fb-idb` and the `idb` command line tool are not used
+and never have been since 2.0.0. If you installed `fb-idb` for an older version,
 `pipx uninstall fb-idb` is safe.
+
+`IOS_SIMULATOR_MCP_IDB_PATH` and `SIMGADGET_IDB_PATH` are both **tombstones**:
+either one set throws an explanatory error at startup rather than being
+silently ignored, because there is no `idb` CLI left to point at. Use
+`SIMGADGET_COMPANION_PATH` to select a specific `idb_companion`.
+
+**If you are moving off `ios-multi-simulator-mcp`:** every
+`IOS_SIMULATOR_MCP_*` variable still works, with one deprecation line on stderr
+per variable, and is dropped two releases after the rename. The companion cache
+moved, which orphans an already-downloaded 19 MB companion — it re-downloads
+once, and `~/Library/Caches/ios-multi-simulator-mcp/` is yours to delete
+afterwards.
 
 ## 3. Common Issues & Fixes
 
@@ -37,8 +56,8 @@ If you installed `fb-idb` for an older version of this server,
 - Remember the server will not use a companion on your PATH, so installing one
   with Homebrew will not fix this. See
   [Where idb_companion comes from](#2-where-idb_companion-comes-from).
-- If `IOS_SIMULATOR_MCP_COMPANION_PATH` is set, check it points at a real,
-  executable binary — it is used verbatim, with no fallback.
+- If `SIMGADGET_COMPANION_PATH` is set, check it points at a real, executable
+  binary — it is used verbatim, with no fallback.
 - Otherwise the download is the likely culprit; see the next entry.
 - Note the `idb` Python CLI is **not** used any more; you do not need it.
 
@@ -54,12 +73,12 @@ anything wrong on your machine. Either:
 - Get the file back if your checkout lost it: `git status`, restore it, or
   re-pull. Note that on a development branch where no companion release has been
   published yet, there may be no lock file at all — in that case building the
-  submodule or setting `IOS_SIMULATOR_MCP_COMPANION_PATH` is the expected route,
+  submodule or setting `SIMGADGET_COMPANION_PATH` is the expected route,
   not a broken checkout.
 - Or supply a companion yourself: build the vendored submodule (see
   [CONTRIBUTING.md](CONTRIBUTING.md)) so
   `vendor/idb/Build/Distribution/idb_companion` exists, or point
-  `IOS_SIMULATOR_MCP_COMPANION_PATH` at a binary you trust.
+  `SIMGADGET_COMPANION_PATH` at a binary you trust.
 
 If the lock file *is* present and the download still fails, check network access
 to the pinned URL. A sha256 mismatch is a hard failure by design — the server
@@ -171,9 +190,9 @@ been tried, and the remaining possibilities are:
 **Check which companion you are running.** The last packaged release is **v1.1.8
 (Aug 2022)** — what Homebrew gives you — but idb's source is actively developed
 and its accessibility subsystem has been reworked substantially since. That is
-why this server uses its own pinned companion built from source rather than
+why this uses its own pinned companion built from source rather than
 whatever is on your PATH. If you have overridden it with
-`IOS_SIMULATOR_MCP_COMPANION_PATH`, check that binary's `--version` before
+`SIMGADGET_COMPANION_PATH`, check that binary's `--version` before
 anything else.
 
 **Before you recreate a simulator, please gather diagnostics** so the trigger can
@@ -182,10 +201,13 @@ error, or `xcrun simctl list devices | grep Booted`), then collect:
 
 1. **Companion version and device:**
    ```sh
-   idb_companion --version
-   xcrun simctl list devices | grep <UDID>   # device type + iOS runtime
+   "$(npx simgadget prefetch)" --version      # the companion actually in use
+   xcrun simctl list devices | grep <UDID>    # device type + iOS runtime
    sw_vers                                    # macOS host
    ```
+   `npx simgadget prefetch` prints the path of the companion that would be
+   used, honouring `SIMGADGET_COMPANION_PATH` — which is the one to report,
+   not whatever `idb_companion` your PATH happens to have.
 2. **Whether a fresh companion sees the tree.** This is the key question — if it
    does, the automatic restart should have worked and we want to know why it did
    not:
@@ -200,9 +222,9 @@ error, or `xcrun simctl list devices | grep Booted`), then collect:
    or launched beforehand.
 
 Include all of the above when you [open an
-issue](https://github.com/zafnz/ios-multi-simulator-mcp/issues).
+issue](https://github.com/zafnz/simgadget/issues).
 
 ## 4. Still Stuck?
 - Check the [README](./README.md) for setup and usage instructions.
-- If the problem persists, [open an issue](https://github.com/zafnz/ios-multi-simulator-mcp/issues) and include the error message and steps to reproduce.
+- If the problem persists, [open an issue](https://github.com/zafnz/simgadget/issues) and include the error message and steps to reproduce.
 
