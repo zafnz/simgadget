@@ -1162,6 +1162,7 @@ strings are updated from this table and nowhere else.
 | 11 | a simulator that is gone adds a sentence naming the session and the way back | design rule 5: the library cannot name a tool, so the host does |
 | 12 | `launch_app` now reports the pid it was given | the old regex was anchored at the start of the line and simctl prints the bundle id first, so it matched nothing and *every* successful launch answered without a pid. Fixed in the library (`parseLaunchPid`, found by the e2e 2026-08-17); the server's message was always able to say it |
 | 13 | the wedge recovery's four log lines are back, through an `onLog` sink the server supplies | they were dropped in the port with no row authorising it, and their absence made a TESTING_SERVER absence-check vacuous (TODO #100) |
+| 14 | a boot that outran its budget says "poll ui_view" first and offers the bug report second, instead of asserting the wedge | two simulators booting at once blow the 55s budget routinely, and that is what this fork is for (TODO #102) |
 
 ## Open items — need your call
 

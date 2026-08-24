@@ -762,7 +762,7 @@ the library.
   - Not a regression: the point path is a faithful port, so the old server did
     this too.
 
-- [ ] **#102 `start_simulator` blames the wedge when two simulators boot at
+- [x] **#102 FIXED 2026-08-24. `start_simulator` blamed the wedge when two simulators booted at
   once.** Found 2026-08-24 during the step-6 TESTING_SERVER run, doing the
   thing this fork exists for: two concurrent `start_simulator` calls on one
   machine.
@@ -790,6 +790,24 @@ the library.
     with `{ready: false, recoveryTried: true}` should not assert that the case
     is unexpected. **TESTING_SERVER step:** two concurrent `start_simulator`
     calls, and the answer must not tell the reader to file a bug.
+
+
+  **Fixed in `render.ts`, both places** — `renderStarted` and `renderAttached`
+  said the same thing. The order is now the honest one: *"Its accessibility
+  bridge was restarted and it still had not answered by then. Poll ui_view: a
+  simulator that was merely slow — which is usual when several are booting on
+  one machine — answers within a few more seconds. If it is still silent after
+  that, it is the wedge described at <issues>…"*. The advice that usually works
+  leads; the bug report is conditional on that advice failing.
+
+  **The third occurrence was left alone deliberately.**
+  `AccessibilityUnreadableError{"unrecoverable"}` — booted, answering point
+  queries, tree empty after *both* cures — keeps "that is not expected", because
+  it genuinely never has been. A budget expiring is not that condition.
+
+  Row 14 of "Deliberate behaviour changes". The test asserts the ordering as
+  well as the words: `Poll ui_view` must appear before the issues URL, and
+  "not expected" must not appear at all.
 
 # TODO — Code review: library rewrite, 2026-08-18
 

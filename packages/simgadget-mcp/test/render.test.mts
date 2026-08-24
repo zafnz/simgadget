@@ -473,15 +473,35 @@ test("start_simulator", async (t) => {
     assert.doesNotMatch(rendered, /file a bug/);
   });
 
-  await t.test("one that survived the bridge restart asks for a bug report", () => {
+  await t.test("one that survived the bridge restart says poll first, report second", () => {
+    // TODO #102: this used to open with "which is not expected: that fixes
+    // this in every case seen so far" and send the reader to the issue
+    // tracker. Two simulators booting at once on one machine blow the budget
+    // routinely -- which is the thing this fork exists to do -- and one of the
+    // pair in the step-6 run served a screenshot moments later, so it was
+    // never wedged. The advice that works comes first now, and the bug report
+    // is conditional on the advice failing.
     const rendered = renderStarted({
       deviceName: "qa-a_iphone",
       deviceTypeName: "iPhone 16 Pro",
       udid: "ABC",
       boot: { ...notReady, recoveryTried: true },
     });
-    assert.match(rendered, /file a bug at https:\/\/github\.com/);
+
+    assert.match(rendered, /Poll ui_view/);
+    assert.match(rendered, /several are booting on one machine/);
+    // Still reachable, but as the second branch rather than the headline.
+    assert.match(rendered, /https:\/\/github\.com/);
     assert.match(rendered, /destroy_simulator and start_simulator/);
+    assert.doesNotMatch(
+      rendered,
+      /not expected/,
+      "a busy machine is not evidence of the wedge, and must not be reported as it"
+    );
+    assert.ok(
+      rendered.indexOf("Poll ui_view") < rendered.indexOf("github.com"),
+      "the advice that usually works has to come before the bug report"
+    );
   });
 
   await t.test("resume names the session, the device and the udid", () => {

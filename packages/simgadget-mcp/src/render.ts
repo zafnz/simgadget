@@ -486,11 +486,11 @@ export function renderStarted(args: {
     `Simulator created and booting: "${deviceName}" (${deviceTypeName}, ${udid}), but it has not ` +
     `answered an accessibility read after ${waited}s. ` +
     (boot.recoveryTried
-      ? `Restarting the simulator bridge did not recover it, which is not expected: that fixes this ` +
-        `in every case seen so far. Please ask the user to file a bug at ` +
-        `${ISSUES_URL} with the simulator UDID and this message. ` +
-        `Meanwhile, poll ui_view in case it recovers, or call destroy_simulator and start_simulator to ` +
-        `start over.`
+      ? `Its accessibility bridge was restarted and it still had not answered by then. ` +
+        `Poll ui_view: a simulator that was merely slow — which is usual when several are ` +
+        `booting on one machine — answers within a few more seconds. If it is still silent ` +
+        `after that, it is the wedge described at ${ISSUES_URL}, and worth reporting with ` +
+        `the UDID and this message; call destroy_simulator and start_simulator to start over.`
       : `Poll ui_view until it returns a screenshot.`)
   );
 }
@@ -508,9 +508,10 @@ export function renderAttached(args: {
     `Attached to simulator: "${name}" (${udid}), but it has not answered an ` +
     `accessibility read after ${seconds(boot.waitedMs)}s. ` +
     (boot.recoveryTried
-      ? `Restarting the simulator bridge did not recover it, which is not expected. Please ask the ` +
-        `user to file a bug at ${ISSUES_URL} with the ` +
-        `simulator UDID and this message.`
+      ? `Its accessibility bridge was restarted and it still had not answered by then. Poll ` +
+        `ui_view: one that was merely slow answers within a few more seconds. If it stays ` +
+        `silent, it is the wedge described at ${ISSUES_URL}, and worth reporting with the ` +
+        `UDID and this message.`
       : `Poll ui_view until it returns a screenshot.`)
   );
 }
