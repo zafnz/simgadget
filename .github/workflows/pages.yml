@@ -58,11 +58,16 @@ jobs:
           node-version: 22
           cache: npm
 
+      # --force for the same reason ci.yml and publish.yml carry it: the
+      # workspace still contains the deprecated `ios-multi-simulator-mcp`
+      # wrapper, whose `os: darwin` makes a plain `npm ci` fail EBADPLATFORM on
+      # a Linux runner. Nothing this job does needs macOS.
+      - run: npm ci --force
+
       # `npm run docs` runs TypeDoc with --treatWarningsAsErrors, so a public
       # export that leaks a private type, or a dead {@link}, fails here rather
       # than shipping a broken reference. It writes into website/api/, which the
       # upload step below then picks up along with the rest of the site.
-      - run: npm ci
       - run: npm run docs
 
       - uses: actions/configure-pages@v5
