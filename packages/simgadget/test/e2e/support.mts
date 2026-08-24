@@ -135,7 +135,7 @@ export async function simctlDevices(): Promise<
  * **Never wrap the behaviour under test in this.** A retry around the thing
  * being measured is precisely how a tap that lands eleven times in twelve gets
  * shipped (SIMGADGET_PLAN.md, "Risks": e2e flakiness is a real signal). This
- * exists so that the *setup* for an assertion can be waited for honestly
+ * exists so that the *setup* for an assertion can be waited for
  * instead of guessed at with a sleep, and it throws rather than continuing when
  * the wait does not come good, so a silent near-miss stays impossible.
  */

@@ -43,7 +43,7 @@ your report rather than implementing something else.
    from the spec. The conversion point is `canonicalise`. Until the public type
    lands (plan step 8), import the internal one and leave a comment saying so.
 
-## Handle state — three lifetimes, per the spec's coordinate contract
+## Handle state — three lifetimes, per the spec's coordinate rules
 
 5. **`screenDims: {width, height} | null`** — *logical* dimensions from the most
    recent describe's root frame. This is the port of today's `SimSession.screenDims`.
@@ -216,7 +216,7 @@ your report rather than implementing something else.
     Consequence for the docs step: BOOT_BUG.md's "verbose mode logs it" is
     wrong for a library user and needs a line saying where to look instead.
 
-26. **Step 10 owes contract checks for two unpinned beliefs, not one.**
+26. **Step 10 owes contract checks for two unpinned beliefs.**
     - `UNIQUE_ID` marker matching: exact or substring (item 24).
     - **`accessibility_action` reports an element it cannot reach with "found no
       element".** Check 7 pins that wording for a marker *read*; nothing pins it

@@ -1,6 +1,6 @@
 /**
  * Simulator lifecycle: listing, creating, attaching, and the boot ladder that
- * makes "booted" and "driveable" two different, honestly-reported things.
+ * makes "booted" and "driveable" two different, separately reported things.
  *
  * SIMGADGET_PLAN.md step 2. Ports `findDevice`, `findDeviceType`,
  * `findLatestRuntime`, `waitForBootStatus` and `waitUntilDriveable` from the
@@ -332,7 +332,7 @@ export function shouldAttemptBootRecovery({
  * both happen a minute or more before the accessibility bridge answers;
  * reporting success at that point hands the caller a simulator where every UI
  * call fails, blaming a fullscreen dialog that is not there. Returning
- * honestly at 55s with a udid and "poll" is strictly better than that, and a
+ * at 55s with a udid and "poll" is strictly better than that, and a
  * healthy simulator is ready in ~40s including the boot wait — anything past
  * this is not going to be rescued by waiting a little longer.
  */

@@ -80,7 +80,7 @@ are facts about a *device*: library. Session ids, the `owned` flag,
 delete-on-exit policy, tool filtering, transports are facts about *a server*:
 `simgadget-mcp`.
 
-Two corollaries worth stating, because both have been tested by real changes:
+Two corollaries, both tested by real changes:
 
 - **The server imports only the library's public API.** If a tool cannot be
   built from it, that is a library API bug to fix in `simgadget` — never a
@@ -351,8 +351,8 @@ installed, and an MCP client. Test changes by:
    run cannot
 
 Below all of it: `npm run check:companion -- <udid>` pins what we believe about
-somebody else's binary. A unit test against a fake companion is only worth what
-the fake's fidelity is worth, and that check is the tether.
+somebody else's binary. A unit test against a fake companion is only as good as
+the fake, and that check is what ties the fake to the real binary.
 
 CI (`.github/workflows/ci.yml`) runs the typecheck, both unit suites and the
 packed-install smoke test on every push, on Ubuntu. None of them needs a
@@ -438,7 +438,7 @@ other ports, from this same checkout**, and they are production. So:
 - **Real use cases only**: don't add hypothetical features.
 - **Security first**: always use the `--` separator for user inputs,
   `execFile` with `shell: false`, validate with Zod.
-- **The regression rule**: a newly discovered bug lands **three** things — the
+- **The regression rule**: a newly discovered bug requires **three** things — the
   fix, a step added or adjusted in [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) that would have caught it
   against the fixture, and a unit test that catches it in milliseconds. When the
   broken rule is not expressible purely, that is the signal to extract the
@@ -462,7 +462,7 @@ else is under `docs/`, split by who reads it.
 
 **In the root:**
 
-- **[README.md](README.md)** - The front door: what the two packages are, installation, the library API, the MCP tools, the coordinate contract, configuration
+- **[README.md](README.md)** - The front door: what the two packages are, installation, the library API, the MCP tools, the coordinate rules, configuration
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines, development setup, the vendored idb submodule, dependency management
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and their solutions
 - **[AGENT_INSTRUCTIONS.md](AGENT_INSTRUCTIONS.md)** - What to hand an agent that will be driving the tools
@@ -472,11 +472,10 @@ else is under `docs/`, split by who reads it.
 
 **[docs/devs/](docs/devs/)** — internals, for people changing this code:
 
-- **[SIMGADGET.md](docs/devs/SIMGADGET.md)** - The design spec: the split rule, the full library API with signatures, the error taxonomy, the coordinate contract, the decisions register
+- **[SIMGADGET.md](docs/devs/SIMGADGET.md)** - The design spec: the split rule, the full library API with signatures, the error taxonomy, the coordinate rules, the decisions register
 - **[BOOT_BUG.md](docs/devs/BOOT_BUG.md)** - The accessibility-never-starts wedge: what was ruled out, what was not, and the recovery in place
 - **[TODO.md](docs/devs/TODO.md)** - Open findings, in review batches
 - **[CAMERA.md](docs/devs/CAMERA.md)** - **Proposal, not implemented.** Feeding a static image to the simulator's camera
-- **[WEB_PITCH.md](docs/devs/WEB_PITCH.md)** - Source copy for the marketing site, with every claim traced to something measured here
 
 **[docs/testing/](docs/testing/)** — the test plans:
 

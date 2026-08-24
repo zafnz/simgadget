@@ -339,7 +339,7 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
     // is what keeps it operable by name, and `acted` is how a caller can tell
     // which of the two mechanisms ran.
     //
-    // Position in the journey is load-bearing, per the finding recorded on the
+    // Position in the run is load-bearing, per the finding recorded on the
     // toolbar lookup above: for the first moments after launch the default
     // backend — the only one an action can use — *can* still reach into the
     // toolbar, and an activation would succeed. By here it has stopped, which is

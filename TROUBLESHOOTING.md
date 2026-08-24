@@ -147,8 +147,8 @@ pruning or normalising of ours.
 **Won't be fixed here.** Dropping `enabled` from the tree would remove a field
 that is correct for every *enabled* control, and re-reading each element through
 the other backend would put a second round trip on the path that exists to be
-cheap. Neither is worth it for a field that is wrong only in the direction of
-optimism.
+cheap. Neither is worth it for a field whose only failure is reporting a
+disabled control as enabled.
 
 **In practice this rarely bites**, because `ui_tap {label}` resolves through
 `ui_find`'s backend first and so does see the real value — it refuses to tap a

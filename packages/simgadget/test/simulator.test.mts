@@ -23,7 +23,7 @@ function treeWithFrame(width: number, height: number) {
 }
 
 /** Wide enough that `shouldAttemptBootRecovery` fires and the wait still
- * times out honestly -- same derivation lifecycle.test.mts uses. */
+ * times out cleanly -- same derivation lifecycle.test.mts uses. */
 const TIMEOUT_BUDGET_MS =
   BOOTSTATUS_CAP_MS + BOOT_SETTLE_MS + BRIDGE_RECOVERY_MIN_POLL_MS + RECOVERY_TAIL_MS;
 
@@ -148,7 +148,7 @@ test("Simulator.boot()", async (t) => {
     assert.ok(!deps.calls.run.some((c) => c.cmd === "open"));
   });
 
-  await t.test("times out honestly -- ready:false, never throws", async () => {
+  await t.test("times out cleanly -- ready:false, never throws", async () => {
     const deps = createFakeDeps({
       client: {
         accessibilityInfo: async () => {
@@ -182,7 +182,7 @@ test("Simulator.waitReady()", async (t) => {
     assert.ok(!deps.calls.run.some((c) => c.cmd === "open"));
   });
 
-  await t.test("times out honestly -- ready:false, never throws", async () => {
+  await t.test("times out cleanly -- ready:false, never throws", async () => {
     const deps = createFakeDeps({
       client: {
         accessibilityInfo: async () => {

@@ -64,7 +64,7 @@ test("isDegenerateTree", async (t) => {
     assert.equal(isDegenerateTree([]), true);
   });
 
-  await t.test("a 0x0 root is the wedged-companion signature", () => {
+  await t.test("a 0x0 root means a wedged companion", () => {
     assert.equal(
       isDegenerateTree([{ frame: { x: 0, y: 0, width: 0, height: 0 } }]),
       true

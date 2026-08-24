@@ -90,7 +90,7 @@ const result = await sim.tap({ label: "Sound" });
   and `describePoint` return `null` for a clean miss. Actions that cannot
   proceed without the element throw.
 - **Where there is genuinely nothing to read back** — `swipe`, `typeText` — the
-  return is `void`, and that is honest rather than lazy.
+  return is `void`. The companion acks delivery and knows no more than you do.
 
 ---
 
@@ -117,7 +117,8 @@ newest match wins, default `"iPhone"`), `name`, `boot` (default `true`),
 
 ### Simulator — lifecycle
 
-Verbs in, policy out. Nothing implicit ever destroys a simulator.
+Nothing implicit ever destroys a simulator; ownership and cleanup policy belong
+to the caller.
 
 | Member | Description |
 |---|---|

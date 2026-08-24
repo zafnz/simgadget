@@ -53,9 +53,8 @@ the user's `/tmp/idb`. Installing a system-wide virtual camera that appears in
 the developer's Zoom and QuickTime, from an npm package, is the same concern
 several sizes larger.
 
-The irony is exact: the property that makes CMIO complete — a real device the
-whole OS believes in — is the property that makes it wrong for a per-session
-tool.
+The property that makes CMIO complete — a real device the whole OS believes
+in — is also what makes it wrong for a per-session tool.
 
 **If someone wants the CMIO behaviour anyway**, the cheap answer is to *drive*
 an existing extension rather than ship one. `simcamctl set-source --image
@@ -94,8 +93,9 @@ The trade against CMIO, stated plainly:
 | Coverage | Complete, for free | **Exactly what we hand-write** |
 | Launch path | Unchanged | Must go through `simctl launch` |
 
-Per-session scoping is what we want and CMIO cannot give us. Coverage is what
-we pay for it, and the rest of this document is that bill.
+Per-session scoping is what we want and CMIO cannot give us. The cost is
+coverage: every API surface must be hand-written, and the rest of this document
+itemises that work.
 
 ## What the existing hook gives us to build on
 
@@ -167,7 +167,7 @@ video files. **We want none of that.** For a static image:
   startup, hold one `CVPixelBuffer`, drive a 30 fps timer off it.
 - Delete the host-side frame server entirely — no Mac app, and no
   reimplementation of one in Node.
-- Delete the risk of owning a private wire contract we did not specify, whose
+- Delete the risk of owning a private wire protocol we did not specify, whose
   failure mode is silent black frames rather than an error.
 
 Net change to the dylib: **−90 / +30**. This is the single biggest reason the
@@ -239,22 +239,21 @@ photo capture, QR scan, image picker, one per surface. Call it ~300 lines of
 Swift, on top of every estimate above. Without them there is no way to tell a
 working hook from a broken one.
 
-## The part that has no number
+## The cost with no estimate
 
-Everything above is knowable. This is not.
+The line counts above can be estimated. This part cannot.
 
 The fabrication trick means an app that calls a property we did not override
 dispatches into real AVFoundation on an object that is not real. **We find out
 which properties matter by crashing.** CarGuo's `formats { return @[]; }` is
-that pattern caught mid-stride — stopped at the first thing that worked for
-their demo.
+that pattern — stopped at the first thing that worked for their demo.
 
 So the loop is: run a real app, catch the crash, add the getter, repeat. The
 1,200 lines are writable. How many rounds of that it takes depends entirely on
 which apps get pointed at it, and it will likely dominate the calendar time
 while remaining a minority of the code.
 
-This is the honest argument against the whole approach, and it should be
+This is the strongest argument against the whole approach, and it should be
 weighed before starting rather than discovered halfway.
 
 ## Open questions
@@ -300,8 +299,8 @@ rather than server logic" describes a vendored dylib fairly exactly.~~
 **Superseded 2026-08-24:** that single-file rule is gone, replaced by the split
 rule — state keyed by udid belongs to the library, state keyed by session id to
 the server. A camera hook is udid state, so it lands in `simgadget` and the
-`set_camera` tool renders it in `simgadget-mcp`; the argument this paragraph was
-having no longer needs having. What survives is the second half: a native
+`set_camera` tool renders it in `simgadget-mcp`; the question this paragraph
+argued about no longer arises. What survives is the second half: a native
 toolchain is the kind of change CLAUDE.md says to decide deliberately rather
 than drift into. Hence a document rather than a branch.
 

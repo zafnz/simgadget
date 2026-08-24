@@ -61,7 +61,7 @@ export function transformPointToPortrait(
 /**
  * What a describe's root frame is allowed to say about the hint.
  *
- * The coordinate contract (SIMGADGET.md) splits an orientation into two facts
+ * The coordinate rules (SIMGADGET.md) split an orientation into two facts
  * that keep different company. The *aspect* — portrait-family or
  * landscape-family — is visible in every root frame, so it comes free with any
  * read and there is no excuse for the hint to contradict it. The *chirality* —

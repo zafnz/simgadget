@@ -410,7 +410,7 @@ test("findByLabel's ladder", async (t) => {
 
   await t.test("a screen that cannot be read is still 'not found', not an error", async () => {
     // The tree fallback is best-effort: an error about a backend the caller
-    // never asked for is a worse answer than the honest "no".
+    // never asked for is a worse answer than a plain "not found".
     const { sim } = harness({ screen: () => { throw wedgeError(); } }, true);
 
     assert.equal(await sim.findByLabel("Anything"), null);
