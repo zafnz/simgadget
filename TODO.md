@@ -1069,7 +1069,11 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
 
 ## Housekeeping
 
-- [ ] **#88 Repo hygiene.** `.DS_Store` is untracked and not in `.gitignore`.
+- [x] **#88 DONE 2026-08-24. Repo hygiene.** `.DS_Store` was untracked and not in
+  `.gitignore` — and then two of them were committed anyway and rode into the
+  merge to `main`. Both are untracked now and `.gitignore` has the pattern.
+  Left in history rather than rewritten: they reach no tarball, because every
+  package sets `files`.
   (`companion.lock.json` and `package.json` still pointing at the old repo
   path is **correct** for this phase — plan Risks says so; do not "fix" it.)
   - **Corrected 2026-08-20:** this entry also claimed
