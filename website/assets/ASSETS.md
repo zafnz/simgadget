@@ -8,7 +8,8 @@ finished.
 | `demo.mp4` | ❌ missing — CSS stand-in plays instead | No, but it's the hero |
 | `og-image.png` | ✅ done — rasterised from `og-image.svg` | — |
 | `demo-poster.svg` | ⚠️ placeholder | Only matters once `demo.mp4` exists |
-| `logo.png` | ✅ done — the mark the site and README use | — |
+| `logo.png` | ✅ done — the mark, used in the site nav/footer | — |
+| `banner.png` | ✅ done — 1600×400 README banner, from `banner.svg` | — |
 | `logo-source.png` | ✅ the untrimmed original `logo.png` was delivered as | — |
 | `favicon.png`, `apple-touch-icon.png` | ✅ done — derived from `logo.png` | — |
 | `favicon.svg`, `logo.svg` | ⚪ superseded by the PNG mark, kept unreferenced | — |
@@ -75,6 +76,21 @@ ffmpeg -i /tmp/demo.mov -vf "crop=iw:ih:0:0,scale=600:-2" \
   the stand-in automatically.
 - Replace `demo-poster.svg` with a real first frame (`demo-poster.jpg`,
   same dimensions) and update the `poster=` attribute in `index.html`.
+
+---
+
+## 2a. `banner.png` — the README banner
+
+`banner.svg` is the source, with `logo.png` embedded as a data URI the same way
+the social card does it. 1600 × 400 (4:1): GitHub's README column renders at
+about 900px wide whatever the window size, so the asset is 2x that for retina.
+
+```bash
+rsvg-convert -w 1600 -h 400 website/assets/banner.svg \
+  -o website/assets/banner.png
+```
+
+Judge any change at 900 × 225, not at full size — that is what a reader sees.
 
 ---
 
