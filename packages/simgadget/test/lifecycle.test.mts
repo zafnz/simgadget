@@ -521,6 +521,60 @@ function createFakeCreateDeps(order: string[], overrides: { accessibilityInfo?: 
   });
 }
 
+test("waitUntilDriveable narrates the boot-time cure", async (t) => {
+  // The other half of TODO #100, found by watching two real simulators wedge
+  // and recover during the step-6 TESTING_SERVER run while the log stayed
+  // empty. The mid-session cure lives on the handle and reports itself; this
+  // one lives in the boot ladder, which has no handle — so it takes the sink
+  // as an argument, and `boot()`/`waitReady()` hand it their own.
+  await t.test("says it restarted the bridge, and that the restart is what fixed it", async () => {
+    const logged: string[] = [];
+    let reads = 0;
+    const deps = createFakeDeps({
+      client: {
+        accessibilityInfo: async () => {
+          reads += 1;
+          // Silent until well past the point a healthy device would answer,
+          // which is what makes the ladder reach for the cure.
+          if (reads < 9) throw new Error("no translation object");
+          return treeWithFrame(390, 844);
+        },
+      },
+    });
+
+    // A 25s budget so the fake clock reaches the *tail*, which is the only
+    // place the boot ladder reaches for the cure: `shouldAttemptBootRecovery`
+    // wants the remaining budget under RECOVERY_TAIL_MS and the poll loop
+    // already 8s old. A generous budget never gets there — the first version
+    // of this test used 120s and never armed it.
+    const result = await waitUntilDriveable(deps, "UDID", 25_000, (m) => logged.push(m));
+
+    assert.equal(result.ready, true);
+    assert.equal(result.recoveryTried, true, "the fixture has to reach the cure to be a test of it");
+    assert.equal(
+      logged[0],
+      "simulator UDID has not answered accessibility while booting; restarting com.apple.CoreSimulator.bridge"
+    );
+    assert.match(
+      logged[1] ?? "",
+      /^simulator UDID recovered \d+s into the boot, after restarting com\.apple\.CoreSimulator\.bridge$/
+    );
+  });
+
+  await t.test("a boot that never needed the cure says nothing", async () => {
+    const logged: string[] = [];
+    const deps = createFakeDeps({
+      client: { accessibilityInfo: async () => treeWithFrame(390, 844) },
+    });
+
+    const result = await waitUntilDriveable(deps, "UDID", 60_000, (m) => logged.push(m));
+
+    assert.equal(result.ready, true);
+    assert.equal(result.recoveryTried, false);
+    assert.deepEqual(logged, []);
+  });
+});
+
 test("createSimulatorWith", async (t) => {
   await t.test("runs create -> boot -> open -> probe, in that order, and returns a ready handle", async () => {
     const order: string[] = [];

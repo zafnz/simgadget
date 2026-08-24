@@ -469,8 +469,10 @@ async function waitForBootStatus(
 export async function waitUntilDriveable(
   deps: SimulatorDeps,
   udid: string,
-  timeoutMs: number = BOOT_READY_TIMEOUT_MS
+  timeoutMs: number = BOOT_READY_TIMEOUT_MS,
+  onLog?: (message: string) => void
 ): Promise<ReadyResult> {
+  const log = (message: string) => onLog?.(message);
   const started = deps.now();
 
   // Wait on CoreSimulator's own signal first, then leave the device alone for
@@ -503,9 +505,16 @@ export async function waitUntilDriveable(
         // the singleton, so a test's boot does not arm recovery for the next
         // test's simulator (DECISIONS.md #21).
         deps.recovery.markAnswered(udid);
+        const waitedMs = deps.now() - started;
+        if (recoveryTried) {
+          log(
+            `simulator ${udid} recovered ${Math.round(waitedMs / 1000)}s into the boot, ` +
+              `after restarting ${BRIDGE_SERVICE}`
+          );
+        }
         return {
           ready: true,
-          waitedMs: deps.now() - started,
+          waitedMs,
           recovered: recoveryTried,
           recoveryTried,
         };
@@ -528,10 +537,18 @@ export async function waitUntilDriveable(
       })
     ) {
       recoveryTried = true;
+      log(
+        `simulator ${udid} has not answered accessibility while booting; ` +
+          `restarting ${BRIDGE_SERVICE}`
+      );
       try {
         await restartSimulatorBridge(deps, udid);
-      } catch {
+      } catch (error) {
         // Best-effort; the poll loop is the actual readiness test.
+        log(
+          `bridge restart for ${udid} failed: ` +
+            (error instanceof Error ? error.message : String(error))
+        );
       }
     }
 

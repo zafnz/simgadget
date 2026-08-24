@@ -762,6 +762,35 @@ the library.
   - Not a regression: the point path is a faithful port, so the old server did
     this too.
 
+- [ ] **#102 `start_simulator` blames the wedge when two simulators boot at
+  once.** Found 2026-08-24 during the step-6 TESTING_SERVER run, doing the
+  thing this fork exists for: two concurrent `start_simulator` calls on one
+  machine.
+
+  Both exceeded the 55s budget, and both answered with the *unexplained-wedge*
+  message — "Restarting the simulator bridge did not recover it, **which is
+  not expected: that fixes this in every case seen so far.** Please ask the
+  user to file a bug…". One of the two then answered `ui_view` immediately
+  afterwards, exactly as the message's own fallback advice suggests, so it was
+  never wedged: it was slow, because two cold boots were competing for one
+  machine.
+
+  **Why it matters:** the message sends an agent to the issue tracker for
+  ordinary contention, and the population it fires on is precisely the fork's
+  reason to exist. It also devalues the real signal — a genuine unexplained
+  wedge now looks like every busy afternoon.
+
+  - **Fix, roughly:** distinguish "the budget ran out" from "the cure was tried
+    and the device still will not answer". `ReadyResult` already carries
+    `recoveryTried` and `recovered`; what it cannot say is whether anything was
+    *making progress*. Cheapest honest change is to soften the wording when
+    another simulator on this machine booted concurrently, or simply to stop
+    claiming "not expected" unless the device was the only one booting.
+  - **Test:** a fake-deps unit test over the message builder — `renderStarted`
+    with `{ready: false, recoveryTried: true}` should not assert that the case
+    is unexpected. **TESTING_SERVER step:** two concurrent `start_simulator`
+    calls, and the answer must not tell the reader to file a bug.
+
 # TODO — Code review: library rewrite, 2026-08-18
 
 Full review of the step-2 library (`packages/simgadget`) against SIMGADGET.md

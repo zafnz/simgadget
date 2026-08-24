@@ -606,7 +606,7 @@ export class Simulator {
 
     await this.showWindow();
 
-    const ready = await waitUntilDriveable(this.deps, this.udid, budgetMs);
+    const ready = await waitUntilDriveable(this.deps, this.udid, budgetMs, (m) => this.log(m));
     this.recordBoot(ready);
     return ready;
   }
@@ -642,7 +642,7 @@ export class Simulator {
   async waitReady(opts?: { budgetMs?: number }): Promise<ReadyResult> {
     this.assertNotDeleted();
     const budgetMs = opts?.budgetMs ?? BOOT_READY_TIMEOUT_MS;
-    const ready = await waitUntilDriveable(this.deps, this.udid, budgetMs);
+    const ready = await waitUntilDriveable(this.deps, this.udid, budgetMs, (m) => this.log(m));
     this.recordBoot(ready);
     return ready;
   }
