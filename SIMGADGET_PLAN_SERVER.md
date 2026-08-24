@@ -653,8 +653,12 @@ rather than by reading:
 3. **TESTING_LIBRARY said "the shipped server has the same bug"** about
    `launchApp`'s pid, in the present tense, citing `src/index.ts:2648`. That
    server is deleted and the bug is fixed; row 12 is where it surfaces now.
-4. **TROUBLESHOOTING's issues URL was `zafnz/ios-multi-simulator-mcp`** — a path
-   this repository has never been at, and one CLAUDE.md now forbids creating. Its
+4. **TROUBLESHOOTING's issues URL was `zafnz/ios-multi-simulator-mcp`**, now
+   `zafnz/simgadget`. (This entry originally called that "a path this repository
+   has never been at" — **corrected on review**: it is precisely where the
+   repository lived until the rename on 2026-08-24, which is why the redirect
+   exists and why CLAUDE.md forbids ever recreating it. The URL was right when
+   it was written and stale by the time it was read.) Its
    bug-report recipe also asked for `idb_companion --version` off the `PATH`,
    which is precisely the binary this project refuses to use, so it reported the
    wrong companion's version.
