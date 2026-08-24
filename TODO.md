@@ -439,8 +439,8 @@ the library.
   one, and the answer does not mention `destroy_simulator`. **Proved
   non-vacuous** — reverting the catch turns it red.
 
-- [ ] **#92 `ui_describe_point` on empty space answers the four characters
-  `null`, where the spec asks for a sentence.** SIMGADGET.md's "The MCP on top"
+- [x] **#92 FIXED 2026-08-24. `ui_describe_point` on empty space answered the four characters
+  `null`, where the spec asked for a sentence.** SIMGADGET.md's "The MCP on top"
   mapping table is explicit: *`ui_describe_point` | `sim.describePoint(x, y)`;
   **null → the "empty or covered" answer**.* SIMGADGET_PLAN.md's deliberate
   change 3 makes the same split — the *library* stops throwing, *"the wedge
@@ -483,6 +483,22 @@ the library.
   that queries a deliberately empty patch (the fixture's background) and states
   the expected sentence. There is no such step today, which is why nothing in
   the manual plan would have caught this either.
+
+
+  **Fixed as the entry proposed**: `renderNoElementAtPoint(x, y)` in
+  `render.ts`, carrying index.ts:341's wording verbatim, returned as a
+  *successful* text result. Row 16 of "Deliberate behaviour changes".
+
+  The half worth keeping in mind is why the sentence says *"the simulator is
+  answering normally"*. idb reports one error for two unrelated conditions — a
+  wedged bridge and an empty point — so a caller told only that a read found
+  nothing cannot tell which it met, or whether a cure is pending. `null` was
+  accurate and answered neither question.
+
+  Both test plans updated: TESTING_SERVER's empty-point step now asserts the
+  sentence rather than warning the reader that `null` is current behaviour, and
+  TESTING_TOOLS' known-open-items block is gone, since #92 and #93 were the two
+  items in it.
 
 - [x] **#93 FIXED 2026-08-24. Two tool descriptions told agents to set
   `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`, and following that advice earns a

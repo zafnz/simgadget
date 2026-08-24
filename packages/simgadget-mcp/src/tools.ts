@@ -69,6 +69,7 @@ import {
   renderDestroyed,
   renderDetectedOrientation,
   renderElement,
+  renderNoElementAtPoint,
   renderNoElementFound,
   renderRecordingStarted,
   renderRecordingStopped,
@@ -444,9 +445,12 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
               // into the companion's portrait space, and the remote-hosted
               // frame correction that follows it, are both inside
               // `describePoint()`. Empty space answers `null` rather than
-              // failing, which JSON renders as `null` exactly as before.
+              // failing — the library's half of deliberate change 3 — and the
+              // sentence a caller reads is this side's half (TODO #92).
               const element = await sim.describePoint(x, y);
-              return textResult(renderElement(element));
+              return textResult(
+                element ? renderElement(element) : renderNoElementAtPoint(x, y)
+              );
             }),
           { sessionId: id }
         )

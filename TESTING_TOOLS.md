@@ -30,15 +30,16 @@ attempted (row 10). **If a reply differs from this document and no row above
 explains it, that is a finding for TODO.md — not a string to bring into line
 mid-run.**
 
-Two known open items, so neither is mistaken for a regression:
+Two items that were open when this document was last revised are now fixed, and
+their fixes are what you should see:
 
-- **TODO #92** — `ui_describe_point` on empty space answers the four characters
-  `null`, where the spec asks for a sentence. There is no step for it below;
-  adding one is part of that fix.
-- **TODO #93** — `screenshot` and `record_video` still *describe* their
-  `output_path` in terms of `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`. Held
-  deliberately until after this run, because those descriptions are pinned by
-  the parity baseline.
+- **TODO #92** — `ui_describe_point` on empty space answers *"No accessibility
+  element at (x, y). The simulator is answering normally, so that point is
+  empty or covered — check the coordinates against ui_describe_all."*, as a
+  successful result. A bare `null` means that fix has been reverted.
+- **TODO #93** — `screenshot` and `record_video` describe their `output_path`
+  in terms of `SIMGADGET_DEFAULT_OUTPUT_DIR`. The old spelling still works
+  through the shim; only the advice moved (deliberate change 15).
 
 **Boot time.** `start_simulator` does not return until the simulator is driveable, so no polling is needed between steps.
 

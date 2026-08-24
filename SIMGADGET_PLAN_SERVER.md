@@ -1205,6 +1205,7 @@ strings are updated from this table and nowhere else.
 | 13 | the wedge recovery's four log lines are back, through an `onLog` sink the server supplies | they were dropped in the port with no row authorising it, and their absence made a TESTING_SERVER absence-check vacuous (TODO #100) |
 | 14 | a boot that outran its budget says "poll ui_view" first and offers the bug report second, instead of asserting the wedge | two simulators booting at once blow the 55s budget routinely, and that is what this fork is for (TODO #102) |
 | 15 | `screenshot` and `record_video` describe their `output_path` in terms of `SIMGADGET_DEFAULT_OUTPUT_DIR` | the old spelling still works through the shim, but following the *advice* earned a deprecation warning, and these are the most-read strings the server has (TODO #93) |
+| 16 | `ui_describe_point` on empty space answers the "empty or covered" sentence, not the four characters `null` | row 5 authorised answering rather than erroring; dropping the sentence with it was never decided (TODO #92) |
 
 ## Open items — need your call
 

@@ -568,15 +568,36 @@ export function renderScreen(read: ScreenRead): string {
 }
 
 /**
- * `ui_find`, and `ui_describe_point`, both of which answer with one element or
- * with nothing. `null` is a normal answer for a point read — empty space is
- * not a failure — and JSON `null` is how the old server said so.
+ * One element, as JSON. Both `ui_find` and `ui_describe_point` answer with
+ * this when they resolve something; each has its own sentence for when they do
+ * not, because "no element with that label" and "nothing at that point" are
+ * different facts and lead to different next moves.
  */
 export function renderElement(element: AXElement | null): string {
   return JSON.stringify(element);
 }
 
 /** `ui_find` when nothing matched: an answer, not an error. */
+/**
+ * `ui_describe_point` on empty space — a normal answer, not a failure, which
+ * is why it is a successful result rather than an error (deliberate change 3:
+ * the library stopped throwing here, and the reporting is the server's).
+ *
+ * The wording is the old server's (index.ts:341), restored: rendering the
+ * library's `null` as the four characters `null` was accurate and useless.
+ * The point of saying "the simulator is answering normally" is that idb
+ * reports *one* error for two unrelated conditions — a wedged bridge and an
+ * empty point — so a caller who has just been told a read failed needs to know
+ * which of the two this was, and that no cure is pending. TODO #92.
+ */
+export function renderNoElementAtPoint(x: number, y: number): string {
+  return (
+    `No accessibility element at (${Math.round(x)}, ${Math.round(y)}). ` +
+    `The simulator is answering normally, so that point is empty or ` +
+    `covered — check the coordinates against ui_describe_all.`
+  );
+}
+
 export function renderNoElementFound(label: string): string {
   return `No element found whose label contains "${label}". Use ui_describe_all to see what is on screen.`;
 }

@@ -142,16 +142,17 @@ that answers in tens of milliseconds did not order one.
    A restart here is the failure this step exists to catch, and it is the whole
    point of the step — the reply's wording is not.
 
-   Today that answer is the four characters `null`. The spec asks for a
-   sentence —
+   The answer is a sentence, and a *successful* result rather than an error:
 
    ```
    No accessibility element at (200, 600). The simulator is answering normally,
    so that point is empty or covered — check the coordinates against ui_describe_all.
    ```
 
-   — and the gap between the two is **TODO #92**, open and undecided. Read
-   `null` as the current behaviour, not as this step failing.
+   "The simulator is answering normally" is the load-bearing half. idb reports
+   one error for both conditions this section is about, so a caller told only
+   that a read found nothing cannot tell whether a cure is pending. A bare
+   `null` here means the fix for TODO #92 has been reverted.
 
 ## Recovering a wedged accessibility bridge
 

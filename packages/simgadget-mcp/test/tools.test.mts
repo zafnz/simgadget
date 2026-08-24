@@ -52,6 +52,7 @@ import {
   renderDestroyed,
   renderDetectedOrientation,
   renderElement,
+  renderNoElementAtPoint,
   renderNoElementFound,
   renderResumed,
   renderRotate,
@@ -734,13 +735,25 @@ test("ui_describe_point", async (t) => {
     }
   });
 
-  await t.test("empty space answers null rather than failing", async () => {
+  await t.test("empty space answers a sentence, and is not a failure", async () => {
+    // Two halves of deliberate change 3, and TODO #92 was the second one
+    // going missing: the *library* stops throwing, and the *server* says what
+    // happened. Rendering the library's `null` as the four characters `null`
+    // was accurate and told a caller nothing — while `ui_find`, the other
+    // absent-is-an-answer tool, explains itself. The sentence matters
+    // particularly here because idb reports one error for both a wedged
+    // bridge and an empty point, so "the simulator is answering normally" is
+    // the half a caller cannot infer.
     const fake = createdFake({ atPoint: null });
     const harness = await connect(await startedRegistry(fake, "qa"));
     try {
-      const { text, isError } = await harness.call("ui_describe_point", { id: "qa", x: 1, y: 1 });
-      assert.equal(isError, false);
-      assert.equal(text, "null");
+      const { text, isError } = await harness.call("ui_describe_point", { id: "qa", x: 201, y: 737 });
+
+      assert.equal(isError, false, "empty space is an answer, not an error");
+      assert.equal(text, renderNoElementAtPoint(201, 737));
+      assert.match(text, /No accessibility element at \(201, 737\)/);
+      assert.match(text, /answering normally/);
+      assert.notEqual(text, "null");
     } finally {
       await harness.close();
     }
