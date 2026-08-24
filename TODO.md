@@ -638,6 +638,22 @@ the library.
     packed install is expected to stay green; if it does not, it is the same
     cause and the same fix one layer down.
 
+- [ ] **#99 `verify-companion-download.mjs` drives whatever simulator happens
+  to be booted.** Noticed 2026-08-24 while running it for step 4: its step 7
+  picks `simctl list devices booted` and attaches to the first result, which on
+  this machine was `whisky-autofill_iphone-16-pro` — a simulator belonging to
+  another session's daemon. Two read-only calls, and it detaches rather than
+  deleting, so nothing was disturbed; but "never touch a simulator you did not
+  create" is a rule this repository states in DECISIONS.md and CLAUDE.md, and
+  the script breaks it by design on any machine where somebody else is working.
+  - **Fix:** create a throwaway simulator the way the e2e suite does and delete
+    it in a `finally`, or require an explicit `--udid` / `--allow-attach` before
+    adopting one it did not create. Skipping when nothing is booted is already
+    the behaviour, so the fallback path exists.
+  - Not urgent — it is a script a human runs deliberately — but it is the kind
+    of thing that eventually deletes somebody's afternoon rather than reading
+    from it.
+
 # TODO — Code review: library rewrite, 2026-08-18
 
 Full review of the step-2 library (`packages/simgadget`) against SIMGADGET.md
