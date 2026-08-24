@@ -734,6 +734,34 @@ the library.
     of thing that eventually deletes somebody's afternoon rather than reading
     from it.
 
+- [ ] **#101 On the home screen, `ui_describe_point` and `ui_describe_all`
+  disagree about the same element's frame.** Found 2026-08-24 during the step-6
+  TESTING_TOOLS run, at step #4, which reads a point on the home screen.
+
+  The Maps widget's image is `{x: 26.67, y: 90.33}` in the tree and
+  `{x: 0.33, y: 0.33}` from the point read — the widget's own local space,
+  untranslated. An agent that reads a frame from a point and taps its centre
+  lands ~26 x 90 points off.
+
+  **It is not the #60 regression, and the app-level case is clean.** Verified in
+  the same run: inside the photo picker both tools report `Cancel` at
+  `{x: 20, y: 92}`, `ui_tap {label: "Cancel"}` lands at (38, 110) and dismisses
+  it, and `Fill Strong Password` reads `y: 715.33` from both tools with the tap
+  landing at 737. The gap is SpringBoard's *own* widgets, which are hosted by a
+  different process again, and which the point path returns raw.
+
+  - **Why it is worth fixing anyway:** two tools disagreeing about one element
+    is the inconsistency #58 and #60 both exist to end, and TESTING_TOOLS #4
+    reads a point on the home screen, so it is reachable from the documented
+    path.
+  - **Fix:** the translation `describeAll` applies for a remote-hosted subtree
+    (`isRemotelyHosted` / the type-83 boundary) has no counterpart on the point
+    path. **Test:** a fake-client unit test in the library — a point answer
+    whose frame is local to a hosting window comes back in screen space —
+    plus a TESTING_TOOLS step comparing the two tools on a home-screen widget.
+  - Not a regression: the point path is a faithful port, so the old server did
+    this too.
+
 # TODO — Code review: library rewrite, 2026-08-18
 
 Full review of the step-2 library (`packages/simgadget`) against SIMGADGET.md

@@ -714,9 +714,53 @@ Standing it up exercised the public API end to end incidentally:
 `installApp` → `launchApp` (pid parsed) → `findByLabel` → `tap({label: "Show
 Picker"})` → `releaseCompanion` → `attachSimulator` → `delete`.
 
-**What is left of step 6 is the half a person has to read**: the full
-TESTING_TOOLS.md run against the fixture, and TESTING_SERVER.md's transports,
-two-agents-one-server and process-lifecycle sections.
+#### Step 6 — TESTING_TOOLS.md, driven end to end (2026-08-24)
+
+**Passed.** Parts 1–4 and 6 against the fixture on a daemon rebuilt from the
+branch; Part 5 is `check:companion`, run earlier the same day. Every reply
+matched the document or matched a row of "Deliberate behaviour changes".
+
+The steps whose failure would have meant the port was wrong, and what they
+actually said:
+
+- `Simulator started: "test-session_iphone" (iPhone 17 Pro, …). Ready after
+  39s.` — `deviceType` reaching an agent, which is what that library change
+  was for.
+- `App com.example.mcptestapp launched successfully with PID: 42480` —
+  deliberate change 12, live. The old server could never print one.
+- **Ownership**: `Detached from simulator: …` for the attached session and
+  `Simulator destroyed: …` for the owner. The two verbs are the check.
+- **Landscape coordinates**: taps computed from a landscape tree at (162, 352)
+  and (776, 46) hit `Toolbar Button` and `Nav Button` — two regions, one
+  transform — and the app reported `interface=landscapeRight
+  device=landscapeLeft`, the documented mirror, with our answer following the
+  device vocabulary.
+- **Remote-hosted views (#60's ground)**: `Fill Strong Password` at
+  `y: 715.33` from *both* tools, tapped at (201, 737), password filled. The
+  regression would have read `y: 239.33`.
+- **The three toggle verbs stayed distinct**: `Toggled Settings Switch off ->
+  on.` (activation), `Tapped "Toolbar Switch" (Switch)` (touch, because the
+  action API cannot reach it), and `Tapped "Split Switch" (StaticText)` with
+  the status line unchanged (a label that is not a control).
+- **The refusals**: a disabled control and a stepper covered by the toolbar
+  both refused, naming the frame and the obstruction — and the three ordinary
+  taps straight afterwards succeeded, so the guard is not over-eager.
+- **Timings** all sit in their documented bands: marker find 30 ms, AXBridge
+  fallback and a miss 330 ms, whole-screen read 280 ms, tap 120 ms, and
+  **point read 20 ms** — the row that would read ~300 ms if `isRemotelyHosted`
+  had started firing on ordinary elements.
+
+**One finding: TODO #101**, a point read on a *home-screen widget* answers in
+the widget's local space while the tree translates it. Not #60 and not a
+regression — the app-level cases above are exactly right — but two tools
+disagreeing about one element, reachable from step #4.
+
+Two literals in the document were device-specific and read as mismatches on
+current hardware: the device model in #1 and the x coordinate in #13. Both are
+now written as placeholders with the reason.
+
+**What is left of step 6**: TESTING_SERVER.md — transports,
+two-agents-one-server, and process lifecycle.
 
 ## Implementation order
 

@@ -55,7 +55,10 @@ start_simulator(id: "test-session", type: "iPhone")
 ```
 
 **Expected:** Simulator is created and driveable —
-`Simulator started: "test-session_iphone" (iPhone 16 Pro, <udid>). Ready after 41s.`
+`Simulator started: "test-session_iphone" (<newest iPhone>, <udid>). Ready after 41s.`
+The model is whatever `simctl` lists first, so it tracks Xcode rather than this
+document — an iPhone 17 Pro here is the same pass as the 16 Pro that was current
+when this was written.
 Note the UDID; later steps need it. Continue straight to the next step.
 
 ### #2 ui_view — home screen
@@ -169,7 +172,7 @@ ui_tap(id: "test-session", label: "Toolbar Button")
 ui_find(id: "test-session", label: "status:")
 ```
 
-**Expected:** `Tapped "Toolbar Button" (Button) at (102, 822).`, then a status label reading `status: tapped Toolbar Button`. The reply names the element it acted on, so a lookup that resolved the wrong thing is visible here rather than in the aftermath. The status label lives in the plain hierarchy, so this confirms the toolbar tap without reading the toolbar.
+**Expected:** `Tapped "Toolbar Button" (Button) at (<x>, 822).` — the x follows the toolbar's layout on the device in front of you (76 on an iPhone 17 Pro, 102 on a 16 Pro); the y and the element named are what matter., then a status label reading `status: tapped Toolbar Button`. The reply names the element it acted on, so a lookup that resolved the wrong thing is visible here rather than in the aftermath. The status label lives in the plain hierarchy, so this confirms the toolbar tap without reading the toolbar.
 
 ### #14 ui_tap — a control that has no label
 
