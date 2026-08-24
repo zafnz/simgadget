@@ -976,6 +976,22 @@ phase-by-phase sequencing — is deliberately gone; git has it.
 - **Portrait point dimensions come from `describe`** (decided 2026-08-16) —
   the one piece of the coordinate contract that is new code rather than a
   port. See the contract section; contract check #9 is its gate.
+- **`os: ["darwin"]` is declared by the server and not by the library**
+  (decided 2026-08-24, forced by the first push). npm enforces `os` on a
+  package it installs *as a dependency*, and does not enforce it on a project
+  or a workspace package for itself. Before the split there was one package and
+  the field was decorative; after it, `simgadget` is a dependency of
+  `simgadget-mcp`, so `npm ci` on Linux refuses the whole install with
+  `EBADPLATFORM` — which is what broke CI, whose whole point is that a
+  typecheck and a fake-driven test suite need no simulator and no macOS.
+  A hard `os` on a *library* also breaks any legitimate install-on-Linux,
+  run-on-macOS workflow, Docker builds included. The correctness it was
+  standing in for is already covered better: `assertSupportedArchitecture`
+  throws `UnsupportedArchitectureError` at resolve time naming the platform and
+  the remedy, which is the same reason the library declares no `cpu` field
+  despite being arm64-only. `simgadget-mcp` keeps the field — nothing depends
+  on it, so it costs nobody an install, and a user typing
+  `npm i -g simgadget-mcp` on Linux is better served by an immediate refusal.
 - **`deviceType` is a field on the handle, not a lookup** (decided
   2026-08-21, found by agent A while writing `render.ts`). `start_simulator`'s
   answer names the model — an agent asks for `"iPhone"` and the reply is where

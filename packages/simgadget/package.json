@@ -28,9 +28,6 @@
   "engines": {
     "node": ">=18"
   },
-  "os": [
-    "darwin"
-  ],
   "main": "build/index.js",
   "bin": {
     "simgadget": "build/cli.js"

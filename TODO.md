@@ -617,6 +617,27 @@ the library.
   Also still true from the library review: **#88's `.DS_Store`** is untracked
   and absent from `.gitignore`.
 
+- [x] **#98 FIXED 2026-08-24. The first push failed CI: `EBADPLATFORM`.**
+  `npm ci` on the Ubuntu runner refused the whole install — *"Unsupported
+  platform for simgadget@0.0.1: wanted {"os":"darwin"} (current:
+  {"os":"linux"})"* — before a single check ran.
+  - **The declaration did not change; its meaning did.** npm enforces `os` on
+    a package installed *as a dependency*, not on a project or a workspace
+    package for itself. One package meant the field was decorative on the
+    runner; two means `simgadget` is a dependency of `simgadget-mcp` and is
+    checked. Nothing about it was visible until the branch was pushed, because
+    every local install is on macOS.
+  - **Fixed by dropping `os` from the library and keeping it on the server**,
+    with the reasoning in SIMGADGET.md's decisions register. The library still
+    refuses non-darwin loudly at resolve time
+    (`assertSupportedArchitecture` → `UnsupportedArchitectureError`, unit
+    tested), which is the same arrangement it already has for arm64 — it
+    declares no `cpu` field either.
+  - **Watch the smoke step on the next run.** The old CI installed a
+    darwin-only tarball on Linux without complaint (run 31915294749), so the
+    packed install is expected to stay green; if it does not, it is the same
+    cause and the same fix one layer down.
+
 # TODO — Code review: library rewrite, 2026-08-18
 
 Full review of the step-2 library (`packages/simgadget`) against SIMGADGET.md
