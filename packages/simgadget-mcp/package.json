@@ -17,6 +17,7 @@
     "type": "git",
     "url": "git+https://github.com/zafnz/simgadget.git"
   },
+  "homepage": "https://simgadget.dev/",
   "keywords": [
     "ios",
     "simulator",
