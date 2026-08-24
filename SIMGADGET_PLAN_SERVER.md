@@ -695,6 +695,29 @@ rather than by reading:
    Not touched — `.gitignore` is not documentation, and this step changed no
    non-`.md` file.
 
+#### Step 6 — the automated half (2026-08-24)
+
+Two of the six gate items are machine-checkable and both pass on the branch as
+it stands:
+
+- **`npm run test:e2e` — 32/32 in 112s**, unattended, from a cold start, over
+  both files. It creates and deletes its own simulators and left none behind.
+- **`npm run check:companion -- <udid>` — all twelve checks pass**, and so does
+  the thirteenth, `--remote`, which needs a sheet on screen and is the
+  machinery behind the one bug on this list that reached production (#60): *a
+  remote-hosted view restarts its coordinate space at a node of type "83"*.
+
+The fixture simulator was **created for the purpose and deleted afterwards**,
+not borrowed from whatever was booted — see #99 for why that is worth saying.
+Standing it up exercised the public API end to end incidentally:
+`createSimulator` (36s to ready, `deviceType.name` = "iPhone 16 Pro") →
+`installApp` → `launchApp` (pid parsed) → `findByLabel` → `tap({label: "Show
+Picker"})` → `releaseCompanion` → `attachSimulator` → `delete`.
+
+**What is left of step 6 is the half a person has to read**: the full
+TESTING_TOOLS.md run against the fixture, and TESTING_SERVER.md's transports,
+two-agents-one-server and process-lifecycle sections.
+
 ## Implementation order
 
 Every commit compiles and passes `npm test` in both packages. When the manual
