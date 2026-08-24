@@ -605,6 +605,92 @@ nonexistent path and reporting a pid.
    shim keeps working, so they are stale rather than broken; they are step 5's,
    and listing them here is how they stay on the list.
 
+#### Step 5 — the docs (2026-08-24)
+
+**Landed.** Fourteen documents, no source. `npm test` 523 + 415, `npm run
+typecheck` clean, `npm run smoke` green over both tarballs — all four run after
+the last commit, which is the check that the docs really were docs.
+`git diff --name-only` over the whole step is `*.md` and nothing else.
+
+**Rewritten rather than amended.** CLAUDE.md — the split rule as the governing
+one, the two packages and what belongs in each, the three server-side file
+splits with the reason each does not generalise, the ten `SIMGADGET_*` variables
+and the shim, the `IDB_PATH` tombstone, the baseline that pins tool
+descriptions, and the three testing layers. Every piece of migration scaffolding
+is gone: the "authoritative on this branch" banner, the "describes `main`"
+markers, the single-file rule. Agent D's operational sections are kept as they
+were. README — the companion and the system dependencies on the first screen,
+then the two packages, the library API with an example that was run, the
+coordinate contract, `prefetchCompanion`, the tools, the configuration table,
+and a Migrating section replacing the 2.0.0 breaking-changes block.
+
+CONTRIBUTING (split rule, regression rule, four testing layers), TESTING_TOOLS,
+TESTING_SERVER, TESTING_LIBRARY, TROUBLESHOOTING, AGENT_INSTRUCTIONS, CONTEXT,
+and one CHANGELOG entry naming the three breaking parts. The historical
+documents were read but not rewritten; three sentences in them that read as live
+instructions were fixed, in DECISIONS.md's struck-through style where a claim
+was superseded rather than merely moved.
+
+**What the code and the docs disagreed about.** Five, all found by checking
+rather than by reading:
+
+1. **The wedge recovery went silent — new, TODO #100, and the one worth a
+   decision.** The old server logged three lines through `vlog` (index.ts:963,
+   969, 989): the restart, the recovery with its elapsed time, and the
+   cooldown's refusal. `recoverWedgedAccessibility` moved into the library,
+   which has **no logging seam** — its only two writers are `env.ts`'s
+   deprecation warning and `companionManager.ts`'s `[simgadget]` prefix — so all
+   three are gone, and no row of "Deliberate behaviour changes" records it. It
+   costs TESTING_SERVER.md's recovery section its entire observable, and it makes
+   the same file's "nothing about restarting anything in the log" check pass
+   *vacuously*. Both sections now say so instead of failing on the day. Not
+   obviously wrong — design rule 5 argues a library should not write to stderr on
+   its own initiative — but that argues for a seam, not for silence.
+2. **Three TESTING_TOOLS strings were abridged rather than wrong**, which is the
+   same hazard as a stale one: #49's obstruction refusal stopped mid-sentence
+   (the string itself is unchanged from index.ts:1928), and #1 and #27
+   paraphrased where the reply is exact. Now quoted in full.
+3. **TESTING_LIBRARY said "the shipped server has the same bug"** about
+   `launchApp`'s pid, in the present tense, citing `src/index.ts:2648`. That
+   server is deleted and the bug is fixed; row 12 is where it surfaces now.
+4. **TROUBLESHOOTING's issues URL was `zafnz/ios-multi-simulator-mcp`** — a path
+   this repository has never been at, and one CLAUDE.md now forbids creating. Its
+   bug-report recipe also asked for `idb_companion --version` off the `PATH`,
+   which is precisely the binary this project refuses to use, so it reported the
+   wrong companion's version.
+5. **CONTRIBUTING's dependency claims had drifted.** It said our `zod`,
+   `typescript` and `@types/node` ranges match the MCP SDK's; two no longer do
+   (SDK wants `zod ^3.25 || ^4.0` and `@types/node ^22.12.0`). Both resolve
+   inside the SDK's range, so nothing is broken — it is now a dated table rather
+   than a claim.
+
+**What step 6 should know before it runs TESTING_TOOLS.md.**
+
+1. **The file opens with a preface naming the four deliberate changes that move
+   a string in it** (rows 5, 9, 10, 12) and the two open items — TODO #92's bare
+   `null` from `ui_describe_point`, and TODO #93's two descriptions still naming
+   `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`. Neither is a regression; both are
+   held deliberately. The rule is stated where the runner meets it: **a reply no
+   row explains is a TODO entry, not a string to correct mid-run.**
+2. **TODO #100 means the wedge sections of TESTING_SERVER.md cannot be run as
+   written**, and both are annotated. If a wedge turns up during the step-6 run,
+   the only evidence is the delay and the eventual answer.
+3. **`npm run test:e2e` and `npm run check:companion -- <udid>` were not run
+   here**, deliberately: both boot simulators, they are step 6 items 3 and 4,
+   and this step changed no code they could have broken. Everything cheaper was
+   run — `npm test`, `npm run typecheck`, `npm run build`, `npm run smoke`,
+   `npm ls`, `npm info`, and `npx simgadget prefetch` against an empty cache,
+   which incidentally re-proves step 4's lockfile: the renamed repo's release
+   URL serves the pinned 19 MB companion and it verifies against its sha256.
+4. **The README's two `npm install` / `npx` lines cannot be verified until step
+   7.** `simgadget` and `simgadget-mcp` are on npm at `0.0.1` as name
+   reservations, and `simgadget-mcp` is still `"private": true`. The lines are
+   written for the published state; they are the one thing in the docs that does
+   not run today.
+5. **`.DS_Store` (#88) is still untracked and still absent from `.gitignore`.**
+   Not touched — `.gitignore` is not documentation, and this step changed no
+   non-`.md` file.
+
 ## Implementation order
 
 Every commit compiles and passes `npm test` in both packages. When the manual
@@ -941,6 +1027,8 @@ particular is read by every session that touches this repo.
   paths, URLs.
 - **CHANGELOG.md**: one entry for the split, naming the breaking bits — the
   client-config server key, the env var names, and the cache re-download.
+
+**Done 2026-08-24.** See "Step 5 — the docs" under "Where the tree stands".
 
 ## Step 6 — verify
 
