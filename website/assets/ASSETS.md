@@ -1,14 +1,17 @@
 # Graphics the site needs
 
-Two things are placeholders. Everything else is real and finished.
+One thing is missing and one is a placeholder. Everything else is real and
+finished.
 
 | Asset | Status | Blocking? |
 |---|---|---|
 | `demo.mp4` | ❌ missing — CSS stand-in plays instead | No, but it's the hero |
-| `og-image.png` | ❌ missing — `og-image.svg` is the source | No, but social links look bare |
+| `og-image.png` | ✅ done — rasterised from `og-image.svg` | — |
 | `demo-poster.svg` | ⚠️ placeholder | Only matters once `demo.mp4` exists |
-| `favicon.svg` | ✅ done | — |
-| `logo.svg` | ✅ done | — |
+| `logo.png` | ✅ done — the mark the site and README use | — |
+| `logo-source.png` | ✅ the untrimmed original `logo.png` was delivered as | — |
+| `favicon.png`, `apple-touch-icon.png` | ✅ done — derived from `logo.png` | — |
+| `favicon.svg`, `logo.svg` | ⚪ superseded by the PNG mark, kept unreferenced | — |
 
 ---
 
@@ -63,7 +66,7 @@ Then crop and encode:
 ```bash
 ffmpeg -i /tmp/demo.mov -vf "crop=iw:ih:0:0,scale=600:-2" \
   -c:v libx264 -crf 24 -preset slow -an -movflags +faststart \
-  website/1/assets/demo.mp4
+  website/assets/demo.mp4
 ```
 
 ### After you add it
@@ -77,14 +80,15 @@ ffmpeg -i /tmp/demo.mov -vf "crop=iw:ih:0:0,scale=600:-2" \
 
 ## 2. `og-image.png` — the social card
 
-`og-image.svg` in this directory is the finished design: the wordmark, the
-headline, the two install commands, on the dark ground. It just needs
-rasterising, because no Open Graph consumer renders SVG.
+`og-image.svg` in this directory is the source: the mark, the wordmark, the
+headline, the two install commands, on the dark ground. `logo.png` is embedded
+in it as a base64 data URI, so the file rasterises standalone. **Re-export
+after editing it**, because no Open Graph consumer renders SVG.
 
 ```bash
 # 1200 × 630, which is what the meta tag already points at
-rsvg-convert -w 1200 -h 630 website/1/assets/og-image.svg \
-  -o website/1/assets/og-image.png
+rsvg-convert -w 1200 -h 630 website/assets/og-image.svg \
+  -o website/assets/og-image.png
 ```
 
 or, without rsvg:
@@ -92,8 +96,8 @@ or, without rsvg:
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless --disable-gpu --window-size=1200,630 --default-background-color=0 \
-  --screenshot=website/1/assets/og-image.png \
-  file://$PWD/website/1/assets/og-image.svg
+  --screenshot=website/assets/og-image.png \
+  file://$PWD/website/assets/og-image.svg
 ```
 
 Check the result renders the system font stack the way you want — if the

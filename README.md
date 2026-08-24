@@ -1,3 +1,5 @@
+<img src="website/assets/logo.png" alt="" align="right" width="120">
+
 # SimGadget — iOS simulator automation for JS/TS and MCP
 
 SimGadget boots simulators, reads the accessibility tree, and taps controls by
