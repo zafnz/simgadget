@@ -65,8 +65,21 @@ jobs:
       - name: Publish simgadget-mcp
         run: npm publish --access public --workspace=simgadget-mcp
 
-      # Last, and only ever to keep old client configs working. It is
-      # deprecated on npm; publishing it again does not undeprecate it, but
-      # `npm deprecate` has to be re-run for each new version.
-      - name: Publish the deprecated ios-multi-simulator-mcp wrapper
-        run: npm publish --access public --workspace=ios-multi-simulator-mcp
+      # Last, and usually a no-op. The wrapper exists only to keep old client
+      # configs working, and it depends on `simgadget-mcp@^3.0.0` — so its
+      # users get every 3.x release without it being republished. Republishing
+      # it would be worse than pointless: `npm deprecate` marks *versions*, so
+      # a fresh version arrives **undeprecated**, silently undoing the notice
+      # that is the package's whole remaining purpose. It is therefore pinned
+      # to the version that carries the notice, and this step publishes it only
+      # if that version is somehow missing from the registry.
+      - name: Publish the deprecated wrapper, only if it is not already there
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./packages/ios-multi-simulator-mcp/package.json').version")"
+          if npm view "ios-multi-simulator-mcp@${VERSION}" version >/dev/null 2>&1; then
+            echo "ios-multi-simulator-mcp@${VERSION} is already published; leaving it, and its deprecation, alone."
+          else
+            npm publish --access public --workspace=ios-multi-simulator-mcp
+            echo "::warning::Published a new wrapper version — re-run 'npm deprecate ios-multi-simulator-mcp' or it is no longer marked deprecated."
+          fi

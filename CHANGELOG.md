@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.0.1
+
+Text that ships to every agent, and comments that would have misled the next
+person to read them. No behaviour changes beyond the wording.
+
+- **`ui_describe_point` on empty space answers a sentence again**, not the four
+  characters `null`: *"No accessibility element at (x, y). The simulator is
+  answering normally, so that point is empty or covered — check the coordinates
+  against ui_describe_all."* It is a successful result, not an error. idb
+  reports one error for both a wedged bridge and an empty point, so "answering
+  normally" is the half a caller cannot work out for itself (TODO #92).
+- **`screenshot` and `record_video` describe their `output_path` in terms of
+  `SIMGADGET_DEFAULT_OUTPUT_DIR`.** The old spelling still works through the
+  shim; following the old *advice* earned a deprecation warning, and these are
+  the most-read strings the server has — `tools/list` goes to every client at
+  connect (TODO #93).
+- Four comments corrected that the code contradicted, one of them load-bearing:
+  the server's path helper said the library "takes absolute paths only", when
+  in fact it resolves and merely declines to *guess* at a home directory or a
+  default. Read literally, the next person to notice `path.resolve` would have
+  deleted the server's call as redundant (TODO #96).
+
+`ios-multi-simulator-mcp` is deliberately **not** republished: it depends on
+`simgadget-mcp@^3.0.0`, so its users get this release anyway, and a new version
+of it would arrive undeprecated.
+
 ## 3.0.0 — SimGadget: two packages, one repository
 
 The simulator-driving code is now a library in its own right, **`simgadget`**,

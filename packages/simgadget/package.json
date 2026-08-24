@@ -1,6 +1,6 @@
 {
   "name": "simgadget",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Drive iOS simulators from JavaScript: accessibility reads, taps that verify they landed, coordinates that survive rotation \u2014 with a current idb_companion resolved for you.",
   "license": "MIT",
   "author": {

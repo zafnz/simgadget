@@ -1,6 +1,6 @@
 {
   "name": "simgadget-mcp",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "MCP server for session-based iOS simulator lifecycle management, enabling multi-agent parallel control. Built on the simgadget library.",
   "license": "MIT",
   "author": {
@@ -45,7 +45,7 @@
     "test": "node --experimental-transform-types --test \"test/*.test.mts\""
   },
   "dependencies": {
-    "simgadget": "^3.0.0",
+    "simgadget": "^3.0.1",
     "@modelcontextprotocol/sdk": "1.18.2",
     "zod": "^3.23.8"
   }
