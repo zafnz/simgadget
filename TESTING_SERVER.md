@@ -16,20 +16,28 @@ HTTP is the default transport, so a plain start is a shared server:
 node packages/simgadget-mcp/build/index.js --port 8008
 ```
 
-**Expected:** logs `iOS Simulator MCP server listening on http://127.0.0.1:8008/mcp`.
+**Expected:** logs `SimGadget MCP server listening on http://127.0.0.1:8008/mcp`.
+
+> `scripts/imsmd.sh` waits for the substring `listening on` in
+> `/tmp/simgadget-daemon.log`. If that sentence is ever reworded, `start` stops
+> waiting and reports success early.
 
 Point clients at it as a remote server — **not** the `command`/`args` stdio form:
 
 ```json
 {
   "mcpServers": {
-    "ios-multi-simulator": {
+    "simgadget": {
       "type": "http",
       "url": "http://127.0.0.1:8008/mcp"
     }
   }
 }
 ```
+
+The server reports itself to clients as `simgadget`; the key above is yours to
+name. A client that still has an `ios-multi-simulator` key pointing at a URL
+works exactly the same — only the display name changed.
 
 ---
 
@@ -115,7 +123,10 @@ Simulators the server created are its responsibility; ones it merely attached to
 idb reports **one** error for two unrelated conditions: an accessibility bridge
 that is not answering, and a point read that found nothing. The second is an
 ordinary answer, and mistaking it for the first would have a caller's bridge
-restarted for tapping an empty patch of screen. Run the server verbose.
+restarted for tapping an empty patch of screen. Run the server verbose — but see
+TODO #100: recovery no longer logs, so the log half of this check is currently
+vacuous and the **timing** is what carries it. A restart costs seconds; a point
+read that answers in tens of milliseconds did not order one.
 
 1. `start_simulator` with `id: "wedge-test"`, install and launch `testapp/`, then
    `ui_find "Plain Button"` and `ui_describe_point` at the centre of its frame.
@@ -125,15 +136,21 @@ restarted for tapping an empty patch of screen. Run the server verbose.
    does nothing.
 2. `ui_describe_point` somewhere empty — `{x: 200, y: 600}` on that screen.
 
-   **Expected:** an error naming the coordinates —
+   **Expected:** an ordinary answer rather than an error (deliberate change 5),
+   in tens of milliseconds, and **nothing about restarting anything in the log**.
+   A restart here is the failure this step exists to catch, and it is the whole
+   point of the step — the reply's wording is not.
+
+   Today that answer is the four characters `null`. The spec asks for a
+   sentence —
 
    ```
    No accessibility element at (200, 600). The simulator is answering normally,
    so that point is empty or covered — check the coordinates against ui_describe_all.
    ```
 
-   — in tens of milliseconds, and **nothing about restarting anything in the
-   log**. A restart here is the failure this step exists to catch.
+   — and the gap between the two is **TODO #92**, open and undecided. Read
+   `null` as the current behaviour, not as this step failing.
 
 ## Recovering a wedged accessibility bridge
 
@@ -154,20 +171,22 @@ work — check that it cures itself. Any of `ui_tap {label}`, `ui_find`,
 `ui_describe_point`, `ui_describe_all` or `ui_view` should recover it, since they
 share one path.
 
-**Expected**, in the verbose log:
+**Expected:** the call that triggered it returns its answer rather than an
+error, after a pause of a few seconds. That is the whole observable — see the
+warning below.
 
-```
-simulator <udid> stopped answering accessibility; restarting com.apple.CoreSimulator.bridge
-simulator <udid> recovered 11s after restarting com.apple.CoreSimulator.bridge
-```
-
-and the call that triggered it returns its answer rather than an error. Two
-things worth checking while you have one: a second tool call during the same
-minute must not order its own restart (`not restarting again` in the log), and a
-recovery that fails must say so rather than hanging.
+> **The recovery is now silent, and this is a finding rather than a design.**
+> The old server logged three lines through `vlog` — `simulator <udid> stopped
+> answering accessibility; restarting com.apple.CoreSimulator.bridge`, `…
+> recovered 11s after restarting …`, and `… a bridge restart; not restarting
+> again` when the cooldown refused. The recovery moved into the library, which
+> has no logging seam and writes none of them, and no row of "Deliberate
+> behaviour changes" records the loss. **TODO #100.** Until that is settled,
+> the only evidence a restart happened is the delay and the eventual answer;
+> the cooldown and the failure path have no observable at all.
 
 ## Port already in use
 
 1. With a server running on 8008, start a second one on the same port.
 
-   **Expected:** it exits with a message naming the port and suggesting `--port`, rather than a raw `EADDRINUSE` stack trace.
+   **Expected:** it exits with a message naming the port and suggesting `--port`, rather than a raw `EADDRINUSE` stack trace — and it exits **1**, not 0. A configuration failure that exits 0 as the event loop drains is indistinguishable from a clean stop to anything supervising the process.

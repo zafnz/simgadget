@@ -595,8 +595,23 @@ the library.
 
 ## Housekeeping
 
-- [ ] **#97 TESTING_TOOLS.md has a dead link and one expected string that
-  predates a deliberate change — both in a document step 6 is about to run.**
+- [x] **#97 FIXED 2026-08-24, at step 5. TESTING_TOOLS.md had a dead link and
+  one expected string that predated a deliberate change — both in a document
+  step 6 is about to run.**
+
+  All four items closed. The link is `packages/simgadget/src/ax/tree.ts`; step
+  #8 expects `App com.example.mcptestapp launched successfully with PID: <pid>`
+  with a note saying why the pid is a fix and not an addition; both env vars are
+  `SIMGADGET_*`. Three further strings were found *abridged* rather than wrong
+  and are now quoted in full — #49's obstruction refusal stopped mid-sentence,
+  and #1 and #27 paraphrased where the reply is exact — since a step-6 reader
+  comparing a paraphrase to a real reply is the same negotiation this entry
+  exists to prevent. The document also gained a preface naming the four
+  deliberate changes that move a string in it, and the two open items (#92,
+  #93) that would otherwise read as fresh regressions on the day.
+
+  `.DS_Store` (#88) is still untracked and still absent from `.gitignore`; not
+  touched here, because `.gitignore` is not documentation.
 
   - Line 670 links `[src/ax/tree.ts](src/ax/tree.ts)`, deleted at 3.6. It is
     now `packages/simgadget/src/ax/tree.ts`, and the surrounding paragraph is
@@ -637,6 +652,48 @@ the library.
     darwin-only tarball on Linux without complaint (run 31915294749), so the
     packed install is expected to stay green; if it does not, it is the same
     cause and the same fix one layer down.
+
+- [ ] **#100 The wedge recovery went silent in the port, and no row records
+  it.** Found 2026-08-24 at step 5, while checking TESTING_SERVER.md's
+  "Recovering a wedged accessibility bridge" section against the code it
+  describes.
+
+  The old server logged three lines through `vlog` (index.ts:963, 969, 989):
+
+  ```
+  simulator <udid> stopped answering accessibility; restarting com.apple.CoreSimulator.bridge
+  simulator <udid> recovered 11s after restarting com.apple.CoreSimulator.bridge
+  simulator <udid> ... a bridge restart; not restarting again
+  ```
+
+  `recoverWedgedAccessibility` moved into the library
+  (`packages/simgadget/src/simulator.ts:938`), which has **no logging seam** —
+  its only two writers are `env.ts`'s deprecation warning and
+  `companionManager.ts`'s `[simgadget]` prefix — so all three lines are gone.
+  Nothing in "Deliberate behaviour changes" mentions it, which makes this a
+  quiet deviation rather than a decided one (plan rule 3).
+
+  **What it costs.** Two manual checks lose their only observable:
+  TESTING_SERVER.md's recovery section asserted all three lines, and its
+  "an empty point is not a wedged bridge" step checks for *absence* of a restart
+  in the log — which now passes vacuously, since nothing is ever logged either
+  way. Both have been annotated to say so rather than left to fail on the day.
+  Operationally it is worse than the manual plans: a restart is a ~5s pause
+  inside an otherwise-normal call, and with no line in the log there is nothing
+  to correlate it against.
+
+  **Not obviously wrong.** Design rule 5 says library messages are
+  host-agnostic, and a library writing to stderr on its own initiative is a
+  reasonable thing to have refused. But that argues for a *seam* — a
+  `deps`-injected `onRecovery` the server's `vlog` subscribes to — not for
+  silence.
+
+  **Fix:** either a row in the table recording the loss and why, or an event the
+  server can log. The second is a library change and therefore the owner's call.
+  **Test:** the `deps` seam already records calls, so a unit test asserting the
+  notification fires once per restart (and not at all under the cooldown) is
+  microseconds. **TESTING_SERVER.md:** the two annotated sections are where it
+  goes back to being an assertion.
 
 - [ ] **#99 `verify-companion-download.mjs` drives whatever simulator happens
   to be booted.** Noticed 2026-08-24 while running it for step 4: its step 7
