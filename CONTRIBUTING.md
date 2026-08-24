@@ -201,10 +201,24 @@ To maintain maximum compatibility with the MCP ecosystem, we align our dependenc
 
 ### Current Dependency Strategy
 
-- **`@modelcontextprotocol/sdk`**: Always use the latest stable version
-- **`zod`**: Match the version used by `@modelcontextprotocol/sdk` (currently `^3.23.8`)
-- **`typescript`**: Match the version used by `@modelcontextprotocol/sdk` (currently `^5.5.4`)
-- **`@types/node`**: Match the version used by `@modelcontextprotocol/sdk` (currently `^22.0.2`)
+- **`@modelcontextprotocol/sdk`**: pinned exactly (currently `1.18.2`) —
+  the tool surface is diffed against a captured baseline, and an SDK that
+  changes how a Zod schema becomes JSON Schema turns that test red
+- **`zod`**: match the version used by `@modelcontextprotocol/sdk`
+- **`typescript`**: match the version used by `@modelcontextprotocol/sdk`
+- **`@types/node`**: match the version used by `@modelcontextprotocol/sdk`
+
+Where we currently sit, checked 2026-08-24:
+
+| dep | ours | the SDK's |
+|---|---|---|
+| `zod` | `^3.23.8` | `^3.25 \|\| ^4.0` |
+| `typescript` | `^5.5.4` | `^5.5.4` |
+| `@types/node` | `^22.0.2` | `^22.12.0` |
+
+The two mismatched ranges resolve to versions inside the SDK's, so nothing is
+broken today; they are drift rather than a fault, and the table exists so the
+next person checking does not have to re-derive it.
 
 ### Checking for Updates
 
