@@ -1,4 +1,4 @@
-<img src="website/assets/banner.png" alt="SimGadget" width="100%">
+<a href="https://simgadget.dev"><img src="website/assets/banner.png" alt="SimGadget" width="100%"></a>
 
 # SimGadget — iOS simulator automation for JS/TS and MCP
 
