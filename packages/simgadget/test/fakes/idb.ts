@@ -26,7 +26,7 @@
  *  - a marker query at depth 0 searches only the root (check 10) — the library
  *    never sends one, so this fake never has to model it;
  *  - `describe()` reports screen dimensions in **both pixels and points**
- *    (check 9), which is where the coordinate contract's cached portrait point
+ *    (check 9), which is where the coordinate rules' cached portrait point
  *    dimensions come from;
  *  - `activate()` operates a switch **without a touch** (check 6), which is the
  *    entire basis for routing a plain tap on a toggle through the action API.

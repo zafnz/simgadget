@@ -61,8 +61,8 @@
     from one machine's reading would trade recorded evidence for a fresh guess.
     Worth revisiting the next time a real wedge is caught in the wild.
   - There is no way to prove the recovery path works end to end short of
-    catching a wedge in the wild. That is the honest state of it, and it should
-    be said out loud rather than implied by a green suite.
+    catching a wedge in the wild. That is the current state of it, and it should
+    be stated plainly rather than implied by a green suite.
 
 - [ ] **#73 Do TESTING_TOOLS.md Part 6's timings in the e2e, where they can
   finally measure the thing itself.** Requested 2026-08-17.
@@ -114,7 +114,7 @@
 
 - [ ] **#72 The e2e suite has no counterpart to TESTING_TOOLS.md Part 3 —
   remote-hosted views.** Noted 2026-08-17 while checking the new
-  `test:e2e` journey against the manual plan it is the library-level analogue
+  `test:e2e` run against the manual plan it is the library-level analogue
   of. Parts 1, 2 and 4 map across closely; Part 5 is
   `check-companion-contract.mjs`; Part 6 is #73 below. Part 3 has nothing.
 
@@ -331,7 +331,7 @@ the library.
   itself — but is the symmetric choice and costs a second.
 
   **Test:** the check that catches this cannot live in a suite that runs in the
-  warm tree. A CI step is the honest place: either add `npm run build
+  warm tree. A CI step is the right place: either add `npm run build
   --workspaces` before Typecheck in `ci.yml` **and** the `prepare` (belt and
   braces, since a contributor's first `npm test` deserves to work too), or a
   workflow job that runs `npm ci && npm run typecheck` in a container with no
@@ -809,7 +809,7 @@ the library.
   - **Fix, roughly:** distinguish "the budget ran out" from "the cure was tried
     and the device still will not answer". `ReadyResult` already carries
     `recoveryTried` and `recovered`; what it cannot say is whether anything was
-    *making progress*. Cheapest honest change is to soften the wording when
+    *making progress*. The cheapest change is to soften the wording when
     another simulator on this machine booted concurrently, or simply to stop
     claiming "not expected" unless the device was the only one booting.
   - **Test:** a fake-deps unit test over the message builder — `renderStarted`
@@ -819,7 +819,7 @@ the library.
 
 
   **Fixed in `render.ts`, both places** — `renderStarted` and `renderAttached`
-  said the same thing. The order is now the honest one: *"Its accessibility
+  said the same thing. The order is now: *"Its accessibility
   bridge was restarted and it still had not answered by then. Poll ui_view: a
   simulator that was merely slow — which is usual when several are booting on
   one machine — answers within a few more seconds. If it is still silent after
@@ -856,7 +856,7 @@ fidelity against the frozen originals (no smuggled behaviour changes; every
 diff traces to a deliberate change), rename completeness, sun_path headroom,
 error-vocabulary containment in `ax/recovery.ts`, the exports boundary, the
 tether rule (all twelve fake beliefs map to contract checks 1–12), plan test
-coverage for steps 1.1–8, the step-9 e2e journey item-for-item, and the exit
+coverage for steps 1.1–8, the step-9 e2e suite item-for-item, and the exit
 conditions: typecheck, 495/495 unit tests, root build + frozen manifest, and
 the e2e suite re-run during the review — 32/32 in 110s unattended. The one
 thing not re-run: `check:companion` against a booted fixture (exit condition 5).
@@ -1043,8 +1043,8 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
     otherwise.
   - **Left untyped on purpose, with a comment saying why:
     `SIMGADGET_COMPANION_PATH` pointing at a missing file**
-    (`companionBinary.ts`). Nothing in the frozen `ErrorCode` union is honest
-    about it: no download was wanted — avoiding one is what the override is for
+    (`companionBinary.ts`). Nothing in the frozen `ErrorCode` union accurately
+    describes it: no download was wanted — avoiding one is what the override is for
     — and nothing was spawned. Typing it means *adding* a code, which is a spec
     change and your call, not a tidy-up. Same reasoning covers the three
     remaining `IdbError`s in `companionManager.ts` (socket dir not ours, uid
@@ -1070,7 +1070,7 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   sentence.
   - **Not fixed the other way round on purpose.** Treating a sub-floor duration
     as plain would hand a caller who asked for a press an activation instead —
-    a different verb, quietly. The refusal is the honest answer.
+    a different verb, quietly. The refusal is the right answer.
   - The pure layer already pinned it (`tap.test.mts`, "a switch, held for less
     than the floor"); the public layer now does too, at the exact call in this
     entry.
@@ -1153,7 +1153,7 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
 
   **End to end, on a simulator created from scratch:** `ui_tap {label: "Fill Strong Password"}` now presses the button — the sheet dismisses and the password field fills with a generated password. It previously pressed **Login Submit** and reported `Tapped successfully`.
 
-  **`ui_describe_point` was fixed too, because the tree fix would otherwise have broken it.** A point read hit-tests, so it names the right element wherever it lives, but it returns one element and no ancestry — and the ancestry is where the offset comes from. It therefore kept answering `y=239.33` while the tree said `715.33`, which is a fresh instance of exactly what #58 was closed to prevent. A frame that does not cover the point it was found at is the signature, and it is free to check; on that signal only, the tree is read and the frame replaced (never the identity, which the hit-test established). Costs ~350ms on the broken path and nothing on every other read — verified: `Login Submit` at (201, 271) still answers straight from the point read. Both tools now report `y=715.33` for the same button.
+  **`ui_describe_point` was fixed too, because the tree fix would otherwise have broken it.** A point read hit-tests, so it names the right element wherever it lives, but it returns one element and no ancestry — and the ancestry is where the offset comes from. It therefore kept answering `y=239.33` while the tree said `715.33`, which is a fresh instance of exactly what #58 was closed to prevent. A frame that does not cover the point it was found at is the telltale sign, and it is free to check; on that signal only, the tree is read and the frame replaced (never the identity, which the hit-test established). Costs ~350ms on the broken path and nothing on every other read — verified: `Login Submit` at (201, 271) still answers straight from the point read. Both tools now report `y=715.33` for the same button.
 
   **Implementation:** `translateRemoteSubtrees` and `locateInTree` in [src/ax/tree.ts](src/ax/tree.ts), pure and unit tested (103 assertions, ~100ms). `describeScreen` translates before pruning. The tests were checked against three deliberate mutations — dropping the size guard, reversing the offset sign, and accumulating the offset instead of replacing it at each boundary — which failed 2, 4 and 2 assertions respectively.
 
@@ -1316,7 +1316,7 @@ thing not re-run: `check:companion` against a booted fixture (exit condition 5).
   - **It has never worked**, checked specifically because it felt like a regression: the 2022 companion resolves the identical frame and fails identically. Nothing was removed.
   - **What does work: the accessibility activate action.** idb's `accessibility_action` is implemented as `AXPress` ([FBAccessibilityUIAutomation.swift:92](../../vendor/idb/FBSimulatorControl/Commands/FBAccessibilityUIAutomation.swift:92)) — the same activation VoiceOver performs on the same merged element. Verified end to end: `AXValue` `1` → `0`, **and it persists** across navigating away and back, so it is a real commit rather than a UI-only flip.
   - **Not implemented pending a decision**, because it is a genuine change in kind: `AXPress` is not a synthesized touch, so it bypasses hit-testing and would not notice a control covered by an invisible overlay, and it cannot express a hold. Shape if it goes ahead: resolve with our own `findByLabel` (so #38 typography and #23 value matching still apply), then act keyed on `AXUniqueId`; keep a real touch whenever `duration` is given; and **report the value read back** rather than "Tapped successfully", since a silent success is what made this bug expensive. Untested: a toggle inside a remote-hosted sheet (#60).
-  - Worth noting for whoever picks this up: with #62 fixed, a *coordinate* tap on a switch is now reliable, so the remaining gap is only "toggle by name".
+  - For whoever picks this up: with #62 fixed, a *coordinate* tap on a switch is now reliable, so the remaining gap is only "toggle by name".
 
 - [x] **#61 WONTFIX — `scripts/imsmd.sh restart` deletes every simulator the server created, and that is being left alone.** CLAUDE.md tells you to restart after every build, so every code change costs a 40s boot, a reinstall and re-navigating to whatever screen was under test. It cost a validated reproduction outright during #60.
   - **Not fixed because the whole benefit is to developers.** No user of this server is ever affected: they start a simulator, use it, and destroy it. Making a restart preserve sessions means persisting the registry, re-adopting on startup, and replacing the garbage collector that daemon-exit currently *is* — roughly 100–150 lines plus a design decision about what guarantees leaked simulators are cleaned up. That is a lot of machinery to buy nothing but development speed.
@@ -1408,7 +1408,7 @@ Found while working through TESTING_TOOLS.md step-by-step on an iPhone 17 Pro (r
 - [x] **#27** Steps #16/#17 have no fixture. **Fixed**: `testapp/` ships one, built by `testapp/build.sh`, installed at step #7 and launched at step #8.
 - [x] **#28** `ui_find` is not covered anywhere in TESTING_TOOLS.md. **Fixed**: steps #11 and #12 cover both cases that matter — a control in the plain hierarchy, and one inside the toolbar that the default tree omits.
 - [x] **#30** Steps #9–#11 are flaky by construction. #9 asserts that searching "General" in Settings shows "filtered search results", but Settings search depends on a background index that is not built on a freshly-created simulator — observed **No Results for "General"** on a sim a few minutes old. #10 then swipes "to scroll the results" and #11 asserts the list scrolled, both of which are unverifiable against an empty state. Retarget the swipe at something reliably scrollable (the Settings root list, or the home screen) instead of search results.
-  - Aside worth knowing: tapping the Settings search field suggests "Apps", "Developer" etc., yet searching for those also returns nothing until the index builds. The suggestions are not backed by the same index.
+  - Aside: tapping the Settings search field suggests "Apps", "Developer" etc., yet searching for those also returns nothing until the index builds. The suggestions are not backed by the same index.
 - [x] **#31** Step #7 does not account for the first-run **QuickPath keyboard overlay** ("Speed up your typing by sliding your finger…" + Continue), which covers the keyboard on a fresh simulator. It turned out to be harmless — `ui_type` still delivered text and the overlay dismissed itself — but the step's stated expectation ("the keyboard appears") does not match what a tester actually sees.
 - [x] **#32** Step #17 says `launch_app` output "includes PID". It does not — actual output is `App com.apple.mobileslideshow launched successfully`. Either the message regressed or the doc was written against an older version.
 - [x] **#33** Part 2 assumes Photos opens straight into its browsing UI, but on a fresh simulator it opens a **"What's New in Photos"** onboarding screen with a Continue button. Step #25 ("Screenshot shows the Photos app in portrait") passes only in the most literal sense, and step #29's suggested targets ("a tab bar button like 'Albums' or 'For You'") do not exist on that screen — and may no longer match this iOS version's Photos layout even after dismissal. Part 2 needs re-basing on a current, wizard-free app; **Contacts** worked well for Part 1 and supports landscape.
@@ -1519,7 +1519,7 @@ Two results that change the plan:
   - leave it (simple; polling gets slower),
   - add `deep?: boolean` so a caller polling can opt out — but the default then decides whether the original bug is back,
   - or fall back automatically for `ui_tap` (where a miss blocks the agent) and make it opt-in for `ui_find` (where "absent" is a normal answer).
-- [x] **#45** *(closed in 2.0.2 — canonicalise)* Backend shape difference worth knowing: an AXBridge match returns `role: "Button"`, `traits: null`, `role_description: null`, where the AX backend returns `role: "AXRadioButton"`, populated `traits` and `role_description` for the same element. Callers keying off `role`/`traits` will see different values depending on which backend answered.
+- [x] **#45** *(closed in 2.0.2 — canonicalise)* Backend shape difference: an AXBridge match returns `role: "Button"`, `traits: null`, `role_description: null`, where the AX backend returns `role: "AXRadioButton"`, populated `traits` and `role_description` for the same element. Callers keying off `role`/`traits` will see different values depending on which backend answered.
 - [x] **#39-orig** *(superseded — kept as the record behind #39)* **`ui_find` / `ui_tap {label}`: try AX first, fall back to AXBRIDGE on miss** — *not* the blanket switch previously written here. A blanket switch costs 15 ms → 304 ms (**20×**) on every lookup that already worked. The fallback keeps the common case at 15 ms and pays ~344 ms (40 ms miss + 304 ms) only where the answer is currently *wrong*:
   - AX-visible element: 15 ms, unchanged.
   - AX-invisible element: ~344 ms and correct, versus 40 ms and "No element found".
@@ -1544,7 +1544,7 @@ Two results that change the plan:
 
   Falls back to the AX read if AXBridge cannot start, so a companion older than the pinned one still works (see #36c).
 - [ ] **#46** One observation worth watching, not yet explained: on a run where the What's New sheet had just been dismissed, its elements (`"What's New in Photos"`, `Continue`) were still present in the AXBridge tree alongside the Collections content. A later clean run showed no such residue and matched its screenshot exactly, so this looks like a transient during sheet teardown rather than AXBridge reporting invisible views — but it is one observation either way. If agents start tapping controls that are not on screen, start here.
-- [x] **#40-orig** *(superseded — kept as the record behind #40)* **`ui_describe_all`: AXBRIDGE + `keys`, behind a flag.** The honest cost is bigger than first stated — a realistic key set is **3–3.7× today's payload**, not +70%:
+- [x] **#40-orig** *(superseded — kept as the record behind #40)* **`ui_describe_all`: AXBRIDGE + `keys`, behind a flag.** The real cost is bigger than first stated — a realistic key set is **3–3.7× today's payload**, not +70%:
   - `keys[AXLabel,AXFrame]` → 6 378 B (1.7×), but too thin for the current tool output.
   - `keys[6]` (`+AXUniqueId, role, type, enabled`) → 11 641 B (3.1×).
   - `keys[8]` (`+traits, AXValue`) → 13 961 B (3.7×) — closest to what `src/index.ts` consumes today.

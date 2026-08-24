@@ -401,7 +401,7 @@ destroy_simulator(id: "landscape-test")
 
 iOS draws some UI from a **separate process** hosted inside the app's window: the "Use Strong Password?" autofill sheet, photo and document pickers, share sheets. Their elements arrive in the same tree as the app's own, with nothing naming them as different, and their frames are measured from the hosting window rather than the screen.
 
-This is the regression test for that. It is worth running carefully, because the failure mode is the worst kind this server has: `ui_tap {label}` resolves the name, taps a plausible-looking coordinate, and reports a cheerful success while the touch lands somewhere else entirely. Nothing in the reply said otherwise, and the tree that would contradict it is the same tree that is wrong. Before the fix, tapping `Fill Strong Password` pressed **Login Submit**.
+This is the regression test for that. It is worth running carefully, because the failure mode is the worst kind this server has: `ui_tap {label}` resolves the name, taps a plausible-looking coordinate, and reports success while the touch lands somewhere else entirely. Nothing in the reply said otherwise, and the tree that would contradict it is the same tree that is wrong. Before the fix, tapping `Fill Strong Password` pressed **Login Submit**.
 
 Both halves matter and they check opposite things. The sheet's window sits partway down the screen, so its contents need translating; the picker's window sits at the screen origin, so its contents are **already correct** and must be left alone. A fix that shifts everything hosted passes the first half and fails the second.
 
@@ -495,7 +495,7 @@ destroy_simulator(id: "remote-test")
 
 A switch is the one control whose accessibility frame is routinely **not** the thing you can touch. A Settings row publishes one element spanning label and control, so its centre is the gap between them; and even a bare `UISwitch` inherits whatever width its layout gives it. Tapping the centre of either actuates nothing, and it never did — measured 0/6 and 0/8 on the pinned companion and the 2022 one alike.
 
-So `ui_tap {label}` operates a toggle through accessibility instead, the way VoiceOver does, while `ui_tap {x, y}` stays a real touch. **Both are checked here in one place, deliberately**: they are different mechanisms that can regress independently, and when a toggle stops working the first thing worth knowing is which of the two broke.
+So `ui_tap {label}` operates a toggle through accessibility instead, the way VoiceOver does, while `ui_tap {x, y}` stays a real touch. **Both are checked here in one place, deliberately**: they are different mechanisms that can regress independently, and when a toggle stops working the first question is which of the two broke.
 
 ### #43 Start a simulator and launch the fixture
 

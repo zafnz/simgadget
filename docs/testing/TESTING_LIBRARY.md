@@ -42,7 +42,7 @@ library built on those beliefs actually drives a device.
 | file | what it owns |
 |---|---|
 | `packages/simgadget/test/e2e/lifecycle.e2e.mts` | the handle's life: create, boot, list, attach, delete, and being dead afterwards |
-| `packages/simgadget/test/e2e/library.e2e.mts` | the ordered journey through every other method, against the fixture |
+| `packages/simgadget/test/e2e/library.e2e.mts` | the ordered pass through every other method, against the fixture |
 | `packages/simgadget/test/e2e/support.mts` | skip detection, companion resolution, fixture build, cleanup. Not `*.e2e.mts`, so the runner does not try to run it |
 
 Two files because `node --test` gives each file its own process and a booted
@@ -281,8 +281,8 @@ one layer down — `deps.setTimer` records cancellation, so the fake-clock cases
 in `test/lifecycle.test.mts` ("the cap timer is cancelled when bootstatus exits
 first", and the other direction) prove it in microseconds.
 
-**Part 3 — remote-hosted views — has no counterpart here, and that is the one
-worth knowing about.** It is the machinery behind TODO #60: a sheet or picker
+**Part 3 — remote-hosted views — has no counterpart here, and that is the most
+important gap.** It is the machinery behind TODO #60: a sheet or picker
 drawn by another process, hosted inside the app's window, whose elements arrive
 with frames measured from that window rather than the screen. Untranslated, a
 tap by name lands hundreds of points away and reports success, with every frame
@@ -294,7 +294,7 @@ view. See TODO #72, which records what an implementation would need.
 
 ## Adding to it
 
-The regression rule (SIMGADGET.md) says a newly discovered bug lands three
+The regression rule (SIMGADGET.md) says a newly discovered bug requires three
 things: the fix, a step in the testing plan that would have caught it against
 the fixture, and a unit test that catches it in milliseconds. This file is where
 the second of those goes when the bug is one only a device can show — and if the

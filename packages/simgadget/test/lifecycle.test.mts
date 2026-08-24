@@ -318,7 +318,7 @@ test("waitUntilDriveable", async (t) => {
   });
 
   await t.test(
-    "times out honestly -- ready:false, never throws -- and attempts recovery exactly once near the end of budget",
+    "times out cleanly -- ready:false, never throws -- and attempts recovery exactly once near the end of budget",
     async () => {
       const deps = createFakeDeps({
         client: {

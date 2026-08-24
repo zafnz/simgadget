@@ -185,7 +185,7 @@ function localCompanion(log: (message: string) => void): string | undefined {
     const expanded = expandTilde(override);
     if (!fs.existsSync(expanded)) {
       // Deliberately still an untyped `IdbError` (TODO #82). Nothing in the
-      // frozen `ErrorCode` union is honest about it: no download was wanted —
+      // frozen `ErrorCode` union accurately describes it: no download was wanted —
       // avoiding one is what the override is for — and nothing was spawned, so
       // neither companion code fits. A caller reads the message, and the
       // message is the whole remedy. Giving it a code means adding one, which

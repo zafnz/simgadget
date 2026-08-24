@@ -363,7 +363,7 @@ export function prefetchCompanion(
 
 One handle per simulator. Not a bag of udid-taking functions (a repeated
 first argument on twenty functions is an object spelled worse) and not a
-god-object facade; the handle is also the honest home for per-*handle* state:
+god-object facade; the handle is also the right home for per-*handle* state:
 the orientation hint, the cached portrait point dimensions, the recording in
 progress. The recovery bookkeeping (`hasAnsweredAccessibility`, cooldown
 timestamps, in-flight recovery dedup) is deliberately **not** per-handle: it
@@ -376,7 +376,7 @@ Handles are deliberately **not deduplicated per udid**: recording state and
 the orientation hint are per-handle, and the MCP's sessions depend on that
 (two sessions attached to one udid each own their recording). The hazard —
 two handles' orientation hints diverging — is stated in the coordinate
-contract below.
+rules below.
 
 After `delete()`, or when something external deletes the simulator, every
 method throws `SimulatorNotFoundError` — a clear "this simulator no longer
@@ -668,7 +668,7 @@ export class Simulator {
 ### Where `Promise<unknown>` survives, and why
 
 Nowhere public. `IdbClient.accessibilityInfo()` keeps returning
-`Promise<unknown>` **internally**, and that is honest rather than lazy: the
+`Promise<unknown>` **internally**, and that is deliberate: the
 companion returns free-form JSON whose shape depends on the request — a
 nested tree, a flat legacy element, or a `{elements: …}` marker wrapper — and
 pretending the gRPC boundary is typed would be a lie the compiler enforces.
@@ -680,7 +680,7 @@ makes it unresolvable — so no user ever sees the raw seam. If a future
 maintainer finds `unknown` anywhere a user can touch, that is a bug against
 this paragraph.
 
-### The coordinate contract
+### The coordinate rules
 
 The library persists nothing it can re-derive, and is loud about the one
 thing it cannot. Three classes of state:
@@ -698,7 +698,7 @@ thing it cannot. Three classes of state:
   refreshes the hint as a side effect. `rotate()` refreshes it
   authoritatively.
 - **Chirality (which landscape; portrait vs upside-down): rides on the hint,
-  and the contract says so.** A describe cannot distinguish the two
+  and the rules say so.** A describe cannot distinguish the two
   landscapes — the aspect is identical — and the probe costs too much to run
   inside every tap. The hint is updated by `rotate()` and
   `detectOrientation()`; an external flip between same-aspect orientations is
@@ -720,10 +720,9 @@ Detecting orientation *inside* `tap({x, y})` was considered and rejected on
 semantics, not cost: the caller's coordinates only mean anything in the space
 of the describe they came from. If the simulator rotated since, they are
 stale, and transforming old-space coordinates with freshly-detected
-orientation lands the tap in a *different* wrong place. Coordinate-space
-consistency, not freshness, is the honest guarantee — and it is the same
-contract the MCP already imposes on agents, so library and server tell one
-story.
+orientation lands the tap in a *different* wrong place. The guarantee is
+coordinate-space consistency, not freshness — the same rule the MCP already
+imposes on agents, so library and server tell one story.
 
 ## The MCP on top
 
@@ -884,7 +883,7 @@ Work order (dependency order):
    release URL (assets moved with the repo; nothing to re-cut). Add the
    never-recreate-the-old-name rule to CLAUDE.md.
 5. **Docs**: rewrite CLAUDE.md (architecture, the split rule, env vars),
-   README (companion + system deps on the first screen, coordinate contract,
+   README (companion + system deps on the first screen, coordinate rules,
    prefetch), CONTRIBUTING, TESTING_*, TROUBLESHOOTING, AGENT_INSTRUCTIONS.
 6. **Verify** — the gate for publishing, all of it:
    - `npm test` + `npm run typecheck` green in both packages
@@ -907,15 +906,14 @@ Work order (dependency order):
 
 ### The regression rule
 
-Holds during step 3 and forever after: **a newly discovered bug lands three
-things, not one** — the fix, a step added or adjusted in TESTING_TOOLS.md
+Holds during step 3 and forever after: **a newly discovered bug requires
+three things** — the fix, a step added or adjusted in TESTING_TOOLS.md
 that would have caught it against the fixture, and a unit test in the library
 that catches it in milliseconds. A unit test is only possible when the broken
 rule is pure logic; when it is not expressible purely, that is the signal to
 extract the decision into a pure function first — which is exactly how
-`ax/recovery.ts` came to exist. This is how the existing suite was built
-(every rule in `src/ax/` traces to a bug that cost simulator boots to find),
-and it is the difference between tests that validate and tests that decorate.
+`ax/recovery.ts` came to exist. This is how the existing suite was built:
+every rule in `src/ax/` traces to a bug that cost simulator boots to find.
 
 ## Decisions register
 
@@ -944,7 +942,7 @@ phase-by-phase sequencing — is deliberately gone; git has it.
   today's without a translation layer.
 - **Handles are not deduplicated per udid.** Recording state and the
   orientation hint are per-handle and the MCP's per-session semantics depend
-  on it. The divergence hazard is documented in the coordinate contract.
+  on it. The divergence hazard is documented in the coordinate rules.
 - **The raw unpruned tree is not public.** No caller of the old code ever
   consumed it for anything but the root rectangle; `screenSize()` serves
   that at the same ~13ms cost. Fewer things frozen forever.
@@ -968,7 +966,7 @@ phase-by-phase sequencing — is deliberately gone; git has it.
   simulator; ownership and cleanup-on-exit are `simgadget-mcp` policy.
 - **`boot()`/`waitReady()` do not throw on timeout.** The simulator exists
   either way; a throw discards the handle and the udid with it. The MCP's
-  55s honest-return behaviour (return the UDID, say "poll") is built on
+  55s bounded-return behaviour (return the UDID, say "poll") is built on
   exactly this, and it predates the library for a measured reason: an MCP
   client cancels a long call, and a cancelled call tells the caller nothing.
 - **Recovery state is udid-keyed, not per-handle** (decided 2026-08-16,
@@ -981,8 +979,8 @@ phase-by-phase sequencing — is deliberately gone; git has it.
   behind the deps seam (so tests drive the cooldown via a fake clock),
   cleared by `delete()`.
 - **Portrait point dimensions come from `describe`** (decided 2026-08-16) —
-  the one piece of the coordinate contract that is new code rather than a
-  port. See the contract section; contract check #9 is its gate.
+  the one piece of the coordinate rules that is new code rather than a
+  port. See the coordinate rules; contract check #9 is its gate.
 - **The wedge recovery reports itself through an injected `onLog`** (decided
   2026-08-24, closing TODO #100). The recovery restarts a service inside the
   guest, waits, and retries the caller's read; the old server narrated all four

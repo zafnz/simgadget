@@ -15,11 +15,10 @@ whole story; nothing below is required reading.
 
 How it is built, and why. None of it is needed to use the packages.
 
-- [SIMGADGET.md](devs/SIMGADGET.md) — the design spec: the split rule, the full library API with signatures, the error taxonomy, the coordinate contract, the decisions register
+- [SIMGADGET.md](devs/SIMGADGET.md) — the design spec: the split rule, the full library API with signatures, the error taxonomy, the coordinate rules, the decisions register
 - [BOOT_BUG.md](devs/BOOT_BUG.md) — the accessibility-never-starts wedge: what was ruled out, what was not, and the recovery in place
 - [TODO.md](devs/TODO.md) — open findings, in review batches
 - [CAMERA.md](devs/CAMERA.md) — **a proposal, not a feature.** Feeding a static image to the simulator's camera
-- [WEB_PITCH.md](devs/WEB_PITCH.md) — source copy for the marketing site, with every claim traced to something measured in this repository
 
 ## [testing/](testing/) — the test plans
 

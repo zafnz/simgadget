@@ -20,7 +20,7 @@ A simulator's companion connection, its orientation, its recovery bookkeeping
 are facts about a *device*: library. Session ids, the `owned` flag,
 delete-on-exit, tool filtering, transports are facts about *a server*.
 
-Two things fall out of it that are worth knowing before you open a file:
+Two things follow from it, and both matter before you open a file:
 
 - **The server imports `"simgadget"` and never a deep path.** The library's
   `exports` map makes a deep path unresolvable, and a test asserts the import
@@ -56,7 +56,7 @@ disabled, or scrolled out of view looks exactly like a tap that worked.
 
 ### The regression rule
 
-**A newly discovered bug lands three things, not one:**
+**A newly discovered bug requires three things:**
 
 1. the fix,
 2. a step added or adjusted in [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) that would
@@ -66,8 +66,7 @@ disabled, or scrolled out of view looks exactly like a tap that worked.
 A unit test is only possible when the broken rule is pure logic. When it is
 not, that is the signal to extract the decision into a pure function first —
 which is exactly how `packages/simgadget/src/ax/recovery.ts` came to exist.
-Every rule in `ax/` traces back to a bug that cost simulator boots to find, and
-this is the difference between tests that validate and tests that decorate.
+Every rule in `ax/` traces back to a bug that cost simulator boots to find.
 
 ### Architectural Stability
 
@@ -197,7 +196,7 @@ bumping the submodule sha need to run it. Never hand-edit the generated files.
 
 ## Dependency Management & Upgrades
 
-To maintain maximum compatibility with the MCP ecosystem, we align our dependencies with those used by `@modelcontextprotocol/sdk`. This ensures seamless integration and reduces potential conflicts.
+We align our dependencies with those used by `@modelcontextprotocol/sdk`, which reduces version conflicts with MCP clients.
 
 ### Current Dependency Strategy
 
@@ -265,7 +264,7 @@ npm ls --depth=0
 
 ### Why This Matters
 
-- **Compatibility**: Ensures our tools work seamlessly with MCP clients
+- **Compatibility**: the tools keep working with MCP clients
 - **Stability**: Reduces version conflicts and unexpected behavior
 - **Consistency**: Maintains a predictable development environment
 - **Future-proofing**: Easier to adopt new MCP SDK features and fixes
@@ -368,7 +367,7 @@ that answers whether the library actually drives a device — the fake companion
 cannot tell you whether an AXBridge read really does see inside a toolbar. See
 [TESTING_LIBRARY.md](docs/testing/TESTING_LIBRARY.md).
 
-### 3. The companion contract — `npm run check:companion -- <udid>`
+### 3. The companion checks — `npm run check:companion -- <udid>`
 
 Six things this codebase believes about somebody else's binary, none of which
 upstream has promised to keep, and all of which are invisible while they hold.

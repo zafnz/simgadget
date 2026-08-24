@@ -9,7 +9,8 @@ import { SimulatorNotFoundError } from "../src/errors.ts";
 
 // sockaddr_un.sun_path is 104 bytes on macOS, including the terminator --
 // companionManager.ts's SUN_PATH_MAX. Not imported (private to that module);
-// duplicated here as a literal is the honest reflection of "the OS says so".
+// duplicated here as a literal, because the number comes from the OS, not
+// from that module.
 const SUN_PATH_MAX = 104;
 
 test("buildSocketPath", async (t) => {

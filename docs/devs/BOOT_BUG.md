@@ -53,7 +53,7 @@ Reading `vendor/idb` at our pinned sha:
 Confirmed on a wedged device: `SpringBoard` alive (pid 88904), and
 `com.apple.CoreSimulator.bridge` alive (pid 88783).
 
-Worth noting this predicate gap probably *does* explain a different symptom — a
+This predicate gap probably *does* explain a different symptom — a
 0x0 tree returned as a successful read on a healthy device — which is a separate
 bug with a separate history. The two are easy to conflate and are not the same.
 
@@ -115,7 +115,7 @@ one. Untested here.
 4. **A bounded return.** `start_simulator` now returns within 55s whatever
    happens. It previously waited up to 180s, which exceeded the MCP client's
    patience: the call was cancelled, and the caller got no UDID, no session, and
-   no idea a simulator existed. Returning honestly at 55s with a UDID and an
+   no idea a simulator existed. Returning at 55s with a UDID and an
    instruction to poll is strictly more useful.
 5. **`diagnoseEmptyAccessibilityTree` attempts the bridge restart** before
    suggesting anything expensive.
@@ -139,8 +139,8 @@ one. Untested here.
    **`no translation object` does not mean the bridge is wedged.** idb raises
    the same error for a point read that found nothing, which is an ordinary
    answer on a healthy simulator, so `describePoint` tells the two apart by
-   asking for the whole screen before anything is restarted. Worth knowing when
-   reading logs from a session: a burst of this error from point reads alone is
+   asking for the whole screen before anything is restarted. When reading logs
+   from a session, remember that a burst of this error from point reads alone is
    usually a caller with bad coordinates, not a sick simulator.
 
 **Still not reproducible on demand.** `launchctl stop` on a healthy bridge does
@@ -150,7 +150,7 @@ translating, which stopping a working one does not simulate. That is why the
 recovery decision is unit tested and the cure is verified against real
 occurrences rather than an induced one.
 
-## Worth reporting upstream
+## What to report upstream
 
 `remediationRequired` gates idb's own working cure behind a predicate that
 excludes the case it would fix. A retry on zero-frame-with-live-pid, or

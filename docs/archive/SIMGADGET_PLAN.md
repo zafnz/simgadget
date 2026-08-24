@@ -99,7 +99,7 @@ needs four more beliefs, so four more checks land with it:
 |---|---|---|
 | 7 | an absent marker fails with **"found no element"** | `findByLabel`/`findByIdentifier` return `null` on it; `tap({label})` turns it into `ElementNotFoundError`. If the wording changes, absence becomes a thrown gRPC error and every lookup breaks. |
 | 8 | a point read with nothing there fails with **"no translation object"** — the *same* text a wedged bridge produces | the whole reason `describePoint` disambiguates by asking for the screen. If these ever differ, the disambiguation is dead weight; if they converge further, it is load-bearing. |
-| 9 | `describe` returns screen dimensions in **both pixels and points** | the coordinate contract sources cached portrait point dimensions from here rather than deriving them from an accessibility read. |
+| 9 | `describe` returns screen dimensions in **both pixels and points** | the coordinate rules source cached portrait point dimensions from here rather than deriving them from an accessibility read. |
 | 10 | a marker query at **depth 0 searches only the root** (reports absent rather than erroring) | why `MARKER_DEFAULT_DEPTH` exists. A silent change here makes every deep control "not found". |
 
 Check 8 needs a wedged bridge to compare against, which is expensive; it runs
@@ -363,7 +363,7 @@ a dependency, not a preference.
 **detects** what the interface adopted, and returns `{requested, adopted}`. It
 never assumes the request took: no Face ID iPhone adopts upside-down.
 
-The coordinate contract from the spec is implemented as three distinct
+The coordinate rules from the spec are implemented as three distinct
 lifetimes: portrait point dimensions cached forever (a property of the model,
 sourced from the companion's `describe` — resolved item 2 below); orientation
 aspect re-derived free on every describe; chirality riding on the hint,
@@ -464,7 +464,7 @@ Two things this step must actually enforce, not merely intend:
   `[key: string]: unknown`; the exported one does not. The conversion point is
   `canonicalise`, and a test asserts the public type's key set.
 - **No `unknown` escapes.** `IdbClient.accessibilityInfo()` stays
-  `Promise<unknown>` internally — that is honest about a free-form JSON seam —
+  `Promise<unknown>` internally — that is accurate about a free-form JSON seam —
   and `IdbClient` is not exported. A test asserts `require("simgadget")` (from
   the built package) exposes the expected names and *not* `IdbClient`,
   `CompanionManager` or anything from `ax/`.
@@ -480,7 +480,7 @@ cross that boundary:
   `attachSimulator` on the same udid gives a working second handle →
   `delete()` → every method now throws `SimulatorNotFoundError` → simctl
   confirms it is gone.
-- **`library.e2e.mts`** — one boot, then the ordered journey against the
+- **`library.e2e.mts`** — one boot, then the ordered pass against the
   fixture, the library-level analogue of TESTING_TOOLS.md: install → launch →
   `describeScreen` (assert the toolbar's contents are present, which is the
   AXBridge fallback working) → `findByLabel` on the marker path (`Plain Button`)
@@ -557,7 +557,7 @@ Everything here is mandated by the spec. Nothing else changes.
    the bridge is still silent, so dimensions are available before the
    simulator is driveable — the accessibility-read source never was. Spec
    amended to say "confirmed".
-3. **Two boots per e2e run: approved.** ~80s of honest process isolation
+3. **Two boots per e2e run: approved.** ~80s of real process isolation
    beats a shared-udid runner script; revisit only if the suite grows enough
    to notice.
 

@@ -146,7 +146,7 @@ comes from. Three options, cheapest first:
 1. **Add `readonly deviceType?: DeviceTypeInfo` to the handle**, set by
    `createSimulatorWith` and left undefined on `attachSimulator` (which never
    resolves one). Additive, no existing signature changes, and it names a fact
-   about the device that other callers will want too. The `?` is honest rather
+   about the device that other callers will want too. The `?` is accurate rather
    than awkward: an attached handle genuinely does not know.
 2. **Return it from `createSimulator`** as `{simulator, deviceType}`. A
    breaking change to a published-shaped signature, for one string.
@@ -627,7 +627,7 @@ is gone: the "authoritative on this branch" banner, the "describes `main`"
 markers, the single-file rule. Agent D's operational sections are kept as they
 were. README — the companion and the system dependencies on the first screen,
 then the two packages, the library API with an example that was run, the
-coordinate contract, `prefetchCompanion`, the tools, the configuration table,
+coordinate rules, `prefetchCompanion`, the tools, the configuration table,
 and a Migrating section replacing the 2.0.0 breaking-changes block.
 
 CONTRIBUTING (split rule, regression rule, four testing layers), TESTING_TOOLS,
@@ -714,7 +714,7 @@ it stands:
   remote-hosted view restarts its coordinate space at a node of type "83"*.
 
 The fixture simulator was **created for the purpose and deleted afterwards**,
-not borrowed from whatever was booted — see #99 for why that is worth saying.
+not borrowed from whatever was booted — see #99 for why that matters.
 Standing it up exercised the public API end to end incidentally:
 `createSimulator` (36s to ready, `deviceType.name` = "iPhone 16 Pro") →
 `installApp` → `launchApp` (pid parsed) → `findByLabel` → `tap({label: "Show
@@ -1130,7 +1130,7 @@ particular is read by every session that touches this repo.
   Architecture section — which exists only because CLAUDE.md forbade this very
   restructure — comes out.
 - **README.md**: companion and system dependencies on the first screen, the
-  coordinate contract, `prefetchCompanion`, and both packages' install lines.
+  coordinate rules, `prefetchCompanion`, and both packages' install lines.
   Title of the form "SimGadget — iOS simulator automation for JS/TS and MCP",
   because "ios simulator mcp" is what users type and the old name *was* the
   query.
@@ -1161,7 +1161,7 @@ The gate, in cost order so a cheap failure is found first:
    managed daemon on 8008.
 6. TESTING_SERVER.md end to end.
 
-Anything found in 5 or 6 lands three things, per the regression rule: the fix,
+Anything found in 5 or 6 requires three things, per the regression rule: the fix,
 a TESTING_TOOLS.md step that would have caught it, and a unit test in
 whichever package owns the rule.
 

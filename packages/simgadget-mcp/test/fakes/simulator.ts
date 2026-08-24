@@ -6,7 +6,7 @@
  * `Simulator` is a class with private and protected fields (`deleted`,
  * `recording`, `deps`, …), so **no object literal and no separate class can
  * ever be structurally assignable to it** — TypeScript compares private
- * members by declaration site, not by shape. There is no honest way to write a
+ * members by declaration site, not by shape. There is no way to write a
  * fake handle without an assertion somewhere.
  *
  * ## Why `as any` is nonetheless the wrong answer
@@ -107,7 +107,7 @@ export interface FakeSimulatorOptions {
   /** Errors to throw from a given method instead of succeeding. The values are
    * thrown as-is, so a test picks the exact shape it wants to exercise. */
   fails?: Partial<Record<FakeMethod, unknown>>;
-  /** What the handle says it was created as. `undefined` is the honest value
+  /** What the handle says it was created as. `undefined` is the correct value
    * for an attached handle, which never resolved a device type. */
   deviceType?: DeviceTypeInfo;
   /** The boot outcome the handle is carrying, as `createSimulator` would leave

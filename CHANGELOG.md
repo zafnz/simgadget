@@ -67,8 +67,8 @@ the first so existing client configs keep working:
   `SIMGADGET_IDB_PATH`.
 - **The companion cache directory moved** to `~/Library/Caches/simgadget/`
   (or `$XDG_CACHE_HOME/simgadget`). This orphans an already-downloaded 19 MB
-  companion, which is re-fetched and re-verified once. Harmless, but worth
-  knowing on a metered connection. `~/Library/Caches/ios-multi-simulator-mcp/`
+  companion, which is re-fetched and re-verified once. Harmless, unless you
+  are on a metered connection. `~/Library/Caches/ios-multi-simulator-mcp/`
   is then yours to delete.
 
 The socket directory also moved, to `/tmp/simgadget-<uid>/`. Nothing outside the
@@ -272,7 +272,7 @@ correct, and the README says why.
 This also makes TESTING_TOOLS.md Part 2 runnable by an agent — rotating the
 device was previously the one step in the whole plan that needed a human.
 
-### Every tool recovers a wedged simulator, not two of them
+### Recovery from a wedged simulator now runs in every tool
 
 A simulator can render, respond to taps and answer `describe` while every
 accessibility read fails forever. Until now that was only cured while the
@@ -359,7 +359,7 @@ returns within 55 seconds whatever happens.
 
 It previously waited up to three minutes, which outlasted the MCP client's
 patience: the call was cancelled and the caller learned nothing at all, not even
-that a simulator had been created. Returning honestly with a UDID and an
+that a simulator had been created. Returning with a UDID and an
 instruction to poll is more useful than being killed mid-wait.
 
 ## 2.0.2

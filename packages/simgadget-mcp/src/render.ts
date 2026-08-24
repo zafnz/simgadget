@@ -687,7 +687,7 @@ export function renderAppInstalled(absolutePath: string): string {
   return `App installed successfully from: ${absolutePath}`;
 }
 
-/** `launch_app`. The pid is worth saying when there is one — it is what a
+/** `launch_app`. The pid is included when there is one — it is what a
  * caller needs to attach a debugger or read a log. */
 export function renderAppLaunched(bundleId: string, pid: number | null): string {
   return pid !== null

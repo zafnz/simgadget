@@ -414,7 +414,7 @@ stays; `record` spans two tool calls). Measurements to set expectations:
 - `hid` tap on a warm channel: **2.9 ms**, vs ~165 ms for `idb ui tap`.
   Re-measured on the step-1 client over 10 consecutive taps: **1.2 ms/tap**.
 
-Not applicable now, but worth knowing if lifecycle ever moves to the companion:
+Not applicable now, but relevant if lifecycle ever moves to the companion:
 **`--verify-booted`** (default true) makes `--boot` block until known-booted,
 which would delete the hand-rolled describe-point boot probe at
 `src/index.ts:466`.

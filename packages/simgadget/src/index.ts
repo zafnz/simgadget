@@ -13,7 +13,7 @@
  * seam and the recovery registry, all of which are implementation and none of
  * which a caller can do anything useful with.
  *
- * Two things worth knowing about what *is* here:
+ * Two things to know about what *is* here:
  *
  *  - `AXElement` is the closed type. `ax/tree.ts` also has an open one, which
  *    describes the free-form JSON a companion sends; `canonicalise` is the

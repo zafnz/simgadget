@@ -1,7 +1,7 @@
 /**
  * Fake-client tests for the orientation half of `Simulator`
  * (SIMGADGET_PLAN.md step 4): `rotate`, `detectOrientation`, and the three
- * lifetimes of state the spec's coordinate contract asks for — logical
+ * lifetimes of state the spec's coordinate rules ask for — logical
  * dimensions that any read refreshes and a rotation invalidates, portrait point
  * dimensions cached forever, and a chirality hint only a probe or a rotation
  * may write.
@@ -13,7 +13,7 @@
  * right order (the settle *before* the read, or the tree still reports the
  * geometry we just left), that a declined rotation is reported rather than
  * thrown, and that each piece of state is refreshed by exactly the calls the
- * contract says refresh it.
+ * rules say refresh it.
  *
  * No test waits out the 1.5s settle: it runs on `deps.clock` through
  * `deps.sleep`, and a test that took a second and a half to prove a sequence
@@ -220,7 +220,7 @@ test("Simulator.detectOrientation", async (t) => {
   });
 });
 
-// ---- the coordinate contract's three lifetimes ----------------------------
+// ---- the coordinate rules' three lifetimes -------------------------------
 
 test("cached logical dimensions", async (t) => {
   await t.test("an ordinary read refreshes them, and no second read is paid for", async () => {

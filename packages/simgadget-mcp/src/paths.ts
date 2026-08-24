@@ -9,7 +9,7 @@
  * a test cannot reach it while it is inlined in a tool body that needs a
  * simulator to run.
  *
- * It is also the whole of the server's side of the file-path contract, and the
+ * It is also the whole of the server's side of the file-path handling, and the
  * line is not where it first appears to be. The library does resolve — both
  * `screenshot({path})` and `startRecording(path)` call `path.resolve`
  * (DECISIONS.md #12) — so a relative path reaching it is taken as relative to

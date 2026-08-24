@@ -128,7 +128,7 @@ export const sessionIdSchema = z
  * What `start_simulator` reports when the handle has no boot result at all.
  *
  * Unreachable through this tool — `createSimulator` boots by default and
- * records the outcome — but `lastBoot` is honestly optional, and the fallback
+ * records the outcome — but `lastBoot` is genuinely optional, and the fallback
  * has to pick a direction. It picks the one that never claims a readiness
  * nobody measured: no wait, not ready, tell the caller to poll.
  */
@@ -230,7 +230,7 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
                 // The friendly model name ("iPhone 16 Pro"), which the handle
                 // keeps from the create that resolved it. `undefined` only on
                 // an attached handle, which cannot reach this line; the
-                // keyword is the honest fallback if that ever changes, since
+                // keyword is the right fallback if that ever changes, since
                 // it is what the caller asked for.
                 deviceTypeName: sim.deviceType?.name ?? keyword,
                 udid: sim.udid,

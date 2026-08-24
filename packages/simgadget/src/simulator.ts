@@ -7,7 +7,7 @@
  * reading half — `describeScreen()`, `screenSize()`, `findByLabel()`,
  * `findByIdentifier()`, `describePoint()` — and the wedge-recovery machinery
  * underneath all of them. Step 4 adds orientation: `rotate()`,
- * `detectOrientation()`, and the coordinate contract's three lifetimes of
+ * `detectOrientation()`, and the coordinate rules' three lifetimes of
  * state. Step 5 adds acting: `tap()`, `typeText()`, `swipe()`,
  * `pressButton()`. Step 6 adds capture: `screenshot()`, `startRecording()`,
  * `stopRecording()` — thin, because the pipeline underneath them is about
@@ -146,8 +146,8 @@ export interface TapOptions {
  * What a tap did, and what it read back. There is no success that carries no
  * information: "Tapped successfully" is the bug class this whole library was
  * reshaped to kill, because a tap that hit the wrong control, a tap that landed
- * 40% of the time and a tap that actuated nothing each reported exactly that
- * same cheerful string.
+ * 40% of the time and a tap that actuated nothing each reported exactly the
+ * same string.
  */
 export type TapResult =
   | {
@@ -357,7 +357,7 @@ export class Simulator {
    * where `name` is the model a person says ("iPhone 16 Pro") and
    * `identifier` is what `simctl create` takes.
    *
-   * **`undefined` on an attached handle, honestly rather than awkwardly.**
+   * **`undefined` on an attached handle, deliberately.**
    * `createSimulator` resolves the device type on its way to `simctl create`
    * and so knows it for free; `attachSimulator` adopts a udid and never looks
    * one up. A caller that needs it for an attached simulator can pay a
@@ -395,7 +395,7 @@ export class Simulator {
   protected screenDims: { width: number; height: number } | null = null;
 
   /**
-   * The *portrait* point dimensions — the second of the coordinate contract's
+   * The *portrait* point dimensions — the second of the coordinate rules'
    * three lifetimes, and the only one **cached forever**. A udid's device type
    * is fixed at creation, so these are a property of the model rather than of
    * anything on screen: nothing a caller can do changes them, so nothing has to
@@ -411,7 +411,7 @@ export class Simulator {
    * Per handle, not per udid, and the spec says so: two handles on one
    * simulator each carry their own, and an external rotation between the two
    * landscapes is invisible to both until someone calls `detectOrientation()`.
-   * That is the documented hazard in the coordinate contract, not an oversight.
+   * That is the documented hazard in the coordinate rules, not an oversight.
    *
    * Written authoritatively by `rotate()` and `detectOrientation()`, and
    * retired to `"auto"` by `noteRootFrame` when a describe contradicts its
@@ -867,7 +867,7 @@ export class Simulator {
 
   /**
    * The one place a describe's root frame is recorded, and the first two of the
-   * coordinate contract's three lifetimes meeting.
+   * coordinate rules' three lifetimes meeting.
    *
    * The logical dimensions are simply the frame. The orientation *aspect* is
    * free here too — a root wider than it is tall is a device on its side — and
@@ -1353,7 +1353,7 @@ export class Simulator {
     try {
       tree = await this.readScreenTree();
     } catch {
-      // The fallback is best-effort: if the screen cannot be read, the honest
+      // The fallback is best-effort: if the screen cannot be read, the right
       // answer is still "not found" rather than an error about a backend the
       // caller never asked for.
       return null;
@@ -1439,7 +1439,7 @@ export class Simulator {
    * The element at a logical-space point, or `null` when nothing is there.
    * Absorbs the `ui_describe_point` tool body (index.ts:2110-2152).
    *
-   * A frame nowhere near the point it was found at is the signature of a
+   * A frame nowhere near the point it was found at is the telltale sign of a
    * remote-hosted view: the hit-test is right, the frame is measured from the
    * hosting window rather than the screen. The tree read that corrects it costs
    * ~300ms, so it is paid only here, on the reads that are otherwise wrong —
@@ -1828,7 +1828,7 @@ export class Simulator {
       // name until toggles started being activated instead of touched, and its
       // frame was the control all along. The caller's tap then goes through the
       // ordinary path, hold and hit-test verification included, so if the centre
-      // turns out not to be the control they get the honest refusal rather than
+      // turns out not to be the control they get the refusal rather than
       // a touch into empty space.
       if (!isNoElementError(toError(error).message)) throw error;
       return null;

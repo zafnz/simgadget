@@ -121,8 +121,8 @@
         <li><strong>A failure</strong> is a typed error with a <code>code</code> and a payload,
         so no caller ever regexes a message.</li>
         <li><strong>Where there is genuinely nothing to read back</strong> —
-        <code>swipe</code>, <code>typeText</code> — the return is <code>void</code>, and that's
-        honest rather than lazy.</li>
+        <code>swipe</code>, <code>typeText</code> — the return is <code>void</code>. The
+        companion acks delivery and knows no more than you do.</li>
         <li><strong>"Absent" is an answer, not an exception.</strong>
         <code>findByLabel</code>, <code>findByIdentifier</code> and <code>describePoint</code>
         return <code>null</code> for a clean miss.</li>
