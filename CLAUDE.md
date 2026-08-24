@@ -229,6 +229,16 @@ other ports, from this same checkout**, and they are production. So:
 
 ## Important Design Principles
 
+- **Never recreate `zafnz/ios-multi-simulator-mcp`** — not the repository, not
+  the npm package, not a fork, not a "moved to" placeholder. The repository was
+  renamed to `zafnz/simgadget` on 2026-08-24, and GitHub's redirect from the old
+  path is load-bearing forever: **every published version of
+  `ios-multi-simulator-mcp` carries the old release URL inside its
+  `companion.lock.json`**, and that is where those installs fetch a 19 MB
+  `idb_companion` from. Creating anything at the old path shadows the redirect
+  and breaks the companion download for every one of them, silently, at the
+  moment they next need it. The npm package name is deprecated rather than
+  unpublished for the same reason.
 - **Keep it simple**: minimal dependencies, standard tooling (npm/tsc)
 - **Real use cases only**: Don't add hypothetical features
 - **Security first**: Always use `--` separator for user inputs, validate with Zod

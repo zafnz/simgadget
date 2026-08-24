@@ -61,12 +61,12 @@ import {
 // ---- the server's URLs, and nothing else's --------------------------------
 
 /** Where a user is asked to file the failures that should not happen. */
-const ISSUES_URL = "https://github.com/zafnz/ios-multi-simulator-mcp/issues";
+const ISSUES_URL = "https://github.com/zafnz/simgadget/issues";
 
 const TROUBLESHOOTING_MARKDOWN =
-  "https://github.com/zafnz/ios-multi-simulator-mcp/blob/main/TROUBLESHOOTING.md";
+  "https://github.com/zafnz/simgadget/blob/main/TROUBLESHOOTING.md";
 const TROUBLESHOOTING_PLAIN =
-  "https://raw.githubusercontent.com/zafnz/ios-multi-simulator-mcp/refs/heads/main/TROUBLESHOOTING.md";
+  "https://raw.githubusercontent.com/zafnz/simgadget/refs/heads/main/TROUBLESHOOTING.md";
 
 /**
  * Both forms of the troubleshooting guide: a link for a human reading a chat
