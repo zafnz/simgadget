@@ -1,0 +1,16 @@
+<!-- Placeholder poster for the hero demo video. Replace with a real first
+     frame exported from demo.mp4 (300x620 or larger, same aspect). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 620" width="300" height="620">
+  <rect width="300" height="620" fill="#121618"/>
+  <g fill="none" stroke="#232a2d" stroke-width="1">
+    <path d="M0 90h300M0 150h300M0 210h300M0 270h300M0 330h300M0 390h300M0 450h300M0 510h300"/>
+  </g>
+  <g transform="translate(150 296)">
+    <circle r="26" fill="none" stroke="#5fe3a1" stroke-width="2" opacity=".55"/>
+    <path d="M0-14v6M0 8v6M-14 0h6M8 0h6" stroke="#5fe3a1" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+    <circle r="6" fill="#5fe3a1" opacity=".55"/>
+  </g>
+  <text x="150" y="360" text-anchor="middle" fill="#6d7b7e"
+        font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11"
+        letter-spacing="1.5">DEMO PLACEHOLDER</text>
+</svg>

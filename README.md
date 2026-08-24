@@ -1,46 +1,14 @@
 # SimGadget — iOS simulator automation for JS/TS and MCP
 
-Drive iOS simulators from JavaScript, or from an AI agent over MCP. Create and
-boot a simulator, read its accessibility tree, tap a control **by name** and get
-back what actually happened — not a success string.
-
-Forked from [joshuayoes/ios-simulator-mcp](https://github.com/joshuayoes/ios-simulator-mcp)
-— all foundational work by Joshua Yoes. This fork has since been rewritten and
-is not directly compatible.
-
-> **Renamed.** This project was `ios-multi-simulator-mcp`. The npm package of
-> that name is deprecated and now a thin wrapper around `simgadget-mcp`; see
-> [Migrating](#migrating-from-ios-multi-simulator-mcp).
-
-## The companion is the real product
-
-Everything here rests on `idb_companion`, and the useful version of it does not
-exist as a release. Facebook's last `idb` release was **2022**. Anyone writing
-an iOS-simulator library in JS today either shells out to that four-year-old
-`brew install idb-companion`, or to `xcrun simctl`, which cannot read
-accessibility at all.
-
-SimGadget pins its own: a companion built from **current idb source** against
-Xcode 26.6 / Swift 6.3.3, published as a release asset, sha256-verified, and
-downloaded on demand the first time you need it (~19 MB, cached afterwards).
-That is what makes tapping by name possible, and what makes a tap that would
-miss say so instead of reporting success.
-
-You do not install `idb_companion` yourself, and a Homebrew one on your `PATH`
-is deliberately ignored — see
-[How `idb_companion` is obtained](#how-idb_companion-is-obtained).
+SimGadget boots simulators, reads the accessibility tree, and taps controls by
+name — from TypeScript, or from any AI agent that speaks MCP. No Python, no
+Homebrew, no four-year-old tooling.
 
 ## System requirements
 
-Few npm dependencies, but real system ones:
-
 - **macOS on Apple Silicon.** iOS simulators are macOS-only and the pinned
-  companion is arm64-only. An unsupported machine fails at resolve time with an
-  error naming the architecture, not a timeout thirty seconds later.
+  companion is arm64-only.
 - **Xcode**, with at least one iOS runtime installed.
-- **`xcrun simctl`**, **`sips`** and **`tar`** on the `PATH` — all three ship
-  with macOS and Xcode. `simctl` does simulator lifecycle and capture, `sips`
-  does image resizing and rotation, `tar` unpacks the companion.
 - **Node.js 18+.**
 
 ## The two packages
@@ -53,6 +21,22 @@ Few npm dependencies, but real system ones:
 The server is built on the library and imports only its public API. Both are
 published in lockstep at the same version number, so there is never any version
 skew to reason about.
+
+## No idb, no separate idb_companion install needed
+
+You don't need to install the python `idb` cli, nor `idb_companion` -- If you've
+used libraries or MCPs that drive iOS simulators before you're already
+happier having read that.
+
+Facebook's last `idb` release was **2022**. Anyone writing an iOS-simulator 
+library in JS today either shells out to that four-year-old code.
+
+SimGadget pins its own: a companion built from **current idb source** against
+Xcode 26.6 / Swift 6.3.3, published as a release asset, sha256-verified, and
+downloaded on demand the first time you need it (~19 MB, cached afterwards).
+That is what makes tapping by name possible, and what makes a tap that would
+miss say so instead of reporting success.
+
 
 ---
 
@@ -108,54 +92,10 @@ CommonJS works the same way: `const { createSimulator } = require("simgadget")`.
   touch at named coordinates, or an accessibility activation with the toggle
   state read back before and after. When it cannot confirm the state changed it
   says so rather than claiming success.
-- **Wedge recovery.** An accessibility bridge that stops answering — roughly one
-  fresh simulator in four, see [BOOT_BUG.md](BOOT_BUG.md) — is diagnosed and
-  cured inside the call, not left for you.
 
 The full API, with every signature, result shape and error payload, is in
 [SIMGADGET.md](SIMGADGET.md).
 
-## `prefetchCompanion`
-
-The first call that touches a simulator downloads the companion. In CI, or in a
-provisioning script, you usually want that to happen at a step where a slow step
-is expected:
-
-```js
-import { prefetchCompanion } from "simgadget";
-const binary = await prefetchCompanion((msg) => console.error(msg));
-```
-
-or from a shell — the path goes to stdout and the progress to stderr, so this
-is a working line:
-
-```bash
-COMPANION=$(npx simgadget prefetch)
-```
-
-## The coordinate contract
-
-Coordinates are **logical** (screen) space throughout — what you see in a
-`describeScreen` frame is what you pass to `tap({x, y})`.
-
-> Coordinates are interpreted in the space of your most recent describe.
-> `tap({x, y})` works as long as nothing *external* has changed the simulator
-> since your last describe or rotate — those are exactly the calls that refresh
-> the library's knowledge. `tap({label})` resolves the element inside the call,
-> so it is immune to prior rotations, with one footnote: an external flip
-> between the two landscapes changes nothing a describe can see, so chirality
-> rides on the hint until `detectOrientation()`. And two `Simulator` handles for
-> one udid each carry their own hint — if you hold two, you resync both.
-
-Detecting orientation *inside* `tap({x, y})` was considered and rejected on
-semantics, not cost: your coordinates only mean anything in the space of the
-describe they came from. If the simulator rotated since, they are stale, and
-transforming old-space coordinates with a freshly-detected orientation lands the
-tap in a *different* wrong place. Coordinate-space consistency, not freshness, is
-the honest guarantee.
-
-Screenshots are a separate space: they come back in **pixels**, at the device's
-scale factor. Do not derive tap coordinates from one.
 
 ---
 
@@ -488,25 +428,6 @@ turn, but no Face ID iPhone gives an app an upside-down interface, whatever its
 interface actually kept. Use an iPad if you need that case.
 
 For everything else, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
-
-# Migrating from `ios-multi-simulator-mcp`
-
-The MCP server was renamed and split out of a single package. `npm deprecate`
-points at the new one, and `ios-multi-simulator-mcp` remains published as a thin
-wrapper so existing client configs keep working — but three things change when
-you move across:
-
-1. **The package and the server key.** `npx -y simgadget-mcp` instead of
-   `npx -y ios-multi-simulator-mcp`, and the server key in your client config is
-   yours to name — `simgadget` is what these docs use. The server now reports
-   itself to clients as `simgadget`.
-2. **`IOS_SIMULATOR_MCP_*` → `SIMGADGET_*`.** Both spellings work today, with a
-   deprecation line on stderr; the old one is dropped two releases from now.
-3. **The companion cache moved** to `~/Library/Caches/simgadget/`. This orphans
-   an already-downloaded 19 MB companion, which is re-fetched once. Delete
-   `~/Library/Caches/ios-multi-simulator-mcp/` when you are happy.
-
-Full history in [CHANGELOG.md](CHANGELOG.md).
 
 # License
 

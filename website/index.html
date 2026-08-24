@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SimGadget — drive an iOS simulator like you mean it</title>
+<meta name="description" content="SimGadget drives iOS simulators from TypeScript and from AI agents over MCP. Two runtime dependencies, a current idb_companion instead of the 2022 one, taps that verify they landed, and one server that lets many agents each drive their own simulator.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/site.css">
+<meta property="og:title" content="SimGadget — drive an iOS simulator like you mean it">
+<meta property="og:description" content="iOS simulator automation for TypeScript and for AI agents. No Python, no Homebrew, no four-year-old tooling.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+
+<!-- ============================== nav ============================== -->
+<nav class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style="color:var(--accent)">
+        <rect x="6.2" y="2.6" width="11.6" height="18.8" rx="2.9" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M9.9 2.6h4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M12 7.5v1.4M12 15.1v1.4M7.6 12H9M15 12h1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      SimGadget
+    </a>
+    <span class="chip-ver">v1 · pre-release</span>
+    <div class="nav-links">
+      <a href="library.html">Library</a>
+      <a href="mcp.html">MCP server</a>
+      <a href="https://github.com/zafnz/simgadget" class="hide-sm">GitHub</a>
+      <button class="theme-btn" data-theme-toggle aria-label="Toggle colour theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4.2"/>
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ============================== hero ============================== -->
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow">iOS simulator automation</span>
+        <h1>Drive an iOS simulator like you mean&nbsp;it.</h1>
+        <p class="lede">
+          SimGadget boots simulators, reads the accessibility tree, and taps controls
+          by name — from TypeScript, or from any AI agent that speaks MCP.
+          No Python, no Homebrew, no four-year-old tooling.
+        </p>
+
+        <div class="hero-cmds">
+          <div class="cmd">
+            <span class="sig">$</span>
+            <span class="txt">npm install simgadget</span>
+            <button class="copy" type="button">copy</button>
+          </div>
+          <div class="cmd">
+            <span class="sig">$</span>
+            <span class="txt">npx -y simgadget-mcp</span>
+            <button class="copy" type="button">copy</button>
+          </div>
+        </div>
+
+        <p class="hero-req">
+          macOS on Apple Silicon · Xcode with iOS simulators · Node 18+.
+          <br>You do <strong>not</strong> install <code>idb_companion</code> — SimGadget brings its own.
+        </p>
+      </div>
+
+      <!-- demo: real capture if assets/demo.mp4 exists, animated stand-in otherwise -->
+      <div class="demo" data-demo>
+        <div class="device">
+          <div class="screen">
+            <div class="notch"></div>
+
+            <video muted loop playsinline autoplay preload="metadata"
+                   poster="assets/demo-poster.svg"
+                   aria-label="An AI agent driving an iOS simulator: tapping a switch and a button by name">
+              <source src="assets/demo.mp4" type="video/mp4">
+            </video>
+
+            <!-- ---- animated stand-in ---- -->
+            <div class="fakeapp" aria-hidden="true">
+              <div class="fa-status"><span>9:41</span><span>▮▮▮ ▾</span></div>
+              <div class="fa-nav">Settings</div>
+              <div class="fa-list">
+                <div class="fa-row">
+                  <span><span class="lab">Sound</span><br><span class="sub">Play interface sounds</span></span>
+                  <span class="fa-ctl"><span class="fa-sw target"><i></i></span><span class="fa-ping p1"></span></span>
+                </div>
+                <div class="fa-row">
+                  <span><span class="lab">Haptics</span><br><span class="sub">Vibrate on touch</span></span>
+                  <span class="fa-ctl"><span class="fa-sw"><i></i></span></span>
+                </div>
+                <div class="fa-row">
+                  <span><span class="lab">Notifications</span><br><span class="sub">Badges and banners</span></span>
+                  <span class="fa-ctl"><span class="fa-sw"><i></i></span></span>
+                </div>
+                <div class="fa-row">
+                  <span class="lab">Appearance</span><span class="sub">System ›</span>
+                </div>
+                <div class="fa-row">
+                  <span class="lab">Text Size</span><span class="sub">Default ›</span>
+                </div>
+                <div class="fa-row">
+                  <span class="lab">Account</span><span class="sub">Not signed in ›</span>
+                </div>
+                <div class="fa-btn">Sign Up<span class="fa-ping p2"></span></div>
+              </div>
+              <div class="fa-tabs"><div class="on">Settings</div><div>Library</div><div>About</div></div>
+
+              <div class="fa-done">
+                <div class="fa-check">✓</div>
+                <div class="big">Welcome aboard</div>
+                <div class="sm">Account created</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wirelog" aria-hidden="true">
+          <div class="ln"><span class="ar">›</span><span class="req">ui_tap { label: "Sound" }</span></div>
+          <div class="ln"><span class="ar">‹</span><span class="res">Toggled Sound off -&gt; on.</span></div>
+          <div class="ln"><span class="ar">›</span><span class="req">ui_tap { label: "Sign Up" }</span></div>
+          <div class="ln"><span class="ar">‹</span><span class="res">Tapped "Sign Up" (Button) at (150, 452).</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="rule"></div>
+
+<!-- ============================== pitch + readings ============================== -->
+<section class="tight">
+  <div class="wrap">
+    <div class="split wide-left" style="align-items:center">
+      <p style="font-size:clamp(1.15rem,2.4vw,1.5rem); line-height:1.4; letter-spacing:-.02em; margin:0">
+        SimGadget is a <strong>TypeScript library</strong> for driving iOS simulators, and an
+        <strong>MCP server</strong> built on it that lets a fleet of AI agents each drive
+        their own simulator at once.
+      </p>
+      <div class="grid g2" style="gap:22px">
+        <div class="stat"><div class="val">1.2<small> ms</small></div><div class="lbl">wire time for a tap</div></div>
+        <div class="stat"><div class="val">13<small> ms</small></div><div class="lbl">find a control by name</div></div>
+        <div class="stat"><div class="val">2</div><div class="lbl">npm runtime dependencies</div></div>
+        <div class="stat"><div class="val">340<small> B</small></div><div class="lbl">to tap, vs 7–10 KB for a tree</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== why ============================== -->
+<section class="anchor" id="why" style="background:var(--bg-2); border-block:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sechead">
+      <span class="eyebrow"><span class="n">01</span> Why it exists</span>
+      <h2>Most other libraries and MCPs use code from 2022.</h2>
+      <p class="lede">
+        The alternatives shell out to the Python <code>idb</code> CLI, or to Homebrew's
+        <code>idb_companion</code> — last released in 2022 — or to <code>xcrun simctl</code>,
+        which cannot read accessibility at all.
+      </p>
+    </div>
+
+    <div class="versus">
+      <div class="side old">
+        <div class="hd">The reputation this has</div>
+        <ul>
+          <li>Taps that report success and change nothing</li>
+          <li>Controls inside tab bars that are simply invisible</li>
+          <li>Coordinates that silently invert the moment you rotate</li>
+          <li>A Python process spawned for every single call</li>
+          <li>A simulator that wedges and has to be thrown away</li>
+        </ul>
+      </div>
+      <div class="mid"></div>
+      <div class="side new">
+        <div class="hd">What SimGadget did about it</div>
+        <ul>
+          <li>A tap that hit-tests first and refuses when it can't land</li>
+          <li>The app's real view hierarchy, toolbars included</li>
+          <li>One coordinate space that survives rotation, written down</li>
+          <li>gRPC straight to the companion — no Python in the loop</li>
+          <li>Automatic recovery from the accessibility wedge</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="mt-m lede" style="max-width:62em">
+      SimGadget ships its own <code>idb_companion</code>, built from current upstream source
+      against current Xcode, pinned by sha256 and fetched on first use. Everything above it
+      was rewritten on top of that.
+    </p>
+  </div>
+</section>
+
+<!-- ============================== four things ============================== -->
+<section>
+  <div class="wrap">
+    <div class="sechead">
+      <span class="eyebrow"><span class="n">02</span> Four things worth the switch</span>
+      <h2>Fast, small, current, and honest about what happened.</h2>
+    </div>
+
+    <div class="grid g2">
+
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/></svg>
+        </div>
+        <h3>Built for speed, and measured</h3>
+        <p class="muted">
+          A tap costs <strong>~1.2 ms</strong> of wire time instead of the <strong>~165 ms</strong>
+          it takes to spawn a Python process for every single call. Finding a control by name is
+          <strong>~13 ms</strong> on the fast path. A whole screen is <strong>~350 ms</strong>.
+          Asking what is at a point is <strong>~10 ms</strong>.
+        </p>
+        <p class="muted">
+          The whole design is shaped by that: <code>tap({label: "Sign Up"})</code> resolves the
+          element <em>on the simulator</em> and operates it, so nothing ever pulls down a
+          kilobyte-scale tree just to find one button.
+        </p>
+      </article>
+
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+        </div>
+        <h3>Almost zero dependencies</h3>
+        <p class="muted">
+          The library has exactly <strong>two</strong> npm runtime dependencies:
+          <code>@grpc/grpc-js</code> and <code>@bufbuild/protobuf</code>. That's it.
+          No test framework leaking into your install, no CLI wrappers, no 14&nbsp;MB of
+          transitive weight.
+        </p>
+        <p class="muted">
+          That is also <em>why</em> there are two packages. The MCP SDK and Zod are 14&nbsp;MB
+          between them, and a library that taps a simulator has no business putting them in
+          front of you.
+        </p>
+      </article>
+
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14.7 6.3a4.5 4.5 0 0 0 5.9 5.9l-8.3 8.3a2.6 2.6 0 0 1-3.7 0l-2.2-2.2a2.6 2.6 0 0 1 0-3.7z"/><path d="M17.5 3.5 20.5 6.5"/></svg>
+        </div>
+        <h3>A companion from this decade</h3>
+        <p class="muted">
+          SimGadget pins a build from current idb source against
+          <strong>Xcode 26.6 / Swift 6.3.3</strong>, sha256-verified, downloaded once and cached.
+        </p>
+        <p class="muted">
+          This is not housekeeping — it is what makes the rest possible. Tap-by-name doesn't work
+          on the old companion. Neither does reading the contents of a tab bar, a nav bar or a
+          toolbar.
+        </p>
+        <p class="muted">
+          There is deliberately <strong>no fallback to whatever <code>idb_companion</code> is on
+          your <code>$PATH</code></strong>: an old companion doesn't reject request fields it
+          doesn't understand, it ignores them and answers anyway. A fallback would return results
+          that are wrong but entirely plausible.
+        </p>
+      </article>
+
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M8 6a4 4 0 0 1 8 0M5.5 10h13v5a6.5 6.5 0 0 1-13 0z"/><path d="M3 12H1.5M22.5 12H21M4 6.5 2.7 5.5M20 6.5l1.3-1M4 18l-1.3 1M20 18l1.3 1"/></svg>
+        </div>
+        <h3>Bugs nothing else has fixed</h3>
+        <p class="muted">
+          A long list of failures that cost real debugging time to find, each of them the kind
+          that reports success while doing nothing. Instant taps that don't register. Switches
+          that were never tappable. System sheets landing taps 476 points away. Simulators that
+          wedge on boot.
+        </p>
+        <p class="muted">
+          Every one is measured, and every measurement traces to a run in the repository.
+        </p>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================== two doors ============================== -->
+<section class="anchor" id="packages">
+  <div class="wrap">
+    <div class="sechead">
+      <span class="eyebrow"><span class="n">04</span> Two packages</span>
+      <h2>Pick the door you were already walking towards.</h2>
+    </div>
+
+    <div class="grid g2" style="gap:24px">
+
+      <article class="card" style="display:flex; flex-direction:column; gap:16px">
+        <div>
+          <span class="pill">library</span>
+          <h3 class="mt-s">Script your tests accurately and quickly.</h3>
+        </div>
+        <p class="muted" style="margin:0">
+          You have a shell and a Node runtime. You don't need a protocol between you and a
+          simulator.
+        </p>
+        <p class="muted" style="margin:0">
+          Because we support labels, tapping, typing, scrolling, it's all reproducable, even if you 
+          alter the exact place of the elements. 
+        </p>
+
+        <div class="term">
+          <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">signup.ts</span></div>
+<pre><code><span class="t-k">import</span> { createSimulator } <span class="t-k">from</span> <span class="t-s">"simgadget"</span>;
+
+<span class="t-k">const</span> sim = <span class="t-k">await</span> <span class="t-f">createSimulator</span>({
+  deviceType: <span class="t-s">"iPhone 16 Pro"</span>,
+});
+<span class="t-k">await</span> sim.<span class="t-f">installApp</span>(<span class="t-s">"./build/MyApp.app"</span>);
+<span class="t-k">await</span> sim.<span class="t-f">launchApp</span>(<span class="t-s">"com.example.myapp"</span>);
+
+<span class="t-k">await</span> sim.<span class="t-f">tap</span>({ label: <span class="t-s">"Sign Up"</span> });
+<span class="t-k">await</span> sim.<span class="t-f">typeText</span>(<span class="t-s">"test@example.com"</span>);</code></pre>
+        </div>
+        <div class="btn-row" style="margin-top:auto">
+          <a class="btn btn-primary" href="library.html">The library →</a>
+        </div>
+      </article>
+
+      <article class="card" style="display:flex; flex-direction:column; gap:16px">
+        <div>
+          <span class="pill amber">mcp server</span>
+          <h3 class="mt-s">Give every agent its own iPhone.</h3>
+        </div>
+        <p class="muted" style="margin:0">
+          One server. Many agents. Many simulators. Nobody steps on anybody.
+        </p>
+        <div class="term">
+          <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">agent transcript</span><span class="tag">~340 bytes</span></div>
+<pre><code><span class="t-p">›</span> ui_tap { id: <span class="t-s">"qa1"</span>, label: <span class="t-s">"Sound"</span> }
+<span class="t-n">‹</span> <span class="t-s">Toggled Sound off -&gt; on.</span>
+
+<span class="t-p">›</span> ui_tap { id: <span class="t-s">"qa1"</span>, label: <span class="t-s">"Stepper"</span> }
+<span class="t-n">‹</span> <span class="t-k">Refused: "Stepper" is covered by
+  "Search" (SearchField) at (102, 96).</span></code></pre>
+        </div>
+        <div class="btn-row" style="margin-top:auto">
+          <a class="btn btn-primary" href="mcp.html">The MCP server →</a>
+        </div>
+      </article>
+
+    </div>
+
+    <div class="tablewrap mt-l">
+      <table>
+        <thead>
+          <tr><th></th><th><code>simgadget</code></th><th><code>simgadget-mcp</code></th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>For</strong></td><td>TypeScript / JavaScript code</td><td>AI agents — Claude Code, Cursor, anything MCP</td></tr>
+          <tr><td><strong>Install</strong></td><td><code>npm install simgadget</code></td><td><code>npx -y simgadget-mcp</code></td></tr>
+          <tr><td><strong>Runtime deps</strong></td><td>2</td><td>4</td></tr>
+          <tr><td><strong>Gives you</strong></td><td><code>Simulator</code> handle, typed results, typed errors</td><td>17 tools, sessions, multi-agent isolation</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note mt-m">
+      <strong>Requirements</strong> macOS on Apple Silicon, Xcode with iOS
+      simulators, Node 18+. The library also uses <code>xcrun simctl</code>, <code>sips</code>
+      and <code>tar</code>, which ship with macOS. You do <strong>not</strong> install
+      <code>idb_companion</code> — SimGadget fetches a pinned one on first use, or run
+      <code>npx simgadget prefetch</code> if you'd rather front-run the download in CI.
+    </div>
+  </div>
+</section>
+
+<!-- ============================== faq ============================== -->
+<section class="anchor" id="faq" style="background:var(--bg-2); border-block:1px solid var(--line)">
+  <div class="wrap wrap-tight">
+    <div class="sechead">
+      <span class="eyebrow"><span class="n">05</span> FAQ</span>
+      <h2>Frequently asked questions</h2>
+    </div>
+
+    <div class="faq">
+      <details open>
+        <summary>Do I need to install idb or idb_companion?</summary>
+        <div class="a">No. SimGadget fetches a pinned, sha256-verified companion on first use and
+        caches it. A Homebrew companion on your <code>$PATH</code> is deliberately ignored — a
+        silent fallback to a 2022 binary would be worse than none, because it answers wrong
+        instead of erroring.</div>
+      </details>
+      <details>
+        <summary>Do I need Python?</summary>
+        <div class="a">No. SimGadget speaks gRPC to the companion directly. That's where most of
+        the speed comes from.</div>
+      </details>
+      <details>
+        <summary>Intel Macs?</summary>
+        <div class="a">No — Apple Silicon only, and it fails loudly at startup naming your
+        architecture rather than timing out thirty seconds later.</div>
+      </details>
+      <details>
+        <summary>Can I use it without an AI agent?</summary>
+        <div class="a">That's what the library is for. <code>npm install simgadget</code>, then
+        see <a href="library.html" style="color:var(--accent)">the library page</a>.</div>
+      </details>
+      <details>
+        <summary>Can I use it without writing code?</summary>
+        <div class="a">That's what the MCP server is for. <code>npx -y simgadget-mcp</code>, then
+        point your agent at it — <a href="mcp.html" style="color:var(--accent)">setup here</a>.</div>
+      </details>
+      <details>
+        <summary>Is this the same as <code>ios-simulator-mcp</code>?</summary>
+        <div class="a">It started as a fork of Joshua Yoes' <code>ios-simulator-mcp</code> and has
+        diverged substantially — different transport, different lifecycle model, its own
+        companion, and a library underneath. The foundational work is his and is credited.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== cta ============================== -->
+<section>
+  <div class="wrap">
+    <div class="cta">
+      <div class="split wide-left" style="align-items:center">
+        <div>
+          <h2>Two commands and you're driving.</h2>
+          <p class="lede" style="margin:0">
+            No <code>pipx install fb-idb</code>. No <code>brew install idb-companion</code>.
+            No Xcode command-line archaeology.
+          </p>
+        </div>
+        <div>
+          <div class="cmd"><span class="sig">$</span><span class="txt">npm install simgadget</span><button class="copy" type="button">copy</button></div>
+          <div class="cmd"><span class="sig">$</span><span class="txt">npx -y simgadget-mcp</span><button class="copy" type="button">copy</button></div>
+          <div class="btn-row mt-s">
+            <a class="btn btn-primary" href="library.html">Library docs</a>
+            <a class="btn btn-ghost" href="mcp.html">MCP setup</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== footer ============================== -->
+<footer class="site">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="index.html" style="margin-bottom:12px">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" style="color:var(--accent)">
+            <rect x="6.2" y="2.6" width="11.6" height="18.8" rx="2.9" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M9.9 2.6h4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M12 7.5v1.4M12 15.1v1.4M7.6 12H9M15 12h1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          SimGadget
+        </a>
+        <p class="small" style="max-width:30em">
+          iOS simulator automation for TypeScript and for AI agents.
+          Two runtime dependencies and a companion that isn't four years old.
+        </p>
+      </div>
+      <div>
+        <h4>Packages</h4>
+        <ul>
+          <li><a href="library.html">simgadget</a></li>
+          <li><a href="mcp.html">simgadget-mcp</a></li>
+          <li><a href="index.html#fixes">Bugs we fixed</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Reference</h4>
+        <ul>
+          <li><a href="library.html#api">API reference</a></li>
+          <li><a href="library.html#requirements">Requirements</a></li>
+          <li><a href="mcp.html#tools">Tool list</a></li>
+          <li><a href="mcp.html#config">Configuration</a></li>
+          <li><a href="index.html#faq">FAQ</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Source</h4>
+        <ul>
+          <li><a href="https://github.com/zafnz/simgadget">GitHub</a></li>
+          <li><a href="https://www.npmjs.com/package/simgadget">npm</a></li>
+          <li><a href="https://github.com/zafnz/simgadget/issues">Issues</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bot">
+      <span>MIT licensed.</span>
+      <span>Forked from <a href="https://github.com/joshuayoes/ios-simulator-mcp">joshuayoes/ios-simulator-mcp</a> — all foundational work by Joshua Yoes.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>
