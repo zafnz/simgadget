@@ -182,288 +182,55 @@
     </div>
 
     <div class="note" style="margin-bottom:34px">
-      <strong>The full reference is generated from the source.</strong>
-      <a href="api/">simgadget.dev/api</a> has every signature, option, default and thrown
-      error, typed exactly as the compiler sees them, with the doc comments that live next to
-      the code — and a search box. It is rebuilt from <code>src/index.ts</code> on every
-      deploy, so it cannot drift.
-      <br><br>
-      What follows is the shorter version: the shape of the API, grouped by what you are
-      trying to do, for reading rather than looking up.
+      <strong>Full API documentation.</strong>
+      <a href="api/">simgadget.dev/api</a> has the full documentation including examples.
     </div>
 
-    <div class="api-index">
-      <a href="#api-top">Top-level functions</a>
-      <a href="#api-lifecycle">Lifecycle</a>
-      <a href="#api-apps">Apps</a>
-      <a href="#api-reading">Reading</a>
-      <a href="#api-acting">Acting</a>
-      <a href="#api-orientation">Orientation</a>
-      <a href="#api-capture">Capture</a>
-      <a href="#api-lowlevel">Low level</a>
-      <a href="#api-types">Types</a>
-      <a href="#api-errors">Errors</a>
-      <a href="#api-coords">Coordinates</a>
+    <div class="term">
+      <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">signup.js</span><span class="tag">JavaScript</span></div>
+<pre><code><span class="t-k">import</span> { createSimulator } <span class="t-k">from</span> <span class="t-s">"simgadget"</span>;
+
+<span class="t-c">// Creates on the latest installed iOS runtime and waits until the device is</span>
+<span class="t-c">// actually driveable</span>
+<span class="t-k">const</span> sim = <span class="t-k">await</span> <span class="t-f">createSimulator</span>({ deviceType: <span class="t-s">"iPhone 16 Pro"</span> });
+console.<span class="t-f">log</span>(sim.udid, sim.lastBoot); <span class="t-c">// { ready: true, waitedMs: 41000, ... }</span>
+
+<span class="t-k">await</span> sim.<span class="t-f">installApp</span>(<span class="t-s">"./build/MyApp.app"</span>);
+<span class="t-k">await</span> sim.<span class="t-f">launchApp</span>(<span class="t-s">"com.example.myapp"</span>); <span class="t-c">// -&gt; { pid: 18900 }</span>
+
+<span class="t-c">// Resolves the element and taps it. Refuses if the element is disabled or not visible.</span>
+<span class="t-k">const</span> result = <span class="t-k">await</span> sim.<span class="t-f">tap</span>({ label: <span class="t-s">"Sign Up"</span> });
+<span class="t-c">// { acted: "touch", x: 201, y: 442, count: 1, durationSeconds: 0.1, element: {...} }</span>
+
+<span class="t-k">await</span> sim.<span class="t-f">tap</span>({ label: <span class="t-s">"Email"</span> });
+<span class="t-k">await</span> sim.<span class="t-f">typeText</span>(<span class="t-s">"test@example.com"</span>);
+
+<span class="t-c">// null is the ordinary "not on screen" answer, not an error.</span>
+<span class="t-k">const</span> banner = <span class="t-k">await</span> sim.<span class="t-f">findByLabel</span>(<span class="t-s">"Welcome back"</span>);
+<span class="t-k">if</span> (banner === null) {
+  console.<span class="t-f">log</span>(<span class="t-s">"Can't find Welcome back"</span>);
+}
+
+<span class="t-k">await</span> sim.<span class="t-f">screenshot</span>({ path: <span class="t-s">"/tmp/signup.png"</span> });
+<span class="t-c">// And finally delete the sim when you're finished.</span>
+<span class="t-k">await</span> sim.<span class="t-f">delete</span>();</code></pre>
     </div>
 
-    <div class="api-group" id="api-top">
+    <div class="api-group" id="api-top" style="margin-top:38px">
       <h3>Top-level functions</h3>
-      <p>Everything else hangs off a <code>Simulator</code> handle, which these return.</p>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th>Signature</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><code>listSimulators(): Promise&lt;SimInfo[]&gt;</code></td>
-              <td>Every simulator <code>simctl</code> knows about.</td>
-            </tr>
-            <tr>
-              <td><code>createSimulator(opts?: CreateOptions): Promise&lt;Simulator&gt;</code></td>
-              <td>Creates on the latest available iOS runtime and, by default, boots and waits until actually driveable. Does <em>not</em> throw on a boot that timed out — the simulator exists either way; inspect <code>sim.lastBoot</code>. Throws <code>DeviceTypeNotFoundError</code> carrying the available list.</td>
-            </tr>
-            <tr>
-              <td><code>attachSimulator(udid: string): Promise&lt;Simulator&gt;</code></td>
-              <td>Adopts an existing simulator. Verifies it exists; does not probe, does not boot, claims no knowledge of orientation. Call <code>waitReady()</code> next if you need it driveable.</td>
-            </tr>
-            <tr>
-              <td><code>prefetchCompanion(onProgress?): Promise&lt;string&gt;</code></td>
-              <td>Resolves — downloading if necessary — the pinned <code>idb_companion</code> and returns its absolute path. Also exposed as <code>npx simgadget prefetch</code>.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="tiny muted mt-s">
-        <code>CreateOptions</code>: <code>deviceType</code> (substring match against
-        <code>simctl devicetypes</code>, newest match wins, default <code>"iPhone"</code>),
-        <code>name</code>, <code>boot</code> (default <code>true</code>),
-        <code>budgetMs</code> (default <code>55_000</code>).
-      </p>
+      <p>Everything else hangs off the <code>Simulator</code> handle that these return.</p>
+      <ul class="ticks">
+        <li><a class="symlink" href="api/functions/createSimulator.html"><code>createSimulator(opts?)</code></a>
+        Creates a device on the newest installed iOS runtime and, by default, boots it and waits until it is ready.</li>
+        <li><a class="symlink" href="api/functions/attachSimulator.html"><code>attachSimulator(udid)</code></a>
+        Adopts a simulator that already exists.</li>
+        <li><a class="symlink" href="api/functions/listSimulators.html"><code>listSimulators()</code></a>
+        Reports every simulator <code>simctl</code> knows about, without creating or attaching anything.</li>
+        <li><a class="symlink" href="api/functions/prefetchCompanion.html"><code>prefetchCompanion()</code></a>
+        Downloads the companion ahead of time. This happens automatically when it is needed, but you can prefetch it if that is useful.</li>
+      </ul>
     </div>
 
-    <div class="api-group" id="api-lifecycle">
-      <h3>Simulator — lifecycle</h3>
-      <p>Verbs in, policy out. Nothing implicit ever destroys a simulator.</p>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th>Member</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><code>readonly udid: string</code></td><td>The simulator's UDID.</td></tr>
-            <tr><td><code>readonly name: string</code></td><td>Its <code>simctl</code> device name.</td></tr>
-            <tr><td><code>readonly lastBoot?: ReadyResult</code></td><td>How the last boot or <code>waitReady</code> went. Undefined on a fresh attach.</td></tr>
-            <tr><td><code>state(): Promise&lt;SimulatorState&gt;</code></td><td>Current <code>simctl</code> state. Cheap.</td></tr>
-            <tr><td><code>boot(opts?): Promise&lt;ReadyResult&gt;</code></td><td>Boots and waits until driveable. Does not throw on timeout. An already-booted simulator still performs the wait.</td></tr>
-            <tr><td><code>waitReady(opts?): Promise&lt;ReadyResult&gt;</code></td><td>Waits, without booting, until an accessibility read answers with a real frame. Costs nothing when already up.</td></tr>
-            <tr><td><code>shutdown(): Promise&lt;void&gt;</code></td><td>Shuts down. The simulator still exists.</td></tr>
-            <tr><td><code>delete(): Promise&lt;void&gt;</code></td><td>Shuts down and deletes. Stops the companion first and blocks respawn for this udid. The handle is stale afterwards; every method then throws <code>SimulatorNotFoundError</code>.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="api-group" id="api-apps">
-      <h3>Simulator — apps</h3>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th>Member</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><code>installApp(appPath: string): Promise&lt;void&gt;</code></td><td>An <code>.app</code> directory or an <code>.ipa</code>. Throws <code>app-bundle-not-found</code> before calling <code>simctl</code> if the path does not exist.</td></tr>
-            <tr><td><code>launchApp(bundleId, opts?): Promise&lt;{ pid: number | null }&gt;</code></td><td><code>opts.terminateRunning</code> relaunches an app that is already running.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="api-group" id="api-reading">
-      <h3>Simulator — reading</h3>
-      <p>Absent is <code>null</code>, not a throw.</p>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th>Member</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><code>describeScreen(): Promise&lt;ScreenRead&gt;</code></td>
-              <td>The complete tree — AXBridge backend, so tab bars, nav bars and toolbars have their contents — with remote-hosted subtrees rebased into screen coordinates, pruned to elements you can act on. ~350 ms. Runs the full recovery ladder internally and throws <code>AccessibilityUnreadableError</code> only when both cures failed.</td>
-            </tr>
-            <tr>
-              <td><code>screenSize(): Promise&lt;{ width, height }&gt;</code></td>
-              <td>Logical screen dimensions from the cheap (~13 ms) read. Refreshes the orientation aspect hint as a side effect.</td>
-            </tr>
-            <tr>
-              <td><code>findByLabel(label): Promise&lt;AXElement | null&gt;</code></td>
-              <td>Resolves one element by the text you know it by. Fast marker query first (~13 ms), then identifier, then the AXBridge tree walk with typography folding — curly quotes, dashes, non-breaking spaces.</td>
-            </tr>
-            <tr>
-              <td><code>findByIdentifier(identifier): Promise&lt;AXElement | null&gt;</code></td>
-              <td>Exact match on the accessibility identifier.</td>
-            </tr>
-            <tr>
-              <td><code>describePoint(x, y): Promise&lt;AXElement | null&gt;</code></td>
-              <td>The element at a logical-space point. Hit-tests (~10 ms). Corrects remote-hosted frames internally.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="api-group" id="api-acting">
-      <h3>Simulator — acting</h3>
-      <p><code>tap</code> is two different verbs under one name, because callers think of them as one.</p>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th>Member</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><code>tap(target: TapTarget, opts?: TapOptions): Promise&lt;TapResult&gt;</code></td>
-              <td>
-                <p style="margin-bottom:8px"><code>{x, y}</code> is a literal touch at your coordinates, delivered with the 0.1 s floor. No resolution, no verification — coordinates are you saying where.</p>
-                <p style="margin:0"><code>{label}</code> is "find this and operate it": resolve (<code>ElementNotFoundError</code>), refuse disabled controls (<code>ElementDisabledError</code>), route toggles through accessibility activation with state read-back, refuse hold and multi-tap on toggles (<code>ToggleGestureError</code>), hit-test the centre and refuse if the touch would not land (<code>TapObstructedError</code>, naming the obstruction), then touch.</p>
-              </td>
-            </tr>
-            <tr><td><code>swipe(from, to, opts?): Promise&lt;void&gt;</code></td><td>Logical-space swipe. Void because the companion acks delivery and knows no more than you do. <code>opts</code>: <code>durationSeconds</code>, <code>delta</code>.</td></tr>
-            <tr><td><code>typeText(text: string): Promise&lt;void&gt;</code></td><td>Printable ASCII plus newline, as key events. Throws <code>UntypeableTextError</code> listing the offending characters <em>before</em> any event goes out — never a half-typed string.</td></tr>
-            <tr><td><code>pressButton(button, opts?): Promise&lt;void&gt;</code></td><td><code>"home" | "lock" | "side-button" | "siri" | "apple-pay"</code>. <code>home</code> is the only way to leave an app without launching another.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="tiny muted mt-s">
-        <code>TapOptions</code>: <code>durationSeconds</code> — a floor of 0.1 s is always
-        applied, so passing less changes nothing; above ~0.5 s UIKit reads it as a long press.
-        <code>count</code> — 2 is a double-tap.
-      </p>
-    </div>
-
-    <div class="api-group" id="api-orientation">
-      <h3>Simulator — orientation</h3>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th>Member</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><code>rotate(to: Orientation): Promise&lt;RotateResult&gt;</code></td><td>Device vocabulary, as the Simulator's own menus use it; the crossed mapping to idb's interface vocabulary is internal. Waits out the animation, then <em>detects</em> what the interface adopted. The result is authoritative for the coordinate space.</td></tr>
-            <tr><td><code>detectOrientation(): Promise&lt;Orientation&gt;</code></td><td>Probes the current orientation (a few hundred ms) and refreshes the hint. Call after something external rotated the simulator.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="api-group" id="api-capture">
-      <h3>Simulator — capture</h3>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th>Member</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><code>screenshot(opts?: ScreenshotOptions): Promise&lt;Screenshot&gt;</code></td><td>Always rotated to match the interface orientation — <code>simctl</code> captures physical portrait regardless. <code>resizeTo: "points"</code> returns the logical dimensions your coordinates live in.</td></tr>
-            <tr><td><code>startRecording(path, opts?): Promise&lt;void&gt;</code></td><td>One recording per handle. Throws <code>recording-already-active</code>.</td></tr>
-            <tr><td><code>stopRecording(): Promise&lt;{ path: string }&gt;</code></td><td>Stops and finalizes. Throws <code>no-active-recording</code>.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="api-group" id="api-lowlevel">
-      <h3>Simulator — low level</h3>
-      <p>You should never need these.</p>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th>Member</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><code>restartBridge(): Promise&lt;void&gt;</code></td><td>Restarts the guest's CoreSimulator bridge — the wedge cure. The recovery machinery calls this itself; it is public for hosts that want to force it.</td></tr>
-            <tr><td><code>releaseCompanion(): Promise&lt;void&gt;</code></td><td>Stops this simulator's companion process. The exit hook does this anyway; long-lived hosts get tidier teardown. The simulator keeps running, state intact.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="api-group" id="api-types">
-      <h3>Types</h3>
-      <p>
-        <code>AXElement</code> keeps Apple's key names deliberately — it is the vocabulary of
-        the source data. It is a closed type: no index signature.
-      </p>
-      <div class="term">
-        <div class="term-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">simgadget</span><span class="tag">.d.ts</span></div>
-<pre><code><span class="t-k">interface</span> <span class="t-f">Frame</span> { x: number; y: number; width: number; height: number }
-
-<span class="t-k">interface</span> <span class="t-f">AXElement</span> {
-  AXLabel?: string;
-  AXValue?: string | number;
-  AXUniqueId?: string;
-  type?: string;        <span class="t-c">// normalised role: "Button", "Switch", "SearchField", …</span>
-  enabled?: boolean;
-  frame?: Frame;
-  children?: AXElement[];
-}
-
-<span class="t-k">type</span> <span class="t-f">Orientation</span> = <span class="t-s">"portrait"</span> | <span class="t-s">"upside_down"</span>
-                  | <span class="t-s">"landscape_left"</span> | <span class="t-s">"landscape_right"</span> | string;
-
-<span class="t-k">type</span> <span class="t-f">SimulatorState</span> = <span class="t-s">"Booted"</span> | <span class="t-s">"Shutdown"</span> | <span class="t-s">"Booting"</span>
-                     | <span class="t-s">"Shutting Down"</span> | <span class="t-s">"Creating"</span> | string;
-
-<span class="t-k">interface</span> <span class="t-f">SimInfo</span> {
-  udid: string; name: string; state: SimulatorState;
-  deviceTypeIdentifier: string; runtimeIdentifier: string;
-}
-
-<span class="t-k">interface</span> <span class="t-f">ReadyResult</span> {
-  ready: boolean; waitedMs: number;
-  recoveryTried: boolean; recovered: boolean;
-}
-
-<span class="t-k">interface</span> <span class="t-f">ScreenRead</span> {
-  elements: AXElement[];              <span class="t-c">// [0] is the screen root</span>
-  screen: { width: number; height: number };
-}
-
-<span class="t-k">type</span> <span class="t-f">TapTarget</span> = { x: number; y: number } | { label: string };
-
-<span class="t-k">type</span> <span class="t-f">TapResult</span> =
-  | { acted: <span class="t-s">"touch"</span>; x: number; y: number;
-      count: number; durationSeconds: number; element?: AXElement }
-  | { acted: <span class="t-s">"activation"</span>; element: AXElement;
-      before?: string | number; after?: string | number };
-
-<span class="t-k">interface</span> <span class="t-f">RotateResult</span> { requested: Orientation; adopted: Orientation }
-
-<span class="t-k">interface</span> <span class="t-f">Screenshot</span> {
-  data: Buffer; format: string;
-  width: number; height: number;      <span class="t-c">// pixels of the returned image</span>
-  orientation: Orientation;
-}</code></pre>
-      </div>
-    </div>
-
-    <div class="api-group" id="api-errors">
-      <h3>Errors</h3>
-      <p>
-        One base class, <code>SimGadgetError</code>, with a <code>code</code> you branch on.
-        Subclasses exist only where there is a payload to carry. Messages are host-agnostic:
-        they never name a tool, a URL, or remediation that assumes a particular caller.
-      </p>
-      <div class="tablewrap">
-        <table class="tbl-api">
-          <thead><tr><th><code>code</code></th><th>Class and payload</th></tr></thead>
-          <tbody>
-            <tr><td><code>unsupported-architecture</code></td><td><code>UnsupportedArchitectureError</code> — message names the architecture</td></tr>
-            <tr><td><code>companion-download-failed</code></td><td><code>CompanionDownloadError</code> — HTTP failure or checksum mismatch</td></tr>
-            <tr><td><code>companion-start-failed</code></td><td><code>CompanionStartError</code> · <code>stderrTail: string[]</code></td></tr>
-            <tr><td><code>simulator-not-found</code></td><td><code>SimulatorNotFoundError</code> · <code>udid</code></td></tr>
-            <tr><td><code>device-type-not-found</code></td><td><code>DeviceTypeNotFoundError</code> · <code>keyword</code>, <code>available: string[]</code></td></tr>
-            <tr><td><code>no-ios-runtime</code></td><td><code>SimGadgetError</code></td></tr>
-            <tr><td><code>not-answering</code></td><td><code>SimulatorNotAnsweringError</code> · <code>recoveryTried</code> — the wedge, after recovery was tried or suppressed by cooldown</td></tr>
-            <tr><td><code>accessibility-unreadable</code></td><td><code>AccessibilityUnreadableError</code> · <code>verdict: "booting" | "unrecoverable"</code></td></tr>
-            <tr><td><code>element-not-found</code></td><td><code>ElementNotFoundError</code> · <code>query</code></td></tr>
-            <tr><td><code>element-disabled</code></td><td><code>ElementDisabledError</code> · <code>element</code></td></tr>
-            <tr><td><code>element-unusable-frame</code></td><td><code>SimGadgetError</code> — resolved, but no frame to aim at</td></tr>
-            <tr><td><code>tap-obstructed</code></td><td><code>TapObstructedError</code> · <code>element</code>, <code>obstruction</code>, <code>point</code></td></tr>
-            <tr><td><code>toggle-needs-plain-tap</code></td><td><code>ToggleGestureError</code> · <code>element</code>, <code>gesture: "hold" | "multi-tap"</code></td></tr>
-            <tr><td><code>untypeable-text</code></td><td><code>UntypeableTextError</code> · <code>characters: string[]</code></td></tr>
-            <tr><td><code>recording-already-active</code></td><td><code>SimGadgetError</code></td></tr>
-            <tr><td><code>no-active-recording</code></td><td><code>SimGadgetError</code></td></tr>
-            <tr><td><code>app-bundle-not-found</code></td><td><code>SimGadgetError</code></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
   </div>
 </section>
 

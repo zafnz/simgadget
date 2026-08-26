@@ -322,6 +322,14 @@ td code { white-space: nowrap; }
 }
 .ticks li strong { color: var(--ink); }
 
+/* A link to a symbol in the generated reference. It reads as the inline code
+   it wraps, coloured as a link rather than underlined -- which is also how
+   /api/ renders a resolved {@link}, so a symbol looks the same on both sides
+   of the site. */
+.symlink { text-decoration: none; }
+.symlink > code { color: var(--accent); }
+.symlink:hover > code { border-color: var(--accent); background: var(--accent-tint); }
+
 /* --- fix cards (the bug dossier) ---------------------------------------- */
 
 .fix {

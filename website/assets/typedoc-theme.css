@@ -164,6 +164,36 @@ code, pre, .tsd-signature, .tsd-typography code, input {
   font-size: .9em;
 }
 
+/* A resolved {@link} in prose is a reference to a symbol, so it should look
+   like the inline code around it without the author having to write backticks.
+   TypeDoc emits `<a class="tsd-kind-function">` for these; the same kind
+   classes appear on type references inside rendered signatures, which carry
+   `tsd-signature-type` as well and are already styled, and on the sidebar,
+   which is outside .tsd-typography. Both are excluded below.
+
+   The nested-code rule is what makes the backticks optional rather than
+   forbidden: `{@link X | `text`}` renders <a><code>text</code></a>, so the
+   inner <code> is stripped back to nothing and both spellings land in the
+   same place. */
+.tsd-typography a[class*="tsd-kind-"]:not(.tsd-signature-type) {
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: .1em .35em;
+  font-family: var(--mono);
+  font-size: .9em;
+  text-decoration: none;
+}
+.tsd-typography a[class*="tsd-kind-"]:not(.tsd-signature-type):hover {
+  border-color: var(--accent);
+}
+.tsd-typography a[class*="tsd-kind-"]:not(.tsd-signature-type) > code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+}
+
 .tsd-panel,
 .tsd-signature,
 .tsd-page-toolbar,
