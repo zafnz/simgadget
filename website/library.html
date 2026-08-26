@@ -240,18 +240,21 @@ console.<span class="t-f">log</span>(sim.udid, sim.lastBoot); <span class="t-c">
     <div class="cta">
       <div class="split wide-left" style="align-items:center">
         <div>
-          <h2>Three lines to a booted simulator.</h2>
+          <h2>Boot a sim and drive it, easily.</h2>
           <p class="lede" style="margin:0">
-            Nothing in the library ever destroys a simulator except a <code>delete()</code> you
-            wrote yourself.
+            When you really don't want to have to know how it works, just that it does.
           </p>
         </div>
         <div>
           <div class="cmd"><span class="sig">$</span><span class="txt">npm install simgadget</span><button class="copy" type="button">copy</button></div>
-          <div class="cmd"><span class="sig">$</span><span class="txt">npx simgadget prefetch</span><button class="copy" type="button">copy</button></div>
-          <div class="btn-row mt-s">
-            <a class="btn btn-ghost" href="index.html#fixes">Why it behaves this way →</a>
-          </div>
+          <div class="cmd">
+            <span class="txt">
+              <span class="t-k">import</span> { createSimulator } <span class="t-k">from</span> <span class="t-s">"simgadget"</span>
+              <br />
+              <span class="t-k">const</span> sim = <span class="t-k">await</span> <span class="t-f">createSimulator</span>({ deviceType: <span class="t-s">"iPhone 16 Pro"</span> });
+              
+            </span>
+            <button class="copy" type="button">copy</button></div>
         </div>
       </div>
     </div>
