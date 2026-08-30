@@ -31,6 +31,36 @@
   control known to be under the toolbar, and a unit test — `ax/tap.ts` already
   owns "what a hit-test verdict means", so the decision belongs beside it.
 
+  **#106's fix removed the only way to reproduce this, and that is the first
+  thing to restore.** Checked on the fixed fixture 2026-08-30: `PlainSwitch` is
+  back at y=745.7, clear of the toolbar at 788, and the main screen's scroll
+  range is exhausted before anything reaches the toolbar, so portrait cannot
+  recreate the overlap at all. Landscape puts `PlainSwitch` at y=333 under the
+  toolbar, but what covers it there is `ToolbarSwitch` rather than
+  `ToolbarButton` — and nothing fires: status stays `ready`, `ToolbarSwitch`
+  stays `0`, and the activation genuinely does not take, exactly as the message
+  claims. What made the original case bite was the specific overlap of the
+  switch's **leading-edge** control with a *button* behind it.
+
+  The bug is still live regardless: 8fc3a94 touched `testapp/` and docs only,
+  and nothing under `packages/` changed, so the library and the companion are
+  byte-identical to the versions that produced it. What is gone is the evidence.
+  A fix needs the fixture to recreate that overlap deliberately — a control
+  positioned under a toolbar *button*, present for this case and not incidental
+  to any other layout — which is the same lesson as [[#107]] and should be built
+  with it.
+
+- [ ] **#108 `ensureFixtureBuilt` never rebuilds a stale fixture, and the
+  failure looks like a library bug.** Found 2026-08-30. `support.mts:87` returns
+  early when `MCPTestApp.app` merely exists; it does not compare it against
+  `main.m`. The comment says so, so it is not lying — but editing the fixture
+  and rerunning `npm run test:e2e` then silently tests the old bundle, and what
+  a reader sees is geometry assertions failing against source that plainly says
+  otherwise. This cost real time during the #106 diagnosis, twice, and it is the
+  same failure signature: a layout problem wearing a library problem's clothes.
+  An mtime comparison against `testapp/main.m` is a two-line fix, and `build.sh`
+  is already fast enough to run unconditionally if that turns out simpler.
+
 - [x] **#106 FIXED 2026-08-30. Commit 7c80498 moved the fixture 50pt down, and two e2e cases
   encode the old positions.** Found 2026-08-30. `npm run test:e2e` fails 2 of
   32, on iPhone 17 Pro, at `main`. Both are geometry, not behaviour:
