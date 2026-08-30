@@ -1,5 +1,67 @@
 # TODO — SimGadget library, 2026-08-16
 
+- [ ] **#103 Promote stdio from a side note to a supported way to run the
+  server.** Discussed 2026-08-30. The daemon was built on the belief that a
+  central process was needed to manage simulators correctly. The idle timeout
+  and cleanup-on-exit are real benefits, but nothing about running several
+  simulators requires a single process. `SessionRegistry` is a plain map
+  created before transport selection (index.ts:79), so multiple simulators
+  already work under stdio, and `runStdio({onStdinClose: shutdown})` already
+  deletes what it created when stdin closes. Destroy-on-close is the right
+  policy: there is no process left to re-attach to.
+
+  Already safe across processes, checked rather than assumed:
+
+  - socket paths carry pid and generation (`buildSocketPath`), so two of our
+    own processes never collide;
+  - the companion download is an atomic rename, with `ENOTEMPTY`/`EEXIST`
+    handled as a lost race against a complete, verified tree
+    (`companionBinary.ts`);
+  - device names are cosmetic — `deriveDeviceName` deliberately dropped the
+    session id, because `simctl` keys devices by udid.
+
+  The work:
+
+  1. **Orphan reaping.** Cleanup hangs off stdin close and SIGINT/SIGTERM. A
+     client that SIGKILLs its child, a crash, or a reboot leaves booted
+     simulators nothing knows about. Companions self-reap via
+     `--idle-shutdown-time`; simulators do not, and they are the expensive
+     ones — 1–2 GB each. The daemon has a pidfile and a restart that sweeps;
+     N stdio processes have nowhere to ask what is running. Needs a
+     `simgadget reap` or equivalent, and it has to respect "never touch a
+     simulator you did not create" — the `simgadget-` name prefix is the only
+     evidence available to it.
+  2. **Boot budgets under concurrency.** `READY_TIMEOUT_MS` and
+     `waitUntilDriveable` were calibrated against one boot at a time, and
+     `simctl create`/`boot`/`delete` all funnel through one
+     CoreSimulatorService. Several simultaneous cold boots will exceed those
+     budgets and surface as "gave up waiting", which reads like a bug in this
+     code rather than contention.
+  3. **`SERVER_INSTRUCTIONS` is transport-specific prose.** It tells agents to
+     pick a distinctive id because other agents may be driving their own
+     simulators on the same server, which is false when each agent runs its
+     own process. Changing it needs a row in SIMGADGET_PLAN_SERVER.md's
+     deliberate behaviour changes and an `ALLOWED_DIFFERENCES` entry; the
+     captured baseline pins it.
+  4. **Docs.** README, CLAUDE.md and the website present HTTP as the way to
+     run this and stdio as an aside. Say which to pick and why: HTTP for a
+     shared daemon a human can inspect and a second agent can join, stdio for
+     one agent that owns its simulators for the life of its client.
+
+  Not blocking, established in the same discussion. `renderAlreadyAttached` is
+  keyed by session id, not udid (sessions.ts:228), so nothing in any transport
+  stops two sessions attaching one simulator. A single process does not
+  prevent that; it makes it survivable — one companion per udid, one recovery
+  attempt, serialized input. What actually breaks across processes is the
+  recovery dedup and cooldown (`internal/registry.ts`): N processes on one
+  wedged simulator each order their own bridge restart, disrupting each
+  other's reads. Input interleaving is unserialized too, but two agents
+  driving one screen is incoherent whether or not each gesture is atomic. All
+  reads are non-exclusive and already recover from a dead channel, so a driver
+  process plus a read-only observer process largely works today. Fix the
+  recovery storm if cross-process sharing is ever supported; the other two do
+  not justify a lock file.
+
 - [ ] **#97 Do not bump the idb submodule past `da0f89a` yet: the newer
   companion cannot see into remote-hosted views at all.** Measured 2026-08-30
   against upstream `9ca15af` (501 commits on from our pin), built locally with
