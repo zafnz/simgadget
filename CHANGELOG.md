@@ -1,6 +1,49 @@
 # Changelog
 
-## Unreleased
+## 3.0.2
+
+Two ways a tool could report success for something that did not happen, and the
+prose that decides which tool an agent reaches for.
+
+- **`ui_tap {label}` no longer activates a control that something else is
+  covering.** A toggle is switched through accessibility rather than touched,
+  because a switch's frame is routinely not its actuating region. That path did
+  not hit-test, on the stated grounds that an activation names an element rather
+  than a point and so reaches controls a finger cannot. The premise was wrong: a
+  covered activation operates whatever is drawn on top of the target.
+
+  Measured on this project's fixture, with a switch under the toolbar. The reply
+  was *"Activated Covered Switch through accessibility, but it is still off"* —
+  and the toolbar's **button** had fired. The caller was told to scroll the
+  switch into view and try again, while something else had already been pressed.
+  That is worse than a tap that misses: nothing in the reply suggested another
+  control had been operated, and on a real app it could be whatever button a
+  toolbar happens to carry.
+
+  2.2.0 stated the trade plainly — "that activation does not hit-test, so it
+  will operate a switch a finger could not reach". That is the sentence this
+  release retracts. It does not reach the switch; it reaches the thing in front
+  of it.
+
+  An activation is now gated on the same hit-test the touch has had since 2.2.0,
+  and refuses with `tap-obstructed`, naming what is in the way. **If you were
+  reading the "still off" message, a covered element now reaches you as an
+  error instead.** A toggle with no frame at all is still activated without
+  verification — it cannot be checked, but it cannot be mis-aimed either.
+
+  The check is deliberately stricter than the "are these two reads the same
+  element" comparison used elsewhere, which accepts frame containment in both
+  directions. That is right for identity and wrong here: a 139pt toolbar button
+  *encloses* the 63pt switch beneath it, so the covering control compared equal
+  to the control it was covering, and the first version of this fix let the
+  activation straight through. Something inside the target counts as reaching
+  it; something that merely encloses it does not.
+
+  The advice on the "activated but still off" message changed with it. It led
+  with "most often it is scrolled out of view", which can no longer be the
+  cause — anything covered or off screen is refused before reaching that
+  message — so it now says the control was reached and did not respond.
+
 
 - **`ui_type` no longer reports success when iOS swallowed the text.** Focusing
   a `newPassword` field raises iOS's "Use Strong Password?" sheet, and while it
@@ -38,6 +81,25 @@
   into a masked field work at all?" has an answer that does not involve the
   sheet — it does — with a `PasswordEchoLabel` reporting what landed, since the
   field draws dots and `AXValue` reports the dots rather than the text.
+
+- **`ui_view` and `screenshot` now say which is which.** An agent drove an
+  entire session off `screenshot`, scaling every coordinate from the 1206px
+  raster by hand, because nothing had told it `ui_view` existed: its harness
+  lists tools by name and charges a round trip for each schema, so it fetched a
+  few early and used those. `screenshot` now says it saves a file and points at
+  `ui_view`; `ui_view` says it returns the image inline, already in the same
+  point space as the accessibility tree, so a position read off it is a
+  `ui_tap` coordinate.
+
+- **The handshake instructions are reordered so the part that matters survives
+  truncation.** Clients cut them, and one was measured cutting mid-sentence at
+  ~2100 characters — which under the previous order dropped the coordinate space
+  and the `ui_view` line entirely, so an agent could never have read them. What
+  cannot be learned any other way now comes first, and what a reply would say
+  anyway comes last, since a refused `ui_tap` explains itself in the refusal.
+  Several paragraphs are shorter for it. One clause that read as a rule against
+  measuring off `ui_view` now names the saved screenshot file it was always
+  about.
 
 ## 3.0.1
 
