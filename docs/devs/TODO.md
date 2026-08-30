@@ -1,5 +1,107 @@
 # TODO — SimGadget library, 2026-08-16
 
+- [ ] **#105 Activating a covered control actuates whatever is underneath it,
+  and answers as though it activated the named one.** Found 2026-08-30, running
+  the e2e after commit 7c80498. `ui_tap {label: "Plain Switch"}` on the fixture
+  answers *"Activated Plain Switch through accessibility, but it is still
+  off"* — and the app's status label reads `tapped Toolbar Button`. The
+  toolbar's button is what actually fired. Reproduced from a clean relaunch:
+  status `ready` before, `tapped Toolbar Button` after, every time.
+
+  Why it is worse than a wrong answer: this is exactly the class of failure
+  #64a's hit-test was built to stop, and the activation path is the one place
+  that does not hit-test. The read-back catches that the *named* control did not
+  change, so nothing is silently reported as success — but the message then
+  offers a wrong explanation. It says activation "does not take on an element
+  that is not on screen", and here it took, on a different control. An agent
+  following that advice scrolls and retries, never learning that it has already
+  pressed something else. On a real app that could be any destructive button
+  the toolbar happens to hold.
+
+  The geometry, from `ui_describe_all` on an iPhone 17 Pro (root 402x874):
+  `PlainSwitch` frame `{x:61 y:795.7 w:282 h:28}`, with the real control at the
+  **leading** edge (TODO #67's table); `ToolbarButton` `{x:6.7 y:803 w:139
+  h:38}`. They overlap. Scrolled into view, the identical call answers
+  `Toggled Plain Switch off -> on` — so the library and the companion are both
+  fine and it is the covered case alone that misfires.
+
+  Per the regression rule this wants three things: hit-test before an
+  activation as well as before a touch (or refuse when the element is outside
+  the scroll view's visible bounds), a TESTING_TOOLS.md step that activates a
+  control known to be under the toolbar, and a unit test — `ax/tap.ts` already
+  owns "what a hit-test verdict means", so the decision belongs beside it.
+
+- [ ] **#106 Commit 7c80498 moved the fixture 50pt down, and two e2e cases
+  encode the old positions.** Found 2026-08-30. `npm run test:e2e` fails 2 of
+  32, on iPhone 17 Pro, at `main`. Both are geometry, not behaviour:
+
+  - `operates a toggle through accessibility and reads the state back` —
+    `PlainSwitch` is now at y=795.7, and the toolbar starts at y=788, so it is
+    covered and the activation does not take. This case is also what surfaced
+    #105.
+  - `refuses a covered control and names what is in the way` — `PlainStepper`
+    is now at y=889.7 on an 874pt screen, so its Increment centre (271, 906) is
+    off the bottom edge entirely. `TapObstructedError` is still thrown with the
+    right element, but `obstruction` is absent, where the case requires it to
+    name `ToolbarField`. Its comment — "its centre belongs to the toolbar's
+    search field" — describes the layout before the shift.
+
+  The cause is one commit: 7c80498 added `self.passwordField` to the main
+  stack, above both controls, pushing everything below it down by one field.
+  The fixture change was right and the e2e was not rerun with it.
+
+  Two ways out, and they are not equivalent. Moving the password field below
+  the stepper restores every position the suite assumes and is a one-line
+  change. Making the cases find their own geometry — read the frame, compare
+  against the toolbar's — costs more and stops the next fixture edit breaking
+  them. The second is worth it only if the fixture is expected to keep growing.
+  Do not "fix" this by moving the controls back: the fixture needs a control
+  under the toolbar and one below the fold, which is the whole point of both
+  cases.
+
+- [ ] **#104 Tests that assert prose character for character, where the
+  expected value is a copy of the actual one.** Raised 2026-08-30, while
+  reworking the instructions gate. The pattern: a test file holds a copy of a
+  string defined somewhere else and asserts the two are equal. It has no
+  independent oracle, so the only thing it can detect is that somebody edited
+  the string, and the only available fix is to copy the new string over. The
+  reflex it trains — make the test agree with the code — is the one the frozen
+  `tools-list.baseline.json` needs people not to have.
+
+  Not one test, and not only the instructions. Known cases:
+
+  1. **`EXPECTED_INSTRUCTIONS` in `tools.test.mts`.** 2.5 KB of
+     `SERVER_INSTRUCTIONS` duplicated, so every prose edit is a three-file
+     change. Written when the instructions stopped being a permutation of the
+     baseline and something had to hold them; a copy was the quick answer, not
+     the right one. The three assertions beside it do earn their place and
+     should survive whatever replaces it: that the *built* server sends the
+     source's string over a pipe (a seam — build, registration, transport, any
+     of which can drop it), that it differs from the baseline (which guards the
+     fixture against being regenerated), and the paragraph order plus the
+     ~2100-character truncation budget (a rule, and the thing that actually
+     broke).
+  2. **Error prose in `render.test.mts`.** Around 49 `assert.equal` calls,
+     many against a whole rendered sentence — `ElementNotFoundError`,
+     `ElementDisabledError`, the boot verdicts. The same file already has the
+     better form a few lines away: `assert.match` for each fact the message has
+     to carry — that it names the label, the frame, the way out, the
+     troubleshooting link. That is the shape to generalise, because it says
+     what the message is *for*.
+  3. Worth a sweep for others before doing any of this; `tools.test.mts` alone
+     has 70 `assert.equal`s and not all of them are baseline diffs.
+
+  `packages/simgadget/test/errors.test.mts` is the model already in the tree:
+  it asserts that two errors differ, that a message carries no URL, that a code
+  is set — properties, never wording.
+
+  What must not be swept up in it: the `tools/list` baseline diff is a
+  different thing and stays exact. Its expected value came from the pre-port
+  server, which no longer exists and cannot be regenerated, so it has a real
+  oracle. The rule to apply is that one — pin a literal when the expected value
+  comes from somewhere you cannot reproduce, and assert the rule instead when
+  it comes from a file three directories over.
+
 - [ ] **#103 Promote stdio from a side note to a supported way to run the
   server.** Discussed 2026-08-30. The daemon was built on the belief that a
   central process was needed to manage simulators correctly. The idle timeout
