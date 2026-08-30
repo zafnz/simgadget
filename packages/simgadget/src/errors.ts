@@ -54,6 +54,7 @@ export type ErrorCode =
   | "toggle-needs-plain-tap" // hold/multi-tap aimed at a toggle by name
   // input
   | "untypeable-text"
+  | "typing-blocked" // a sheet is up that swallows all but the first keystroke
   // capture
   | "recording-already-active"
   | "no-active-recording"
@@ -299,5 +300,43 @@ export class UntypeableTextError extends SimGadgetError {
           `${characters.map((c) => JSON.stringify(c)).join(", ")}.`
     );
     this.characters = characters;
+  }
+}
+
+/**
+ * Thrown before any key event goes out, when iOS's strong-password suggestion
+ * sheet is on screen. The field keeps only the last keystroke while it is up,
+ * so typing through it leaves one character behind and loses the rest.
+ *
+ * Measured against the pinned companion on iOS 26, 2026-08-30, with the
+ * `LoginPasswordField` fixture — a `secureTextEntry` field whose
+ * `textContentType` is `newPassword`:
+ *
+ *  - Focusing the field raises the sheet. It is already up before any key event
+ *    is sent, rather than being raised by one.
+ *  - With the sheet up the field holds exactly one character however many are
+ *    sent, and it is the most recently typed one — reproduced by hand on the
+ *    Simulator's own keyboard, which is what rules out anything about how the
+ *    companion delivers key events. A second `typeText` seconds later leaves it
+ *    at one, so this is a state rather than a race a caller could wait out.
+ *  - Dismissing the sheet, or moving focus to another field, restores normal
+ *    typing.
+ *
+ * `hid` is the only input path the companion offers, so there is no way to
+ * deliver the keystrokes past the sheet — which is why this refuses rather than
+ * retries. `button` is the sheet's own accept button, carried so a caller can
+ * operate the sheet without reading the screen again.
+ */
+export class TypingBlockedError extends SimGadgetError {
+  readonly button: AXElement;
+
+  constructor(button: AXElement, message?: string) {
+    super(
+      "typing-blocked",
+      message ??
+        "Cannot type: iOS's strong-password suggestion sheet is on screen, and " +
+          "the field keeps only the last keystroke while it is up."
+    );
+    this.button = button;
   }
 }

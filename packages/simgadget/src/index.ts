@@ -42,6 +42,7 @@ export {
   TapObstructedError,
   ToggleGestureError,
   UntypeableTextError,
+  TypingBlockedError,
   type ErrorCode,
 } from "./errors.ts";
 

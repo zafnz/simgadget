@@ -13,6 +13,7 @@ import {
   SimulatorNotFoundError,
   TapObstructedError,
   ToggleGestureError,
+  TypingBlockedError,
   UnsupportedArchitectureError,
   UntypeableTextError,
   type AXElement,
@@ -62,6 +63,14 @@ const button: AXElement = {
 
 const toolbar: AXElement = { AXLabel: "Search", type: "SearchField" };
 
+/** The strong-password sheet's accept button, as iOS publishes it. */
+const strongPasswordButton: AXElement = {
+  AXLabel: "Fill Strong Password",
+  AXUniqueId: "GenerateStrongPasswordButton",
+  type: "Button",
+  frame: { x: 36, y: 715.3, width: 330, height: 44 },
+};
+
 /**
  * One representative error per `ErrorCode`.
  *
@@ -95,6 +104,7 @@ const SAMPLES: Record<ErrorCode, SimGadgetError> = {
   "tap-obstructed": new TapObstructedError(button, toolbar, { x: 60, y: 42 }),
   "toggle-needs-plain-tap": new ToggleGestureError(button, "hold"),
   "untypeable-text": new UntypeableTextError(["é"]),
+  "typing-blocked": new TypingBlockedError(strongPasswordButton),
   "recording-already-active": new SimGadgetError(
     "recording-already-active",
     "A recording is already in progress for this simulator handle. Stop it first."

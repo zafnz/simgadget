@@ -49,6 +49,7 @@ import {
   SimulatorNotFoundError,
   TapObstructedError,
   ToggleGestureError,
+  TypingBlockedError,
   type AXElement,
   type ErrorCode,
   type Orientation,
@@ -320,6 +321,21 @@ const ERROR_RENDERERS: Record<ErrorCode, Renderer> = {
 
   /** The library lists the characters; that is the whole answer. */
   "untypeable-text": (error) => error.message,
+
+  /** simulator.ts:1898. Dismissing comes first because it is what the caller
+   * asked for: they called ui_type with a password of their own, so the remedy
+   * that lets them type it is the one they want. Accepting iOS's suggestion is
+   * the other thing they might mean, and is offered second. */
+  "typing-blocked": (error) => {
+    if (!(error instanceof TypingBlockedError)) return error.message;
+    return (
+      `Cannot type: iOS's "Use Strong Password?" sheet is on screen, and while ` +
+      `it is up the field keeps only the last keystroke — so typing now would ` +
+      `leave one character behind and lose the rest. Dismiss the sheet with ` +
+      `ui_tap {label: "Close"} and type again, or accept iOS's generated ` +
+      `password instead with ui_tap {label: "${nameOf(error.button)}"}.`
+    );
+  },
 
   // ---- capture ----
 

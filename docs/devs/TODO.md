@@ -1,5 +1,38 @@
 # TODO — SimGadget library, 2026-08-16
 
+- [ ] **#97 Do not bump the idb submodule past `da0f89a` yet: the newer
+  companion cannot see into remote-hosted views at all.** Measured 2026-08-30
+  against upstream `9ca15af` (501 commits on from our pin), built locally with
+  Xcode 26.6 and compared side by side with the pinned binary on the same
+  fixture and the same screens:
+
+  | screen | pinned `da0f89a` | new `9ca15af` |
+  |---|---|---|
+  | strong-password sheet, AXBridge tree | 59 elements, sheet present | 38 elements, **sheet absent** |
+  | photo picker, AXBridge tree | picker contents present, type-`83` boundaries present | 88 elements, **0 boundaries**, no picker contents |
+
+  Everything in TESTING_TOOLS.md Part 3 rests on seeing into those views, and
+  so does `translateRemoteSubtrees` and `ui_type`'s strong-password refusal
+  (#39). None of it fails loudly under the new binary — the elements simply are
+  not there, which reads exactly like "no sheet is up".
+
+  Two things found on the way that are worth keeping:
+
+  - **`build.sh build` does not regenerate the Swift protobufs.**
+    `IDBGRPCSwift/idb.pb.swift` is generated and untracked, so a submodule bump
+    leaves it stale and the build fails in `ScreenshotRequestTranslation.swift`
+    with "no member 'compressionQuality'" and a dozen similar. Run
+    `./build.sh generate-proto` after any bump, before `build`.
+  - **`axbridge-persistent` is genuinely persistent now** (upstream `c3d764b`).
+    Warm marker queries measured 268ms cold then **20ms** warm on the new
+    binary, against a flat ~270ms on the pinned one. That is the one reason to
+    want this bump: it would make the sheet check nearly free. It is not worth
+    the remote-view regression today, but it is what to re-measure when this is
+    revisited.
+
+  Nothing about the swallowed-keystrokes bug itself is fixed upstream: typing
+  ten characters into the sheet-covered field still lands exactly one.
+
 - [ ] **#89 `pressButton` is in the library and not on the MCP.** The handle
   has `pressButton(name, {durationSeconds})` and the e2e drives it (`home`
   leaves the app); no tool exposes it, and none did before the split, so

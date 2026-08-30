@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+- **`ui_type` no longer reports success when iOS swallowed the text.** Focusing
+  a `newPassword` field raises iOS's "Use Strong Password?" sheet, and while it
+  is up the field holds exactly one character however many are sent — a second
+  `ui_type` seconds later leaves it at one, so it is a state rather than a race
+  to wait out. `ui_type` reported `Typed successfully` regardless, which meant an
+  agent believed it had entered a ten-character password when it had entered one
+  letter.
+
+  The swallowing is iOS's, reproduced by hand on the Simulator with a real
+  keyboard, and nothing here can fix it. What this release fixes is the tools
+  lying about it: an agent should not have to notice the overlay in a screenshot
+  and dismiss it by coordinate to type a password.
+
+  `typeText` now refuses with the new `typing-blocked` code
+  (`TypingBlockedError`, carrying the sheet's own accept button), and the server
+  renders both ways past it: accept iOS's suggestion, or dismiss the sheet and
+  type again. Nothing is typed on the refusal, so the field is not left holding
+  a stray character.
+
+  `hid` is the only input path the companion offers, so there is no way to
+  deliver the keystrokes past the sheet — reporting it is the whole remedy.
+
+  The check is in two stages, so an ordinary `ui_type` does not pay for a
+  password one. A default-backend read (~25–110 ms) asks whether a *masked*
+  field has the keyboard, using the `IsEditing` and `SecureTextField` traits;
+  only when it does is the AXBridge lookup for the sheet (~280–340 ms) worth
+  making. AXBridge is unavoidable for that second stage: the sheet is drawn by
+  another process, and measured with it plainly up, `BACKEND_UNSPECIFIED` and
+  `AX` both answer "found no element". `npm run check:companion -- <udid>
+  --password-sheet` pins all three beliefs.
+
+  The fixture gains a plain `secureTextEntry` field (`PasswordField`) so the
+  question "does typing into a secure field work at all?" has an answer that
+  does not involve the sheet — it does.
+
 ## 3.0.1
 
 Text that ships to every agent, and comments that would have misled the next

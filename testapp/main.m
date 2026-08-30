@@ -165,6 +165,7 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
 @property(nonatomic, strong) UILabel *status;
 @property(nonatomic, strong) UILabel *orientation;
 @property(nonatomic, strong) UITextField *plainField;
+@property(nonatomic, strong) UITextField *passwordField;
 @property(nonatomic, strong) UITextField *toolbarField;
 @property(nonatomic, strong) UISwitch *settingsSwitch;
 @end
@@ -227,6 +228,18 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
   self.plainField = [self fieldWithPlaceholder:@"Type here"
                                     identifier:@"PlainField"];
   self.plainField.accessibilityLabel = @"Plain Field";
+
+  // A secure field on the main screen, unlike `LoginPasswordField` below, which
+  // is a `newPassword` field and so raises the strong-password sheet the moment
+  // it is focused. This one asks iOS for nothing: it is `secureTextEntry` and
+  // no more, so what a typing tool does to it can be read without a sheet in
+  // the way. The status line reports the length as well as the text, because
+  // the field itself draws dots and a screenshot cannot tell one character
+  // from six.
+  self.passwordField = [self fieldWithPlaceholder:@"Type password here"
+                                       identifier:@"PasswordField"];
+  self.passwordField.accessibilityLabel = @"Password Field";
+  self.passwordField.secureTextEntry = YES;
 
   UIButton *plainButton = [UIButton buttonWithType:UIButtonTypeSystem];
   [plainButton setTitle:@"Plain Button" forState:UIControlStateNormal];
@@ -419,7 +432,8 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
     // the screens other tests start from, or are tapped directly, and a control
     // that needs scrolling to reach is a control whose test can fail for a
     // reason that is not the tool.
-    self.plainField, plainButton, disabled, self.status, self.orientation,
+    self.plainField, self.passwordField, plainButton, disabled, self.status,
+    self.orientation,
     login, picker,
     settingsRow, splitRow, inAppModal, systemModal, searchBar, toggle, slider,
     stepper, segmented
@@ -615,6 +629,16 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
 }
 
 - (void)fieldChanged:(UITextField *)field {
+  // Lower case, for the reason `toolbarSwitchChanged:` gives: a status line
+  // reading "Password Field = ..." is itself a match for "Password Field", and
+  // sits above the field on screen, so the next lookup of the field resolves
+  // the sentence describing it instead.
+  if (field == self.passwordField) {
+    [self report:[NSString stringWithFormat:@"password field = \"%@\" (%lu)",
+                                            field.text,
+                                            (unsigned long)field.text.length]];
+    return;
+  }
   NSString *which =
       field == self.toolbarField ? @"Toolbar Search" : @"Plain Field";
   [self report:[NSString stringWithFormat:@"%@ = \"%@\"", which, field.text]];

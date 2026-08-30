@@ -44,12 +44,18 @@ const udid = process.argv[2];
 // or picker has to be up, which covers the fixture the rest are phrased
 // against. So it is its own mode rather than a check that quietly skips.
 const remoteOnly = process.argv.includes("--remote");
+// Likewise for the strong-password sheet: it needs the fixture's login screen
+// with the password field focused, which is not the screen the rest are
+// phrased against.
+const passwordSheetOnly = process.argv.includes("--password-sheet");
 if (!udid) {
   console.error(
-    "usage: node scripts/check-companion-contract.mjs <udid> [--remote]\n" +
-      "  default:  the fixture (testapp) must be showing its main screen\n" +
-      "  --remote: a remote-hosted view must be up — the photo picker, or the\n" +
-      "            autofill sheet from TESTING_TOOLS.md Part 3"
+    "usage: node scripts/check-companion-contract.mjs <udid> [--remote|--password-sheet]\n" +
+      "  default:         the fixture (testapp) must be showing its main screen\n" +
+      "  --remote:        a remote-hosted view must be up — the photo picker, or the\n" +
+      "                   autofill sheet from TESTING_TOOLS.md Part 3\n" +
+      "  --password-sheet: the fixture's Show Login screen, with Login Password\n" +
+      "                   tapped so iOS's \"Use Strong Password?\" sheet is up"
   );
   process.exit(2);
 }
@@ -97,6 +103,86 @@ await companions.withClient(udid, async (client) => {
           `autofill sheet), or the type has changed and translateRemoteSubtrees ` +
           `no longer recognises it`
     );
+    return;
+  }
+
+  // --- The strong-password sheet, which also needs a screen of its own. ----
+  // `Simulator.strongPasswordSheet()` refuses a `typeText` while this sheet is
+  // up, because the sheet swallows every keystroke after the first. The refusal
+  // is only as good as the lookup that spots the sheet, and the lookup rests on
+  // one belief: the sheet is drawn by another process, so the *default* backend
+  // cannot see into it and AXBridge can — the same split as toolbar contents
+  // (check 4), but for a marker query rather than a tree read.
+  //
+  // If the default backend ever starts seeing it, nothing breaks. If AXBridge
+  // ever stops, the refusal silently stops firing and `ui_type` goes back to
+  // reporting a password typed that was not typed, which is the failure this
+  // whole check exists to keep from coming back.
+  //
+  // The control is the login screen's own submit button: the default backend
+  // must resolve *something* on this screen, or "cannot see the sheet" would be
+  // indistinguishable from a broken query.
+  if (passwordSheetOnly) {
+    const probe = async (value, backend) => {
+      try {
+        const hit = await marker(client, value, Key.UNIQUE_ID, backend);
+        return { label: hit?.elements?.AXLabel ?? null };
+      } catch (e) {
+        return { error: e.message.slice(0, 90) };
+      }
+    };
+    const ID = "GenerateStrongPasswordButton";
+    const control = await probe("LoginSubmitButton");
+    if (control.label !== "Login Submit") {
+      console.error(
+        "The login screen is not on screen: the default backend cannot resolve\n" +
+          "'LoginSubmitButton'. Launch testapp, tap Show Login, then tap Login\n" +
+          "Password so the \"Use Strong Password?\" sheet comes up, and re-run."
+      );
+      process.exit(2);
+    }
+    const byDefault = await probe(ID);
+    const byBridge = await probe(ID, Backend.AXBRIDGE);
+    record(
+      byDefault.label === null || byDefault.error !== undefined,
+      "the default backend cannot see into the strong-password sheet",
+      `"${ID}" -> ${JSON.stringify(byDefault.label ?? byDefault.error)} ` +
+        `(control "LoginSubmitButton" -> ${JSON.stringify(control.label)})`
+    );
+    record(
+      byBridge.label === "Fill Strong Password",
+      "an AXBridge marker query resolves the strong-password sheet's button",
+      `"${ID}" -> ${JSON.stringify(byBridge.label ?? byBridge.error)}`
+    );
+
+    // The cheap gate in front of that lookup. `editingSecureField` asks the
+    // *default* backend for `traits` and looks for one element carrying both
+    // `IsEditing` and `SecureTextField`; if either name changes, or the default
+    // backend stops publishing traits, the gate goes permanently false and the
+    // sheet check it guards never runs again — the refusal disappears with no
+    // other symptom. The whole point of the gate is that this read is cheap, so
+    // the timing is reported too.
+    {
+      const t = Date.now();
+      const tree = await client.accessibilityInfo({
+        format: Format.NESTED,
+        keys: ["AXUniqueId", "traits"],
+      });
+      const ms = Date.now() - t;
+      const elements = (Array.isArray(tree) ? tree : [tree]).flatMap((r) => flatten(r));
+      const editingSecure = elements.filter(
+        (e) =>
+          Array.isArray(e.traits) &&
+          e.traits.includes("IsEditing") &&
+          e.traits.includes("SecureTextField")
+      );
+      record(
+        editingSecure.length > 0,
+        "the default backend publishes IsEditing + SecureTextField for the focused password field",
+        `${ms}ms, ${elements.length} elements, ` +
+          `matched: ${JSON.stringify(editingSecure.map((e) => e.AXUniqueId))}`
+      );
+    }
     return;
   }
 
@@ -506,8 +592,10 @@ await companions.withClient(udid, async (client) => {
   }
 
   console.log(
-    `\nThe remote-hosted-view assumption is not checked here — it needs a sheet on\n` +
-      `screen. Open the picker (Show Picker) and re-run with --remote.`
+    `\nTwo assumptions are not checked here, because each needs a screen of its own:\n` +
+      `the remote-hosted view (open Show Picker, re-run with --remote) and the\n` +
+      `strong-password sheet (Show Login, tap Login Password, re-run with\n` +
+      `--password-sheet).`
   );
 });
 

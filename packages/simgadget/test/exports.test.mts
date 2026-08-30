@@ -58,6 +58,7 @@ const PUBLIC_NAMES = [
   "TapObstructedError",
   "ToggleGestureError",
   "UntypeableTextError",
+  "TypingBlockedError",
 ];
 
 /** Every `.js` under `build/`, which is everything Node will ever load. */

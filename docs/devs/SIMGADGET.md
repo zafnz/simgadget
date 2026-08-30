@@ -304,6 +304,9 @@ export class ToggleGestureError extends SimGadgetError {
 export class UntypeableTextError extends SimGadgetError {
   readonly characters: string[];    // the distinct offending characters      "untypeable-text"
 }
+export class TypingBlockedError extends SimGadgetError {
+  readonly button: AXElement;       // the sheet's own accept button          "typing-blocked"
+}
 ```
 
 Errors without a payload (`no-ios-runtime`, `element-unusable-frame`,

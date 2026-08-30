@@ -44,6 +44,7 @@ import {
   TapObstructedError,
   ToggleGestureError,
   UntypeableTextError,
+  TypingBlockedError,
 } from "./errors.ts";
 // Two element types, and the names say which is which (DECISIONS.md #4).
 // `ax/tree.ts`'s `RawAXElement` is the open type the companion speaks — free
@@ -71,6 +72,7 @@ import {
   type Frame,
 } from "./ax/tree.ts";
 import { decideTapVerb, holdSeconds } from "./ax/tap.ts";
+import { TYPING_GATE_KEYS, editingSecureField } from "./ax/input.ts";
 import { isNoElementError, isWedgeError, shouldRecover } from "./ax/recovery.ts";
 // `ax/orientation.ts`'s own `Orientation` is the *hint* vocabulary — the four
 // device orientations plus `"auto"` — and is deliberately a different type from
@@ -211,6 +213,13 @@ const HID_BUTTON: Record<
  * what a caller asking for `count: 2` means by it.
  */
 const TAP_REPEAT_GAP_MS = 50;
+
+/**
+ * iOS's own accessibility identifier for the "Fill Strong Password" button on
+ * the strong-password suggestion sheet — the sheet `typeText` refuses through.
+ * See `TypingBlockedError` for what was measured and when.
+ */
+const STRONG_PASSWORD_SHEET_ID = "GenerateStrongPasswordButton";
 
 /**
  * Our orientation names to idb's `HIDOrientationType`.
@@ -1373,7 +1382,8 @@ export class Simulator {
    */
   private async findByMarker(
     marker: string,
-    matchKey: SearchableKey
+    matchKey: SearchableKey,
+    backend?: Backend
   ): Promise<AXElement | null> {
     return this.withAccessibilityRecovery(() =>
       this.withClient(async (client) => {
@@ -1381,6 +1391,7 @@ export class Simulator {
           const found = (await client.accessibilityInfo({
             marker,
             matchKey,
+            backend,
             keys: DESCRIBE_KEYS,
           })) as { elements?: RawAXElement } | null;
           this.markAnswered();
@@ -1893,9 +1904,105 @@ export class Simulator {
     const unmapped = [...new Set(unmappedCharacters(text))];
     if (unmapped.length > 0) throw new UntypeableTextError(unmapped);
 
+    const blocker = await this.typingBlocker();
+    if (blocker) throw new TypingBlockedError(blocker);
+
     await this.withClient((client) => client.typeText(text), {
       exclusive: true,
     });
+  }
+
+  /**
+   * What is about to swallow this text, or null when nothing is.
+   *
+   * Two stages, cheap one first, because the expensive one is only ever worth
+   * asking after the cheap one says yes. Measured against the pinned companion
+   * on iOS 26, 2026-08-30, with the fixture:
+   *
+   *   stage 1, default backend, whole screen, `TYPING_GATE_KEYS`   22–88ms
+   *   stage 2, AXBridge marker query for the sheet                280–312ms
+   *
+   * Stage 1 answers "is a masked field being edited?", which is false for
+   * essentially every `typeText` an agent makes, so essentially every call pays
+   * the first number and not the second. Only a password field reaches stage 2,
+   * and only a `newPassword` field — the kind iOS raises the sheet over — comes
+   * back from it with a blocker.
+   *
+   * Both stages are best-effort: a read that fails leaves typing to proceed as
+   * it always did. The check exists to turn a silent wrong success into a
+   * useful refusal, and it must not be able to turn a working `typeText` into a
+   * failure of its own.
+   */
+  private async typingBlocker(): Promise<AXElement | null> {
+    if (!(await this.editingSecureField())) return null;
+    return this.strongPasswordSheet();
+  }
+
+  /**
+   * Whether a masked field has the keyboard — the cheap gate, on the default
+   * backend.
+   *
+   * A whole-screen read rather than a marker query, because a marker matches a
+   * label or an identifier and there is no way to ask the companion for "the
+   * focused element". `traits` is the only focus indicator it publishes, and it
+   * is outside `DESCRIBE_KEYS`, so this asks for its own narrow key set and
+   * reads the raw elements rather than going through `canonicalise`.
+   */
+  private async editingSecureField(): Promise<boolean> {
+    try {
+      return await this.withClient(async (client) => {
+        const info = await client.accessibilityInfo({
+          format: Format.NESTED,
+          keys: TYPING_GATE_KEYS,
+        });
+        if (info == null) return false;
+        return editingSecureField(
+          (Array.isArray(info) ? info : [info]) as RawAXElement[]
+        );
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The strong-password sheet's accept button, or null when the sheet is not up.
+   *
+   * **AXBridge, and that is the whole reason this is not a plain
+   * `findByIdentifier`.** The sheet is drawn by another process, and the
+   * default backend cannot see into it: measured on iOS 26 against the pinned
+   * companion, 2026-08-30, with the sheet demonstrably up, a marker query for
+   * this identifier came back "found no element" under both
+   * `BACKEND_UNSPECIFIED` (29ms) and `AX` (19ms), and resolved it under
+   * `AXBRIDGE` (346ms) and `AXBRIDGE_PERSISTENT` (340ms). This is the same
+   * split as toolbar contents (contract check 4); the `--password-sheet` mode of
+   * `scripts/check-companion-contract.mjs` pins it for a marker query.
+   *
+   * By identifier rather than by the sheet's visible text: the text is English
+   * prose that changes with the locale and the OS release, and matching it
+   * would make the check silently stop working on a translated simulator. The
+   * identifier is what iOS ships everywhere, and an identifier match is exact
+   * where a label match is a substring.
+   *
+   * The cost is ~340ms on every `typeText`, paid whether or not a sheet is
+   * there, because nothing cheaper can see one. That is the price of not
+   * reporting a password typed that was not typed.
+   *
+   * Best-effort on purpose: a read that fails leaves typing to proceed as it
+   * always did. The check exists to turn a silent wrong success into a useful
+   * refusal, and it must not be able to turn a working `typeText` into a
+   * failure of its own.
+   */
+  private async strongPasswordSheet(): Promise<AXElement | null> {
+    try {
+      return await this.findByMarker(
+        STRONG_PASSWORD_SHEET_ID,
+        SearchableKey.UNIQUE_ID,
+        Backend.AXBRIDGE
+      );
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -29,8 +29,9 @@ import {
   TapObstructedError,
   ToggleGestureError,
   UntypeableTextError,
+  TypingBlockedError,
 } from "../src/errors.ts";
-import { Button, SearchableKey } from "../src/idb/client.ts";
+import { Backend, Button, SearchableKey } from "../src/idb/client.ts";
 import { createFakeDeps, type FakeDeps } from "./fakes/deps.ts";
 import {
   FakeIdbClient,
@@ -91,6 +92,30 @@ const BUTTON: AXElement = {
 };
 /** Its centre, in the logical space a caller reads off the tree. */
 const BUTTON_CENTRE = { x: 195, y: 122 };
+
+/**
+ * A screen with a masked field holding the keyboard — what the cheap typing
+ * gate looks for. The trait names are the pinned companion's, measured
+ * 2026-08-30; `input.test.mts` owns the rules about them.
+ */
+function secureFieldEditing(): AXElement[] {
+  return screenTree(390, 844, [
+    {
+      AXUniqueId: "LoginPasswordField",
+      type: "TextField",
+      frame: { x: 61, y: 206, width: 280, height: 34 },
+      traits: ["SecureTextField", "TextEntry", "IsEditing"],
+    } as AXElement,
+  ]);
+}
+
+/** The strong-password sheet's accept button, as iOS publishes it. */
+const STRONG_PASSWORD_BUTTON: AXElement = {
+  AXLabel: "Fill Strong Password",
+  AXUniqueId: "GenerateStrongPasswordButton",
+  type: "Button",
+  frame: { x: 36, y: 715.3, width: 330, height: 44 },
+};
 
 const SWITCH: AXElement = {
   AXLabel: "Plain Switch",
@@ -528,6 +553,101 @@ test("typeText", async (t) => {
     assert.deepEqual(error.characters, ["é", "—", "ö"]);
     assert.deepEqual(client.typed, []);
     assert.deepEqual(deps.calls.withClient, [], "nothing reached the companion at all");
+  });
+
+  await t.test("refuses while the strong-password sheet is up", async () => {
+    // The reported bug: focusing a `newPassword` field raises iOS's "Use Strong
+    // Password?" sheet, and with it up the field takes exactly one character and
+    // drops the rest — while `typeText` returned as if all of them had landed.
+    // There is no way to deliver them past the sheet (`hid` is the only input
+    // path the companion has), so refusing is the whole remedy.
+    //
+    // The sheet is drawn by another process, so only AXBridge can see it — the
+    // fake models that split (contract check 4, and the check script's
+    // --password-sheet mode), which is what makes this test fail against a
+    // check that asks the default backend.
+    const { sim, client } = harness({
+      screen: () => secureFieldEditing(),
+      marker: (marker, matchKey, backend) =>
+        backend === Backend.AXBRIDGE ? markerIn([STRONG_PASSWORD_BUTTON])(marker, matchKey) : null,
+    });
+
+    const error = await caught(() => sim.typeText("hunter2abc"));
+
+    assert.ok(error instanceof TypingBlockedError);
+    assert.equal(error.button.AXUniqueId, "GenerateStrongPasswordButton");
+    assert.deepEqual(client.typed, [], "not one character, which is what the bug looked like");
+  });
+
+  await t.test("types into a secure field with no sheet over it", async () => {
+    // A plain `secureTextEntry` field — the fixture's `PasswordField` — works
+    // perfectly well. The gate says "secure field", the sheet check says "no
+    // sheet", and the text goes through. Refusing on the gate alone would break
+    // every ordinary password box.
+    const { sim, client } = harness({ screen: () => secureFieldEditing() });
+
+    await sim.typeText("hunter2abc");
+
+    assert.deepEqual(client.typed, ["hunter2abc"]);
+  });
+
+  await t.test("asks the backend that can see the sheet", async () => {
+    // Pins the backend itself, not just the outcome: the first version of this
+    // check used the default backend, passed every unit test, and found nothing
+    // on a real simulator with the sheet plainly up.
+    const { sim, client } = harness({ screen: () => secureFieldEditing() });
+
+    await sim.typeText("hi");
+
+    const lookups = client.calls.filter((call) => call.marker === STRONG_PASSWORD_BUTTON.AXUniqueId);
+    assert.equal(lookups.length, 1);
+    assert.equal(lookups[0].backend, Backend.AXBRIDGE);
+    assert.deepEqual(client.typed, ["hi"]);
+  });
+
+  await t.test("does not pay for the sheet check when no secure field is being edited", async () => {
+    // The whole point of the gate. The AXBridge lookup costs ~300ms against the
+    // ~22-88ms of the read that decides whether to make it, and almost every
+    // typeText an agent issues is into an ordinary field. If this test starts
+    // failing, every ui_type has quietly become three times slower.
+    const { sim, client } = harness({ screen: () => screenTree(390, 844, [BUTTON]) });
+
+    await sim.typeText("hunter2abc");
+
+    assert.deepEqual(
+      client.calls.filter((call) => call.kind === "marker"),
+      [],
+      "no marker query at all, let alone an AXBridge one"
+    );
+    assert.deepEqual(client.typed, ["hunter2abc"]);
+  });
+
+  await t.test("types when the gate read fails", async () => {
+    // Best-effort: the check exists to turn a silent wrong success into a
+    // refusal, and must not turn a working typeText into a failure of its own.
+    const { sim, client } = harness({
+      screen: () => {
+        throw new Error("companion fell over");
+      },
+    });
+
+    await sim.typeText("hunter2abc");
+
+    assert.deepEqual(client.typed, ["hunter2abc"]);
+  });
+
+  await t.test("types when the sheet lookup fails", async () => {
+    // Best-effort, on the second stage as well as the first.
+    const { sim, client } = harness({
+      screen: () => secureFieldEditing(),
+      marker: () => {
+        throw new Error("companion fell over");
+      },
+    });
+
+    await sim.typeText("hunter2abc");
+
+    assert.deepEqual(client.typed, ["hunter2abc"]);
   });
 });
 

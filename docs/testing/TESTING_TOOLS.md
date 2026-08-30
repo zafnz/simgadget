@@ -132,7 +132,7 @@ launch_app(id: "test-session", bundle_id: "com.example.mcptestapp")
 ui_view(id: "test-session")
 ```
 
-**Expected:** A screenshot showing a nav bar with **Nav Button**, a text field, **Plain Button**, a greyed-out **Disabled Button**, a status label reading `status: ready`, an orientation label reading `orientation: interface=portrait device=portrait`, **Show Login**, **Show Picker**, a Settings-shaped **Settings Switch** row and a plain **Split Switch** row, **Show In-App Modal**, **Ask Permission**, and a row of one-of-each controls (search bar, switch, slider, stepper, segmented control), and a bottom toolbar with **Toolbar Button** and a search field.
+**Expected:** A screenshot showing a nav bar with **Nav Button**, a text field, a password field, **Plain Button**, a greyed-out **Disabled Button**, a status label reading `status: ready`, an orientation label reading `orientation: interface=portrait device=portrait`, **Show Login**, **Show Picker**, a Settings-shaped **Settings Switch** row and a plain **Split Switch** row, **Show In-App Modal**, **Ask Permission**, and a row of one-of-each controls (search bar, switch, slider, stepper, segmented control), and a bottom toolbar with **Toolbar Button** and a search field.
 
 The tail of that list runs past the fold — the stepper and segmented control sit below the toolbar and are not visible without scrolling. They are in the tree, which is what the steps below need.
 
@@ -145,7 +145,7 @@ ui_describe_all(id: "test-session")
 **Expected:** Every control is present, and — the point of this step — the `NavigationBar` and `Toolbar` groups **have children**:
 
 - `NavButton`, inside the nav bar
-- `PlainField`, `PlainButton`, `DisabledButton` (with `"enabled": false`), `StatusLabel`, `OrientationLabel`, `InAppModalButton`, `SystemModalButton`, `SearchBar`, `PlainSwitch`, `PlainSlider`, `PlainStepper`, `PlainSegmented` in the plain hierarchy
+- `PlainField`, `PasswordField`, `PlainButton`, `DisabledButton` (with `"enabled": false`), `StatusLabel`, `OrientationLabel`, `InAppModalButton`, `SystemModalButton`, `SearchBar`, `PlainSwitch`, `PlainSlider`, `PlainStepper`, `PlainSegmented` in the plain hierarchy
 - `ToolbarButton` and a text field, inside the toolbar
 
 A nav bar or toolbar coming back with no children means the tree has regressed to the incomplete read, and everything below will fail.
@@ -349,7 +349,7 @@ ui_view(id: "landscape-test")
 ui_describe_all(id: "landscape-test")
 ```
 
-**Expected:** Root frame now wider than tall, the reverse of #25. All five controls still present, with frames in landscape space. Note the centre of `Toolbar Button` and of `Nav Button`.
+**Expected:** Root frame now wider than tall, the reverse of #25. All six controls still present, with frames in landscape space. Note the centre of `Toolbar Button` and of `Nav Button`.
 
 ### #30 ui_tap — tap a toolbar control by landscape coordinate
 
@@ -449,7 +449,26 @@ ui_describe_point(id: "remote-test", x: 201, y: 737)
 
 Two distinct failures hide here. If it returns the wrong *element* — `ScrollArea`, or the login form — then the position is wrong. If it returns the right element with a frame that does not cover (201, 737), the tools disagree about one element, which is the defect [#58](../devs/TODO.md) was closed to prevent; a point read hit-tests and so is right about identity while having no ancestry to derive position from.
 
-### #39 ui_tap — the tap must land on the button
+### #39 ui_type — the sheet must refuse, not swallow the text
+
+With the sheet still up, before dismissing it:
+
+```
+ui_type(id: "remote-test", text: "hunter2abc")
+ui_find(id: "remote-test", label: "Login Password")
+```
+
+**Expected:** `ui_type` **fails**, with a message naming the "Use Strong Password?" sheet and offering both ways past it — dismiss it with `ui_tap {label: "Close"}` and type again, or accept iOS's generated password with `ui_tap {label: "Fill Strong Password"}`. `ui_find` then reports `AXValue: "Password"` — the placeholder, so **not one character was typed**.
+
+**The regression is a success line.** While that sheet is up the field holds exactly one character however many are sent — the most recent one — and a second `ui_type` seconds later leaves it at one, so it is a state rather than a race to wait out. The old version reported `Typed successfully` and left `AXValue: "•"`, so an agent believed it had entered a ten-character password when it had entered one letter. A pass here is the refusal *plus* the untouched placeholder; a `Typed successfully` line is the bug, and so is `AXValue: "•"`.
+
+**This is iOS's behaviour, not the companion's.** Reproduced by hand on the Simulator, typing on a real keyboard with no tooling in the loop: the field takes one character and replaces it on every subsequent keystroke. Nothing here can fix that, which is why the tools refuse and name the way out instead — an agent should not have to discover the overlay from a screenshot and dismiss it by coordinate.
+
+`hid` is the only input path the companion has, so there is no way to deliver the keystrokes past the sheet — refusing is the whole remedy.
+
+The check is two stages, and step #15 is what proves the first one stays cheap. A default-backend read (~25–110 ms) asks whether a *masked* field has the keyboard; only if it does is the AXBridge lookup for the sheet (~280–340 ms) worth making, and only AXBridge can see the sheet at all. So an ordinary `ui_type` pays the small number and a password one pays both. If this step starts *failing*, check `typingBlocker()` in [packages/simgadget/src/simulator.ts](../../packages/simgadget/src/simulator.ts) and run `npm run check:companion -- <udid> --password-sheet`, which pins all three beliefs this rests on.
+
+### #40 ui_tap — the tap must land on the button
 
 ```
 ui_tap(id: "remote-test", label: "Fill Strong Password")
@@ -460,7 +479,7 @@ ui_view(id: "remote-test")
 
 This is the step that matters most, because it is the one an agent actually takes. A success line is **not** a pass on its own — the broken version returned one too. Only the screenshot decides. If the login screen is unchanged, or the app has navigated because "Login Submit" was pressed instead, the fix has regressed.
 
-### #40 The control case — a picker must be left alone
+### #41 The control case — a picker must be left alone
 
 ```
 launch_app(id: "remote-test", bundle_id: "com.example.mcptestapp", terminate_running: true)
@@ -472,7 +491,7 @@ ui_find(id: "remote-test", label: "Collections")
 
 The picker is hosted by another process exactly as the sheet is, but its window is at the screen origin, so **these coordinates are already correct and must come back unchanged**. A frame pushed down the screen here means the translation is being applied blindly to anything hosted, rather than by how far the hosting window actually sits from the origin.
 
-### #41 ui_tap — the picker still taps correctly
+### #42 ui_tap — the picker still taps correctly
 
 ```
 ui_tap(id: "remote-test", label: "Collections")
@@ -481,7 +500,7 @@ ui_view(id: "remote-test")
 
 **Expected:** The picker switches to its Collections view — "Pinned", "Albums", "Shared Albums".
 
-### #42 Clean up
+### #43 Clean up
 
 ```
 destroy_simulator(id: "remote-test")
@@ -497,7 +516,7 @@ A switch is the one control whose accessibility frame is routinely **not** the t
 
 So `ui_tap {label}` operates a toggle through accessibility instead, the way VoiceOver does, while `ui_tap {x, y}` stays a real touch. **Both are checked here in one place, deliberately**: they are different mechanisms that can regress independently, and when a toggle stops working the first question is which of the two broke.
 
-### #43 Start a simulator and launch the fixture
+### #44 Start a simulator and launch the fixture
 
 ```
 start_simulator(id: "toggle-test", type: "iPhone")
@@ -507,7 +526,7 @@ launch_app(id: "toggle-test", bundle_id: "com.example.mcptestapp")
 
 **Expected:** The fixture, with a Settings-shaped `Settings Switch` row — label left, switch right — a little below `Show Picker`.
 
-### #44 By name — the toggle must flip, and say so
+### #45 By name — the toggle must flip, and say so
 
 ```
 ui_tap(id: "toggle-test", label: "Settings Switch")
@@ -523,7 +542,7 @@ Three distinct failures hide behind this one line:
 
 Run it twice more and confirm it round-trips — `on -> off`, then `off -> on`. The second call is the one that catches a read-back keyed on a label rather than an identifier: by then the status line reads `settings toggle = on`, and a lookup that matches loosely will find that sentence rather than the switch.
 
-### #45 By coordinate — a real touch must also flip it
+### #46 By coordinate — a real touch must also flip it
 
 Read the switch's position off `ui_view` — **not** off the tree, whose frame spans the whole row and whose centre is the gap:
 
@@ -533,11 +552,11 @@ ui_tap(id: "toggle-test", x: <switch_x>, y: <switch_y>)
 ui_find(id: "toggle-test", label: "status:")
 ```
 
-**Expected:** a `Tapped ... at (x, y)` line, and the status line changes — `status: settings toggle = ...`, flipped from wherever #44 left it.
+**Expected:** a `Tapped ... at (x, y)` line, and the status line changes — `status: settings toggle = ...`, flipped from wherever #45 left it.
 
 This is the half that depends on a tap being **held**. An instantaneous touch actuates a switch about 40% of the time, so a coordinate tap that works once proves little; if this step is flaky, that floor has regressed rather than anything about toggles. See `MIN_TAP_HOLD_SECONDS` in [packages/simgadget/src/ax/tap.ts](../../packages/simgadget/src/ax/tap.ts), where the measurement that fixed the constant sits beside it.
 
-### #46 The boundary: a name that is not a control
+### #47 The boundary: a name that is not a control
 
 ```
 ui_tap(id: "toggle-test", label: "Split Switch")
@@ -550,7 +569,7 @@ The `(StaticText)` in that reply is the useful part: it says plainly that the na
 
 That is correct, not a bug, and it is here so nobody later "fixes" it. `Split Switch` is a label and a switch in a plain container with nothing merging them, so iOS publishes two elements: a static text carrying the name, and an unnamed switch beside it. The name genuinely refers to the text. A VoiceOver user meets the same wall and moves on to the switch. The rule the tools follow is that they operate what iOS says the element *is* — and no amount of activation makes a label into a control.
 
-### #47 A toggle the action API cannot reach must still be tapped
+### #48 A toggle the action API cannot reach must still be tapped
 
 The fixture's toolbar carries a switch. It lives in system chrome, so the cheap
 backend cannot see it — and `AccessibilityActionRequest` has **no `backend`
@@ -578,7 +597,7 @@ ui_tap(id: "toggle-test", label: "Settings Switch")
 
 **Expected:** `Toggled Settings Switch off -> on.` The two must not converge: `Settings Switch` is activated because its centre is not the control, `Toolbar Switch` is touched because it cannot be activated. A build where both report the same verb has lost one of the two mechanisms.
 
-### #48 A disabled control must refuse, not swallow the tap
+### #49 A disabled control must refuse, not swallow the tap
 
 ```
 ui_find(id: "toggle-test", label: "Disabled Button")
@@ -600,7 +619,7 @@ ui_find(id: "toggle-test", label: "status:")
 
 A disabled control is worth its own step because its symptom is identical to every other kind of failed tap: the touch is delivered, nothing happens, and before this check the reply said success.
 
-### #49 A covered control must refuse, not tap something else
+### #50 A covered control must refuse, not tap something else
 
 The fixture's stepper sits below the fold, under the toolbar — its frame is perfectly correct, and its centre belongs to the toolbar's search field:
 
@@ -640,7 +659,7 @@ npm run build && testapp/build.sh
 npm run check:companion -- <udid>
 ```
 
-Six assumptions, each named with what depends on it:
+Six assumptions, each named with what depends on it (four more follow, each needing a screen of its own):
 
 | assumption | what breaks if it changes |
 |---|---|
@@ -658,6 +677,16 @@ npm run check:companion -- <udid> --remote
 ```
 
 which checks the seventh: that a hosted view still restarts its coordinate space at a node of type `"83"`. If that changes, `translateRemoteSubtrees` silently stops translating and taps inside sheets land hundreds of points away again.
+
+And with the strong-password sheet up — **Show Login**, then tap **Login Password**:
+
+```bash
+npm run check:companion -- <udid> --password-sheet
+```
+
+which checks the eighth, ninth and tenth: that the **default backend cannot** resolve the sheet's `GenerateStrongPasswordButton` while **AXBridge can**, and that the default backend publishes `IsEditing` and `SecureTextField` in `traits` for the focused password field. The first two are the same backend split as toolbar contents, for a marker query rather than a tree read. The third is the cheap gate in front of it — `ui_type` only pays for the AXBridge lookup once a masked field is known to have the keyboard (#39).
+
+Each fails silently in the same direction: if AXBridge stops seeing the sheet, or either trait name changes, the refusal stops firing and `ui_type` goes back to reporting a password typed that was not typed.
 
 **Run this after bumping `companion.lock.json` or the submodule**, before trusting the new binary. As a demonstration that it bites, run it against the 2022 brew companion, which fails five of the six:
 
@@ -742,20 +771,20 @@ All tools tested:
 
 | Tool | Steps |
 |------|-------|
-| `start_simulator` | #1, #21, #23, #35, #43 |
-| `destroy_simulator` | #21, #22, #34, #42, #49 |
+| `start_simulator` | #1, #21, #23, #35, #44 |
+| `destroy_simulator` | #21, #22, #34, #43, #50 |
 | `attach_simulator` | #21 |
 | `rotate` | #26 |
 | `detect_rotation` | #27 |
 | `ui_describe_all` | #3, #10, #25, #29 |
-| `ui_find` | #11, #12, #13, #15, #30, #32, #33, #37, #40, #45, #46, #47, #48 |
-| `ui_tap` | #13, #14, #19, #30, #32, #33, #35, #39, #41, #44, #45, #46, #47, #48, #49 |
-| `ui_type` | #15, #33 |
+| `ui_find` | #11, #12, #13, #15, #30, #32, #33, #37, #39, #41, #46, #47, #48, #49 |
+| `ui_tap` | #13, #14, #19, #30, #32, #33, #35, #40, #42, #45, #46, #47, #48, #49, #50 |
+| `ui_type` | #15, #33, #39 |
 | `ui_swipe` | #5 |
 | `ui_describe_point` | #4, #16, #38 |
-| `ui_view` | #2, #6, #9, #24, #28, #31, #36, #39, #41, #45 |
+| `ui_view` | #2, #6, #9, #24, #28, #31, #36, #40, #42, #46 |
 | `screenshot` | #17 |
 | `record_video` | #18 |
 | `stop_recording` | #20 |
-| `install_app` | #7, #23, #35, #43 |
-| `launch_app` | #8, #23, #35, #40, #43 |
+| `install_app` | #7, #23, #35, #44 |
+| `launch_app` | #8, #23, #35, #41, #44 |
