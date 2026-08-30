@@ -15,11 +15,12 @@ import {
   MIN_TAP_HOLD_SECONDS,
   decideTapVerb,
   holdSeconds,
+  hitTestReaches,
   toggleState,
   type TapGesture,
   type TapVerb,
 } from "../src/ax/tap.ts";
-import type { AXElement } from "../src/ax/tree.ts";
+import { sameElement, type AXElement } from "../src/ax/tree.ts";
 
 /** A switch as the tree reports one: a role `isToggle` accepts, and a value. */
 const SWITCH: AXElement = {
@@ -154,5 +155,99 @@ test("toggleState", async (t) => {
     assert.equal(toggleState("Celsius"), "Celsius");
     assert.equal(toggleState(undefined), "undefined");
     assert.equal(toggleState(null), "null");
+  });
+});
+
+// ---- hitTestReaches --------------------------------------------------------
+
+test("hitTestReaches", async (t) => {
+  const target: AXElement = {
+    AXLabel: "Plain Switch",
+    AXUniqueId: "PlainSwitch",
+    type: "Switch",
+    AXValue: "0",
+    frame: { x: 61, y: 745, width: 282, height: 28 },
+  };
+
+  await t.test("an empty point does not reach anything", () => {
+    // The commoner of the two failures, and the one that has no obstruction to
+    // name: an element scrolled past the bottom of the screen keeps a perfectly
+    // correct frame whose centre belongs to nothing.
+    assert.equal(hitTestReaches(target, null), false);
+  });
+
+  await t.test("the element itself reaches it", () => {
+    assert.equal(hitTestReaches(target, target), true);
+  });
+
+  await t.test("a different element at the point does not", () => {
+    // #105's case, measured: a switch under the toolbar hit-tests to the
+    // toolbar's own control, and activating it operated that instead.
+    const toolbarSwitch: AXElement = {
+      AXLabel: "Toolbar Switch",
+      AXUniqueId: "ToolbarSwitch",
+      type: "Switch",
+      AXValue: "0",
+      frame: { x: 169, y: 808, width: 63, height: 28 },
+    };
+    assert.equal(hitTestReaches(target, toolbarSwitch), false);
+  });
+
+  await t.test("a child of the element still reaches it", () => {
+    // The `StaticText` inside a button is what a point read returns for the
+    // button, and refusing that would refuse every labelled button on screen.
+    const inner: AXElement = {
+      AXLabel: "Plain Switch",
+      type: "StaticText",
+      frame: { x: 73, y: 750, width: 106, height: 18 },
+    };
+    assert.equal(hitTestReaches(target, inner), true);
+  });
+
+  await t.test("the same control read twice reaches it, whatever the read named it", () => {
+    // The two elements come from different reads — a lookup by label and a
+    // hit-test by point — so identity is not available and the unique id is
+    // what carries across.
+    const byPoint: AXElement = {
+      AXUniqueId: "PlainSwitch",
+      type: "Switch",
+      frame: { x: 61, y: 745, width: 282, height: 28 },
+    };
+    assert.equal(hitTestReaches(target, byPoint), true);
+  });
+});
+
+test("hitTestReaches is stricter than sameElement about containment", async (t) => {
+  // The fixture geometry that defeated the first version of this gate, kept as
+  // numbers because that is what made it wrong: `sameElement` accepts frame
+  // containment either way round, so the covering toolbar button compared equal
+  // to the switch it was covering and a covered activation went through.
+  const coveredSwitch: AXElement = {
+    AXLabel: "Covered Switch",
+    AXUniqueId: "CoveredSwitch",
+    type: "Switch",
+    AXValue: "0",
+    frame: { x: 40, y: 808, width: 63, height: 28 },
+  };
+  const toolbarButton: AXElement = {
+    AXLabel: "Toolbar Button",
+    AXUniqueId: "ToolbarButton",
+    type: "Button",
+    frame: { x: 6.666666666666661, y: 803, width: 138.99999999999997, height: 38 },
+  };
+
+  await t.test("a control that encloses the target has not reached it", () => {
+    assert.equal(sameElement(coveredSwitch, toolbarButton), true, "the looser rule accepts it");
+    assert.equal(hitTestReaches(coveredSwitch, toolbarButton), false, "this one must not");
+  });
+
+  await t.test("and the enclosing direction that does count still counts", () => {
+    // Same two frames, opposite roles: aiming at the button and landing on
+    // something inside it is a hit.
+    const inner: AXElement = {
+      type: "StaticText",
+      frame: { x: 40, y: 808, width: 63, height: 28 },
+    };
+    assert.equal(hitTestReaches(toolbarButton, inner), true);
   });
 });

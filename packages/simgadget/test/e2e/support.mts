@@ -13,7 +13,7 @@
  */
 
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -82,15 +82,58 @@ export function useCachedCompanion(): void {
   }
 }
 
-/** Builds `testapp/` if it has not been built, so the suite runs from a clean
- * checkout. ~20s; free on every run after the first. */
+/**
+ * Builds `testapp/` when it is missing **or older than its source**, so the
+ * suite runs from a clean checkout and never from a stale bundle.
+ *
+ * The staleness half is the part that was missing, and its absence cost two
+ * confusing runs: edit `main.m`, rerun, and the old bundle is silently tested
+ * instead. What that looks like is not "the fixture is stale" — it is geometry
+ * assertions failing against source that plainly says otherwise, which reads as
+ * a library bug. The two cases most likely to be under edit are the two that
+ * depend on where controls sit (see the toolbar helpers below), so this is
+ * precisely the wrong place to guess.
+ *
+ * mtime, not a content hash: the question is only whether the build ran after
+ * the last edit, `build.sh` is the sole writer of the bundle, and a hash would
+ * have to cover the whole source tree to say anything a timestamp does not.
+ */
 export async function ensureFixtureBuilt(): Promise<void> {
-  if (existsSync(FIXTURE_APP)) return;
+  if (existsSync(FIXTURE_APP) && !fixtureIsStale()) return;
   await execFileAsync(path.join(REPO_ROOT, "testapp/build.sh"), [], {
     cwd: REPO_ROOT,
     maxBuffer: 16 * 1024 * 1024,
   });
 }
+
+/**
+ * True when any fixture source is newer than the built binary.
+ *
+ * The binary rather than the `.app` directory: a bundle directory's mtime moves
+ * when anything inside it is touched, including a re-signing that changed
+ * nothing, so it is not evidence that a compile happened.
+ *
+ * A missing binary counts as stale — an `.app` that exists without one is a
+ * half-written build, and rebuilding is the right answer either way.
+ */
+function fixtureIsStale(): boolean {
+  const built = path.join(FIXTURE_APP, "MCPTestApp");
+  if (!existsSync(built)) return true;
+  const builtAt = statSync(built).mtimeMs;
+  return FIXTURE_SOURCES.some((source) => {
+    const full = path.join(REPO_ROOT, source);
+    return existsSync(full) && statSync(full).mtimeMs > builtAt;
+  });
+}
+
+/** Everything `build.sh` compiles or embeds. A source added here and not listed
+ * is a fixture edit the suite can silently miss, which is the whole bug. */
+const FIXTURE_SOURCES = [
+  "testapp/main.m",
+  "testapp/Info.plist",
+  "testapp/entitlements.plist",
+  "testapp/build.sh",
+];
 
 /**
  * Deletes a simulator by udid, swallowing everything.

@@ -507,6 +507,63 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
         constraintEqualToAnchor:scroll.frameLayoutGuide.centerXAnchor],
     [stack.widthAnchor constraintEqualToConstant:280],
   ]];
+
+  [self addCoveredControls];
+}
+
+// Two controls that are *deliberately* underneath the toolbar, pinned to the
+// view rather than placed in the scrolling stack.
+//
+// Everything else here is arranged to stay clear of the toolbar. These two are
+// the opposite, and they exist because two e2e cases need a control the toolbar
+// covers — one to prove a covered activation is refused (#105), one to prove a
+// covered touch is refused and names what is in the way (#64a).
+//
+// **Pinned to the view, not appended to the stack, and that is the whole
+// point.** Both cases used to rely on stack controls happening to fall under
+// the toolbar, so they broke the moment a row was added above them: 7c80498 did
+// exactly that and both failed, reading as library bugs rather than layout ones
+// (#106, #107). Constrained to the view's bottom edge, being covered is a fact
+// about these two controls rather than a consequence of how much is above them,
+// and no future row can move them.
+//
+// Offsets are measured from the *view's* bottom rather than the safe area's,
+// because the safe area stops at the toolbar's top edge and under it is exactly
+// where these have to be. -52 puts a 31pt control's centre near the middle of
+// the toolbar band on every iPhone the suite runs on; the horizontal positions
+// put one under the toolbar's button and the other under its search field, so a
+// refusal has something specific to name.
+- (void)addCoveredControls {
+  UISwitch *coveredSwitch = [[UISwitch alloc] init];
+  coveredSwitch.accessibilityLabel = @"Covered Switch";
+  coveredSwitch.accessibilityIdentifier = @"CoveredSwitch";
+  coveredSwitch.translatesAutoresizingMaskIntoConstraints = NO;
+  // Wired, so that "it did not flip" is a measurement rather than an assumption
+  // — and so that anything that *does* reach it says so out loud.
+  [coveredSwitch addTarget:self
+                    action:@selector(coveredSwitchChanged:)
+          forControlEvents:UIControlEventValueChanged];
+  [self.view addSubview:coveredSwitch];
+
+  UIButton *coveredButton = [UIButton buttonWithType:UIButtonTypeSystem];
+  [coveredButton setTitle:@"Covered Button" forState:UIControlStateNormal];
+  coveredButton.accessibilityIdentifier = @"CoveredButton";
+  coveredButton.translatesAutoresizingMaskIntoConstraints = NO;
+  [coveredButton addTarget:self
+                    action:@selector(coveredButtonTapped)
+          forControlEvents:UIControlEventTouchUpInside];
+  [self.view addSubview:coveredButton];
+
+  [NSLayoutConstraint activateConstraints:@[
+    [coveredSwitch.centerYAnchor constraintEqualToAnchor:self.view.bottomAnchor
+                                                constant:-52],
+    [coveredSwitch.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor
+                                                constant:40],
+    [coveredButton.centerYAnchor constraintEqualToAnchor:self.view.bottomAnchor
+                                                constant:-52],
+    [coveredButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor
+                                                 constant:-60],
+  ]];
 }
 
 // Reports in lower case, and that is load-bearing rather than a style choice.
@@ -515,6 +572,20 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
 // higher up the screen it wins, so the second lookup of a control resolves the
 // sentence describing the first. Observed: one toggle by name worked, and the
 // next tapped the status label instead. "settings toggle" collides with nothing.
+// Neither of these should ever fire. They exist so that a covered control
+// being operated is *visible* rather than silent — which is exactly how #105
+// hid: the activation reported success, the switch did not move, and the only
+// evidence that something else had been pressed was a status line nobody was
+// reading yet.
+- (void)coveredSwitchChanged:(UISwitch *)sender {
+  [self report:[NSString stringWithFormat:@"covered toggle = %@",
+                                          sender.isOn ? @"on" : @"off"]];
+}
+
+- (void)coveredButtonTapped {
+  [self report:@"covered button fired"];
+}
+
 - (void)toolbarSwitchChanged:(UISwitch *)sender {
   [self report:[NSString stringWithFormat:@"toolbar toggle = %@",
                                           sender.isOn ? @"on" : @"off"]];

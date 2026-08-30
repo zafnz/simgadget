@@ -360,6 +360,10 @@ test("tap({label}) on a toggle", async (t) => {
         // line the app just wrote outranks it.
         return markerIn(activated ? [STATUS, current] : [current, STATUS])(marker, matchKey);
       },
+      // On screen and reachable: since #105 an activation is gated on the same
+      // hit-test a touch is, so a fake that answers nothing at the point now
+      // means "covered" rather than "not asked".
+      point: hitTest(SWITCH),
       // Contract check 6: the action operates the switch without a touch.
       activate: () => {
         activated = true;
@@ -393,6 +397,7 @@ test("tap({label}) on a toggle", async (t) => {
         matchKey === SearchableKey.LABEL
           ? markerIn([{ ...anonymous, AXValue: value }])(marker, matchKey)
           : null,
+      point: hitTest(anonymous),
       activate: () => {
         value = "1";
       },
@@ -416,6 +421,7 @@ test("tap({label}) on a toggle", async (t) => {
       screen: () => screenTree(390, 844, [SWITCH]),
       marker: (marker, matchKey) =>
         activated ? null : markerIn([SWITCH])(marker, matchKey),
+      point: hitTest(SWITCH),
       activate: () => {
         activated = true;
       },
@@ -426,6 +432,67 @@ test("tap({label}) on a toggle", async (t) => {
     assert.equal(result.acted, "activation");
     assert.equal(result.acted === "activation" && result.before, "0");
     assert.equal(result.acted === "activation" && "after" in result && result.after, undefined);
+  });
+
+  await t.test("refuses a covered toggle rather than activating it (#105)", async () => {
+    // The bug this exists for, measured on the fixture: a switch under the
+    // toolbar was *reported* as activated, did not change, and the toolbar's
+    // button fired instead. An activation reaches whatever is on top, so it
+    // needs the hit-test the touch has had since #64a.
+    //
+    // The obstruction here is a small toolbar control sitting over the switch's
+    // centre, which is what the point read actually returned on the device. It
+    // is deliberately not the element that fired: what fires is the companion's
+    // business, and the rule this pins is narrower and checkable — once the
+    // centre is not the target, nothing is sent at all.
+    const toolbarSwitch: AXElement = {
+      AXLabel: "Toolbar Switch",
+      AXUniqueId: "ToolbarSwitch",
+      type: "Switch",
+      AXValue: "0",
+      frame: { x: 140, y: 295, width: 60, height: 40 },
+    };
+    let activated = false;
+    const { sim, client } = harness({
+      screen: () => screenTree(390, 844, [SWITCH, toolbarSwitch]),
+      marker: markerIn([SWITCH]),
+      point: hitTest(SWITCH, toolbarSwitch),
+      activate: () => {
+        activated = true;
+      },
+    });
+
+    const error = await caught(() => sim.tap({ label: "Plain Switch" }));
+
+    assert.ok(error instanceof TapObstructedError);
+    assert.equal(error.code, "tap-obstructed");
+    assert.equal(error.element.AXUniqueId, "PlainSwitch");
+    assert.equal(error.obstruction?.AXUniqueId, "ToolbarSwitch");
+    assert.equal(activated, false, "nothing may be activated once the point is not the target");
+    assert.deepEqual(client.activations, []);
+    assert.deepEqual(client.taps, []);
+  });
+
+  await t.test("still activates a toggle that has no frame to hit-test", async () => {
+    // An activation names the element, not a point, so the one case that cannot
+    // be verified is also the one that cannot be mis-aimed. Refusing it would
+    // remove a case that works.
+    const frameless: AXElement = { ...SWITCH, frame: undefined };
+    let value = "0";
+    const { sim, client } = harness({
+      screen: () => screenTree(390, 844, [frameless]),
+      marker: () => ({ ...frameless, AXValue: value }),
+      point: () => null,
+      activate: () => {
+        value = "1";
+      },
+    });
+
+    const result = await sim.tap({ label: "Plain Switch" });
+
+    assert.equal(result.acted, "activation");
+    assert.equal(result.acted === "activation" && result.after, "1");
+    assert.deepEqual(client.taps, [], "and it is still never touched");
   });
 
   await t.test(

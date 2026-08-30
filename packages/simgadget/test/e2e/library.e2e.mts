@@ -86,6 +86,42 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
     return String(label.AXLabel);
   }
 
+  /**
+   * Asserts that `label` really is covered right now, and answers with what is
+   * on top of it.
+   *
+   * The point of #107: two cases below need a control the toolbar covers, and
+   * both used to *assume* one — so when 7c80498 added a row above them and
+   * everything shifted 50pt, they failed as "the toggle did not take" and "the
+   * refusal named nothing", which read as library bugs rather than layout ones.
+   * Checking the precondition separately means the next such shift fails here,
+   * saying the fixture moved, instead of over there saying the library broke.
+   *
+   * The fixture now pins `CoveredSwitch` and `CoveredButton` to the view's
+   * bottom edge rather than putting them in the scrolling stack, so being
+   * covered is a property of those two controls that no future row can change.
+   */
+  async function coveredBy(label: string): Promise<AXElement> {
+    const element = await sim.findByLabel(label);
+    assert.ok(element, `the fixture has no "${label}"`);
+    const frame = element.frame;
+    assert.ok(frame, `"${label}" has no frame`);
+
+    const at = centre(frame);
+    const onTop = await sim.describePoint(at.x, at.y);
+    assert.ok(
+      onTop,
+      `"${label}" is meant to be covered, but its centre (${at.x}, ${at.y}) is empty — ` +
+        `the fixture's covered controls have moved`
+    );
+    assert.notEqual(
+      onTop.AXUniqueId,
+      element.AXUniqueId,
+      `"${label}" is meant to be covered, but its own centre resolves to itself`
+    );
+    return onTop;
+  }
+
   /** Waits for the fixture to be frontmost. An app launch is asynchronous in a
    * way nothing in the library can observe, so this is the one thing worth
    * waiting for; no assertion under test is ever retried. */
@@ -323,6 +359,22 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
   });
 
   it("operates a toggle through accessibility and reads the state back", async () => {
+    // #107: this needs `Plain Switch` to be *reachable*, which is a fact about
+    // where the stack happens to end rather than anything this case controls.
+    // When 7c80498 pushed it under the toolbar, the failure here said "the
+    // toggle did not take" — true, and useless. Stating the precondition means
+    // the next shift says what actually went wrong.
+    const reachable = await sim.findByLabel("Plain Switch");
+    assert.ok(reachable?.frame, "the fixture has no Plain Switch");
+    const at = centre(reachable.frame);
+    const onTop = await sim.describePoint(at.x, at.y);
+    assert.equal(
+      onTop?.AXUniqueId,
+      "PlainSwitch",
+      `Plain Switch is covered at (${at.x}, ${at.y}) — the fixture's layout has shifted, ` +
+        `which is a fixture problem and not a library one (#107)`
+    );
+
     const result = await sim.tap({ label: "Plain Switch" });
 
     assert.equal(result.acted, "activation");
@@ -330,6 +382,37 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
     assert.equal(result.before, "0");
     assert.equal(result.after, "1");
     assert.notEqual(result.after, result.before);
+  });
+
+  it("refuses to activate a toggle the toolbar covers, and touches nothing", async () => {
+    // #105. Before the fix this answered that it had activated the switch, the
+    // switch did not move, and the toolbar's *button* fired instead — the one
+    // failure mode worse than doing nothing, because the caller is told to
+    // scroll and try again while something else has already been pressed.
+    //
+    // An activation used to skip the hit-test on the grounds that AXPress
+    // reaches controls a finger cannot. It does not: it reaches whatever is on
+    // top.
+    const onTop = await coveredBy("Covered Switch");
+    assert.equal(onTop.AXUniqueId, "ToolbarButton", "the fixture pins it under the toolbar button");
+
+    const before = await status();
+
+    await assert.rejects(sim.tap({ label: "Covered Switch" }), (error: unknown) => {
+      assert.ok(error instanceof TapObstructedError);
+      assert.equal(error.code, "tap-obstructed");
+      assert.equal(error.element.AXUniqueId, "CoveredSwitch");
+      assert.equal(error.obstruction?.AXUniqueId, "ToolbarButton");
+      return true;
+    });
+
+    // The whole point: the toolbar button is wired to the status line, so if
+    // anything reached it this says so. "covered toggle = on" would mean the
+    // switch itself was operated behind the refusal.
+    assert.equal(await status(), before);
+
+    const stillOff = await sim.findByIdentifier("CoveredSwitch");
+    assert.equal(stillOff?.AXValue, "0", "the switch must not have moved either");
   });
 
   it("falls back to a real touch for a toggle the action API cannot reach", async () => {
@@ -373,28 +456,38 @@ describe("simgadget against the testapp fixture", { skip: SKIP }, () => {
   });
 
   it("refuses a covered control and names what is in the way", async () => {
-    // The fixture's stepper sits below the fold, under the toolbar. Its frame is
-    // perfectly correct and its centre belongs to the toolbar's search field —
-    // before the hit-test existed, this call focused that field, opened the
-    // keyboard and reported success.
+    // A frame can be exactly right and still not be tappable at its centre.
+    // Before the hit-test existed, a tap by name on a control under the toolbar
+    // focused the *toolbar's search field*, opened the keyboard, and answered
+    // "Tapped successfully".
+    //
+    // #107: this used the stepper, which was under the toolbar only because of
+    // how much sat above it — so 7c80498 moved it clean off the screen and the
+    // refusal came back with no obstruction to name. `CoveredButton` is pinned
+    // to the view's bottom edge instead, so it is covered by construction, and
+    // what covers it is read rather than assumed.
+    const onTop = await coveredBy("Covered Button");
     const before = await status();
 
-    await assert.rejects(
-      sim.tap({ label: "Plain Stepper, Increment" }),
-      (error: unknown) => {
-        assert.ok(error instanceof TapObstructedError);
-        assert.equal(error.code, "tap-obstructed");
-        assert.equal(error.element.AXUniqueId, "PlainStepper-Increment");
-        assert.ok(error.obstruction, "the refusal did not say what was in the way");
-        assert.equal(error.obstruction.AXUniqueId, "ToolbarField");
-        assert.equal(error.obstruction.AXValue, "Toolbar Search");
-        // Reported in the caller's own coordinate space, not the portrait pair
-        // actually sent.
-        assert.ok(error.point.y > portrait.height * 0.8);
-        return true;
-      }
-    );
+    await assert.rejects(sim.tap({ label: "Covered Button" }), (error: unknown) => {
+      assert.ok(error instanceof TapObstructedError);
+      assert.equal(error.code, "tap-obstructed");
+      assert.equal(error.element.AXUniqueId, "CoveredButton");
+      assert.ok(error.obstruction, "the refusal did not say what was in the way");
+      assert.equal(
+        error.obstruction.AXUniqueId,
+        onTop.AXUniqueId,
+        "the refusal must name the element the point read found"
+      );
+      // Reported in the caller's own coordinate space, not the portrait pair
+      // actually sent, and derived from the screen rather than from a number
+      // that was true on one device.
+      assert.ok(error.point.y > portrait.height * 0.8);
+      return true;
+    });
 
+    // The fixture wires the covered button to the status line, so "covered
+    // button fired" here would mean the refusal was issued after the touch.
     assert.equal(await status(), before);
   });
 

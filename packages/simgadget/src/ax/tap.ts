@@ -13,7 +13,7 @@
  * touches a companion, a clock or a filesystem.
  */
 
-import { isToggle, type AXElement } from "./tree.ts";
+import { isToggle, normaliseForMatch, type AXElement } from "./tree.ts";
 
 /**
  * The shortest press that actually actuates a control.
@@ -102,6 +102,75 @@ export function decideTapVerb(element: AXElement, gesture: TapGesture = {}): Tap
   if (!isToggle(element)) return "touch";
   const plain = gesture.durationSeconds === undefined && (gesture.count ?? 1) === 1;
   return plain ? "activation" : "toggle-needs-plain-tap";
+}
+
+/**
+ * Whether the point that was aimed at actually reached the element aimed for.
+ *
+ * `null` — an empty point — counts as not reaching it, and is the commoner
+ * case: an element scrolled past the bottom of the screen has a perfectly
+ * correct frame whose centre belongs to nothing at all.
+ *
+ * **Both the touch and the activation are gated on this, and the activation is
+ * the one that was missing.** The touch path has hit-tested since #64a. The
+ * activation path did not, on the stated grounds that `AXPress` does not
+ * hit-test and so reaches controls a finger cannot — and that premise turned
+ * out to be false. Measured on this project's fixture with a switch under the
+ * toolbar: the activation reported that it had operated the switch, the switch
+ * did not change, and the toolbar's *button* fired instead (#105). What a
+ * covered activation actually does is operate whatever is on top, so the
+ * capability the exception was protecting does not exist.
+ *
+ * ## Why this is not `sameElement`
+ *
+ * It was, and the fixture caught it inside an hour. `sameElement` accepts frame
+ * containment **in both directions**, which is right for asking "are these two
+ * reads the same control" and wrong for asking "did the point reach it": a
+ * toolbar button 139pt wide encloses a 63pt switch sitting under it, so the
+ * covering control compared equal to the control it was covering and the gate
+ * let the activation through. Measured on the fixture's `CoveredSwitch`
+ * (`{x:40 y:808 w:63 h:28}`) under `ToolbarButton` (`{x:6.7 y:803 w:139
+ * h:38}`) — enclosed on all four sides.
+ *
+ * So containment counts in one direction only. The point reached the target if
+ * what is there is:
+ *
+ *  - **the same control**, by unique id or by label — the two elements come
+ *    from different reads (a lookup by label, a hit-test by point), so identity
+ *    is not available and these are what carry across; or
+ *  - **inside the target** — the `StaticText` inside a button is what a point
+ *    read returns for the button, and refusing that would refuse every labelled
+ *    button on screen.
+ *
+ * What is deliberately *not* accepted is the reverse: something that merely
+ * encloses the target. A container the target sits inside is not the target,
+ * and neither is a toolbar drawn over it — in both cases the touch lands on the
+ * bigger thing, which is the whole failure this gate exists to prevent.
+ */
+export function hitTestReaches(target: AXElement, atPoint: AXElement | null): boolean {
+  if (atPoint === null) return false;
+
+  const targetId = target.AXUniqueId;
+  const pointId = atPoint.AXUniqueId;
+  if (typeof targetId === "string" && targetId && targetId === pointId) return true;
+
+  const targetLabel =
+    typeof target.AXLabel === "string" ? normaliseForMatch(target.AXLabel) : "";
+  const pointLabel =
+    typeof atPoint.AXLabel === "string" ? normaliseForMatch(atPoint.AXLabel) : "";
+  if (targetLabel && targetLabel === pointLabel) return true;
+
+  const outer = target.frame;
+  const inner = atPoint.frame;
+  if (!outer || !inner) return false;
+  // One pixel of slack on each edge: both frames are thirds-of-a-point values
+  // rounded differently by two different reads.
+  return (
+    inner.x >= outer.x - 1 &&
+    inner.y >= outer.y - 1 &&
+    inner.x + inner.width <= outer.x + outer.width + 1 &&
+    inner.y + inner.height <= outer.y + outer.height + 1
+  );
 }
 
 /**

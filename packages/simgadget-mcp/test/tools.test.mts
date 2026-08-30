@@ -206,54 +206,84 @@ function createdFake(options: Partial<ConstructorParameters<typeof FakeSimulator
 // ---- the instructions ------------------------------------------------------
 
 /**
- * The instructions as they now stand, pinned paragraph by paragraph.
+ * What the handshake instructions have to be true of — rules, not a copy.
  *
- * Row 17 rewrote them, so the frozen baseline can no longer be the
- * expectation — and prose with no expectation at all drifts. This is the
- * expectation: an exact comparison, in the millisecond suite, of the only text
- * every agent reads. `mcp.test.mts` proves the built server sends this same
- * string down a real pipe.
+ * This was a 2.5 KB duplicate of `SERVER_INSTRUCTIONS` asserted equal to it
+ * (#104). That test had no oracle: its expected value *was* the actual value,
+ * so the only thing it could ever detect was that somebody had edited the
+ * string, and the only available fix was to paste the new string in. It was
+ * pasted three times in one afternoon, which is the whole argument against it.
+ *
+ * Each assertion below can fail for a reason that is not "the prose changed":
+ * a tool renamed but not renamed here, a paragraph appended ahead of the one
+ * that has to survive truncation, the whole thing growing past the budget a
+ * client was measured cutting at. The exact text has one gate left, and it is
+ * the one with a real oracle: `mcp.test.mts` asserts a *built* server sends
+ * this same constant over a pipe.
  */
-const EXPECTED_INSTRUCTIONS = [
-  "iOS Simulator MCP server. Every tool takes an `id` identifying your session, which owns one simulator. Choose a distinctive id for yourself (e.g. \"qa-login-flow\", not \"test\") and reuse it for every call — other agents may be driving their own simulators on this same server. Calling start_simulator again with the same id resumes your existing simulator. Call destroy_simulator when finished.",
-  "Do not use `xcrun simctl`, `idb`, or other shell commands to control simulators.",
-  "Navigation: if you know what you want, tap it by name — ui_tap {label} resolves the element on the simulator and operates it. ui_find {label} locates an element, or reports it absent as a normal answer. Only use ui_describe_all when you do not know what is on screen: it returns the whole tree and is several kilobytes. Labels match by case-sensitive substring, against an element's label, its visible text or its accessibility identifier, and curly quotes, apostrophes and dashes are treated as their plain equivalents — ask for what you see on screen. The first match wins, so name things precisely; ui_tap tells you which element it acted on.",
-  "Coordinates are logical screen space. ui_describe_all frames feed directly into ui_tap, ui_swipe and ui_describe_point.",
-  "Visual checks: if asked whether something looks right — layout, colour, alignment, anything about appearance — call ui_view and look at the screenshot. The accessibility tree shows what exists, not how it renders; an element can be present and correctly labelled while looking completely wrong. Do not derive tap coordinates from a saved screenshot file: those are pixel space and stop matching logical space once the device is rotated. ui_view's image is already in point space, so a position read off that one is a ui_tap coordinate.",
-  "ui_tap can refuse, and the refusal is the useful answer: it checks the touch will reach the element before sending it, so a control that is covered, scrolled out of view or disabled is reported instead of silently missed. Scroll it into view, or read its real position from ui_view and use ui_tap {x, y}. A switch is switched rather than touched, and ui_tap answers with the state it read back — so if it says the state did not change, it did not.",
-  "ui_describe_all reads the app's real view hierarchy, so it includes controls in tab bars, nav bars and toolbars, and is pruned to elements you can act on.",
-  "start_simulator does not return until the simulator answers, so you can use it immediately; it says so if it gave up waiting. If it times out, it may still be booting.",
-].join("\n");
+test("the handshake instructions keep the rules that make them useful", async (t) => {
+  const paragraphs = SERVER_INSTRUCTIONS.split("\n");
+  const at = (prefix: string) => paragraphs.findIndex((line) => line.startsWith(prefix));
 
-/**
- * Row 17: the paragraphs are reordered and cut back. Clients truncate these —
- * one was seen cutting at ~2100 characters, which under the old order dropped
- * the coordinate space and the ui_view line, and an agent that never read them
- * drove a whole session off `screenshot`. So the order is checked as well as
- * the text: what an agent cannot find out any other way has to arrive inside
- * that budget.
- */
-test("the handshake instructions are pinned, and are no longer the baseline's", () => {
-  const baseline = JSON.parse(
-    readFileSync(new URL("./fixtures/tools-list.baseline.json", import.meta.url), "utf8")
-  ) as { instructions: string };
+  await t.test("every tool it names is a tool that exists", async () => {
+    // The failure this catches: a tool renamed in `registerTools` and not in the
+    // prose, which leaves every agent that connects being told to call
+    // something that is not there. Nothing else in the suite compares the two.
+    const registered = new Set((await listedTools()).keys());
+    const mentioned = new Set(SERVER_INSTRUCTIONS.match(/\b(?:ui|start|destroy|attach|detect|install|launch|record|stop|screenshot|rotate)_?[a-z_]*\b/g) ?? []);
+    for (const name of mentioned) {
+      if (!name.includes("_") && name !== "screenshot" && name !== "rotate") continue;
+      assert.ok(
+        registered.has(name),
+        `the instructions name "${name}", which is not a registered tool`
+      );
+    }
+  });
 
-  assert.equal(SERVER_INSTRUCTIONS, EXPECTED_INSTRUCTIONS);
+  await t.test("it still tells an agent that ui_view exists", () => {
+    // The bug that caused the rewrite: an agent drove a whole session off
+    // `screenshot`, scaling coordinates by hand, because it had never heard of
+    // ui_view. Whatever else this prose says, it has to say this.
+    assert.match(SERVER_INSTRUCTIONS, /ui_view/);
+    assert.ok(at("Visual checks:") !== -1, "the visual-checks paragraph is gone");
+  });
 
-  // The baseline is still the record of what the old server said, and still
-  // must never be regenerated — which means it has to disagree.
-  assert.notEqual(SERVER_INSTRUCTIONS, baseline.instructions);
+  await t.test("ui_view arrives before the paragraphs a response explains by itself", () => {
+    // Clients truncate this. One was measured cutting mid-sentence at ~2100
+    // characters, which under the old order dropped the ui_view line entirely.
+    // A refused ui_tap explains itself in the refusal; that ui_view exists is
+    // discoverable nowhere else.
+    assert.ok(
+      at("Visual checks:") < at("ui_tap can refuse,"),
+      "the ui_view paragraph must precede the ones an agent can learn from a reply"
+    );
+    assert.ok(
+      paragraphs.slice(0, at("Visual checks:") + 1).join("\n").length < 2100,
+      "the ui_view paragraph must fit inside the truncation budget that lost it"
+    );
+  });
 
-  const now = SERVER_INSTRUCTIONS.split("\n");
-  const at = (prefix: string) => now.findIndex((line) => line.startsWith(prefix));
-  assert.ok(
-    at("Visual checks:") < at("ui_tap can refuse,"),
-    "the ui_view paragraph goes ahead of the ones a response explains by itself"
-  );
-  assert.ok(
-    now.slice(0, at("Visual checks:") + 1).join("\n").length < 2100,
-    "the ui_view paragraph must fit inside the truncation budget that lost it"
-  );
+  await t.test("it does not outgrow the budget it is written for", () => {
+    // It costs tokens in every session, and the tail is what gets cut. A cap
+    // rather than an exact length: this is a budget, and the point is that
+    // adding a paragraph is a decision rather than an accident.
+    assert.ok(
+      SERVER_INSTRUCTIONS.length < 3200,
+      `the instructions are ${SERVER_INSTRUCTIONS.length} characters; the tail is what clients drop`
+    );
+    assert.ok(paragraphs.every((line) => line.length > 0), "no empty paragraphs");
+  });
+
+  await t.test("it is no longer the baseline's, and the baseline still says so", () => {
+    // Row 17 rewrote them. The baseline stays the record of what the old server
+    // said and must never be regenerated, so it has to disagree — and a
+    // regenerated fixture would agree.
+    const baseline = JSON.parse(
+      readFileSync(new URL("./fixtures/tools-list.baseline.json", import.meta.url), "utf8")
+    ) as { instructions: string };
+    assert.notEqual(SERVER_INSTRUCTIONS, baseline.instructions);
+    assert.match(baseline.instructions, /scrolled out of view/, "the baseline has been regenerated");
+  });
 });
 
 // ---- filtering -------------------------------------------------------------
@@ -985,7 +1015,10 @@ test("ui_tap", async (t) => {
       const { text, isError } = await harness.call("ui_tap", { id: "qa", label: "Wi-Fi" });
       assert.equal(isError, false, "it is an answer about what happened");
       assert.match(text, /but it is still on/);
-      assert.match(text, /scrolled out of view/);
+      assert.match(text, /ui_tap \{x, y\}/);
+      // #105: a covered element is refused before activation now, so this
+      // message no longer blames a scroll position that has been ruled out.
+      assert.doesNotMatch(text, /scrolled out of view/);
     } finally {
       await harness.close();
     }

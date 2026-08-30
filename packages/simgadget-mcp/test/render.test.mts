@@ -702,9 +702,14 @@ test("ui_tap names what it acted on", async (t) => {
       after: "1",
     };
     const rendered = renderTap(result);
-    assert.match(rendered, /but it is still on\./);
-    assert.match(rendered, /scrolled out of view/);
-    assert.doesNotMatch(rendered, /^Toggled/);
+    assert.match(rendered, /but it is still on\./, "it names the state it read back");
+    assert.match(rendered, /ui_tap \{x, y\}/, "and the way out");
+    assert.doesNotMatch(rendered, /^Toggled/, "it must not read as success");
+    // Since #105 the library refuses a covered or off-screen element as
+    // tap-obstructed before it activates anything, so this message is only
+    // reached for a control that *was* reached. Advising a scroll here would
+    // send the caller after a cause that has already been ruled out.
+    assert.doesNotMatch(rendered, /scrolled out of view/);
   });
 
   await t.test("a state that could not be read back says exactly that", () => {

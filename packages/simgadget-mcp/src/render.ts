@@ -645,14 +645,16 @@ export function renderTap(result: TapResult, label?: string): string {
   }
 
   if (result.after === result.before) {
+    // "Scrolled out of view" used to lead this, and since #105 it cannot: the
+    // library hit-tests the element before activating it, so anything covered
+    // or off screen is refused as tap-obstructed and never reaches here. What
+    // is left is a control that is on screen, was reached, and did not respond
+    // — so the advice is about the control, not about where it is.
     return (
       `Activated ${name} through accessibility, but it is still ${toggleState(result.after)}. ` +
-      `Most often it is scrolled out of view — activation does not take on an ` +
-      `element that is not on screen, which is measurable and is what this ` +
-      `read-back is for. Scroll it into view and try again. Otherwise the ` +
-      `control may be disabled, or may not respond to activation, in which ` +
-      `case read the switch's position from ui_view and tap it with ` +
-      `ui_tap {x, y}.`
+      `It is on screen and was reached, so this is the control itself not ` +
+      `responding to activation — some do not. Read its position from ui_view ` +
+      `and tap it with ui_tap {x, y}.`
     );
   }
 

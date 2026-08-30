@@ -1,6 +1,6 @@
 # TODO — SimGadget library, 2026-08-16
 
-- [ ] **#105 Activating a covered control actuates whatever is underneath it,
+- [x] **#105 Activating a covered control actuates whatever is underneath it,
   and answers as though it activated the named one.** Found 2026-08-30, running
   the e2e after commit 7c80498. `ui_tap {label: "Plain Switch"}` on the fixture
   answers *"Activated Plain Switch through accessibility, but it is still
@@ -50,7 +50,27 @@
   to any other layout — which is the same lesson as [[#107]] and should be built
   with it.
 
-- [ ] **#108 `ensureFixtureBuilt` never rebuilds a stale fixture, and the
+
+  **Fixed 2026-08-30.** `tap()` now hit-tests before activating, not only
+  before touching, and the decision is `hitTestReaches` in `ax/tap.ts`.
+
+  It is deliberately **stricter than `sameElement`**, and the first version was
+  not — which the fixture caught within the hour. `sameElement` accepts frame
+  containment in both directions, so `ToolbarButton` (139pt wide) compared equal
+  to the 63pt `CoveredSwitch` underneath it and the activation went straight
+  through. Containment now counts one way only: something *inside* the target is
+  a hit, something that merely encloses it is not.
+
+  Verified on device: the same call that used to answer "Activated Covered
+  Switch … still off" while the status line read `tapped Toolbar Button` now
+  refuses and names `Toolbar Button`, with the status line unchanged at
+  `ready`. `Plain Switch` and `Settings Switch` still activate and
+  `Toolbar Switch` still falls back to a touch. Covered by a unit test on the
+  decision, two on the containment asymmetry, one on the wiring, an e2e case,
+  and TESTING_TOOLS.md #51. The "scrolled out of view" advice in `render.ts`
+  went with it — a covered element is refused before it gets there now, so that
+  message would send a caller after a cause already ruled out.
+- [x] **#108 `ensureFixtureBuilt` never rebuilds a stale fixture, and the
   failure looks like a library bug.** Found 2026-08-30. `support.mts:87` returns
   early when `MCPTestApp.app` merely exists; it does not compare it against
   `main.m`. The comment says so, so it is not lying — but editing the fixture
@@ -61,6 +81,11 @@
   An mtime comparison against `testapp/main.m` is a two-line fix, and `build.sh`
   is already fast enough to run unconditionally if that turns out simpler.
 
+
+  **Fixed 2026-08-30.** `ensureFixtureBuilt` compares the built binary's mtime
+  against `main.m`, `Info.plist`, `entitlements.plist` and `build.sh`, and
+  rebuilds when any is newer. Verified both ways: no rebuild when fresh, rebuild
+  after touching a source.
 - [x] **#106 FIXED 2026-08-30. Commit 7c80498 moved the fixture 50pt down, and two e2e cases
   encode the old positions.** Found 2026-08-30. `npm run test:e2e` fails 2 of
   32, on iPhone 17 Pro, at `main`. Both are geometry, not behaviour:
@@ -104,7 +129,7 @@
   **The second option stays open and is now #107.** Nothing here stops the next
   fixture edit breaking these two cases the same way.
 
-- [ ] **#107 The two geometry-sensitive e2e cases still encode absolute
+- [x] **#107 The two geometry-sensitive e2e cases still encode absolute
   positions.** Split out of #106, which was fixed by restoring the fixture
   rather than by making the cases robust. `operates a toggle through
   accessibility and reads the state back` needs a control the toolbar covers,
@@ -120,7 +145,15 @@
   so the fixture can grow without the suite encoding its layout. Worth doing
   when the fixture next needs a new row on the main screen.
 
-- [ ] **#104 Tests that assert prose character for character, where the
+
+  **Done 2026-08-30.** The fixture pins `CoveredSwitch` and `CoveredButton` to
+  the view's bottom edge instead of relying on stack controls happening to fall
+  under the toolbar, so being covered is a property of those two controls that
+  no future row can change. The e2e reads what is on top rather than naming it,
+  through a `coveredBy` helper that asserts the precondition separately — so a
+  layout shift now fails saying the fixture moved, where it used to fail saying
+  the toggle did not take.
+- [x] **#104 Tests that assert prose character for character, where the
   expected value is a copy of the actual one.** Raised 2026-08-30, while
   reworking the instructions gate. The pattern: a test file holds a copy of a
   string defined somewhere else and asserts the two are equal. It has no
@@ -163,6 +196,17 @@
   comes from somewhere you cannot reproduce, and assert the rule instead when
   it comes from a file three directories over.
 
+
+  **Done 2026-08-30, for the instructions.** `EXPECTED_INSTRUCTIONS` is gone;
+  `tools.test.mts` now asserts rules that can fail for a reason other than "the
+  prose changed" — every tool the prose names is registered, ui_view is still
+  mentioned and still arrives inside the ~2100-character truncation budget, the
+  whole thing stays under 3200 characters, and the baseline still disagrees and
+  still carries its old wording. The exact text keeps the one gate with a real
+  oracle: `mcp.test.mts` asserts a built server sends the constant over a pipe.
+  **The `render.test.mts` sweep is not done** and is the larger half — the two
+  messages touched by #105 were converted, the rest were left alone rather than
+  rewritten blind. Reopen as its own item when those tests are next edited.
 - [ ] **#103 Promote stdio from a side note to a supported way to run the
   server.** Discussed 2026-08-30. The daemon was built on the belief that a
   central process was needed to manage simulators correctly. The idle timeout

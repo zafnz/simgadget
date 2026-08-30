@@ -623,15 +623,23 @@ A disabled control is worth its own step because its symptom is identical to eve
 
 ### #50 A covered control must refuse, not tap something else
 
-The fixture's stepper sits below the fold, under the toolbar — its frame is perfectly correct, and its centre belongs to the toolbar's search field:
+`Covered Button` is pinned to the bottom of the view, underneath the toolbar, so it is covered by construction rather than because of how much sits above it. (It used to be the stepper, which was covered only by accident of layout — adding one row to the fixture moved it off the screen entirely and this step started passing for the wrong reason. See TODO #106/#107.)
 
 ```
-ui_tap(id: "toggle-test", label: "Plain Stepper, Increment")
+ui_tap(id: "toggle-test", label: "Covered Button")
 ```
 
 **Expected:** an **error**, naming what is in the way:
 
-> `"Plain Stepper, Increment" is at {x:201 y:794 w:140 h:32}, but "Toolbar Search" is there instead, so a tap at its centre (271, 810) would not reach it — it is covered, off screen, or scrolled out of view. Scroll it into view, or read its real position from ui_view and use ui_tap {x, y}.`
+> `"Covered Button" is at {x:... y:... w:... h:...}, but "Toolbar Search" is there instead, so a tap at its centre (..., ...) would not reach it — it is covered, off screen, or scrolled out of view. Scroll it into view, or read its real position from ui_view and use ui_tap {x, y}.`
+
+Then confirm nothing was pressed behind the refusal — the covered button is wired to the status line:
+
+```
+ui_find(id: "toggle-test", label: "status:")
+```
+
+**Expected:** unchanged. `status: covered button fired` would mean the touch went out before the refusal.
 
 **A `Tapped ...` reply here is the regression.** Before this check existed, that call focused the toolbar's search field, opened the keyboard, and reported success. Every frame involved was correct, so no amount of tree work would have caught it — the guard is a single hit-test at the point about to be touched, ~10 ms against a tap that already costs ~110 ms.
 
@@ -644,6 +652,26 @@ ui_tap(id: "toggle-test", label: "Nav Button")
 ```
 
 **Expected:** three `Tapped ... at (x, y)` replies. `Toolbar Button` is the one to watch — it lives in system chrome and is resolved by the AXBridge fallback, so it exercises the verification against an element the cheap backend cannot see.
+
+### #51 A covered *toggle* must refuse too, and press nothing
+
+The step that would have caught TODO #105. A toggle takes the activation path, which used to skip the hit-test on the grounds that an activation names an element rather than a point. It does not behave that way: a covered activation operates whatever is on top.
+
+Relaunch first, so the status line starts from `ready`:
+
+```
+launch_app(id: "toggle-test", bundle_id: "com.example.mcptestapp", terminate_running: true)
+ui_find(id: "toggle-test", label: "status:")
+ui_tap(id: "toggle-test", label: "Covered Switch")
+ui_find(id: "toggle-test", label: "status:")
+```
+
+**Expected:** `status: ready`, then an **error** naming `Toolbar Button` as what is in the way, then `status: ready` again — unchanged.
+
+**Two different replies are the regression, and the second is the dangerous one:**
+
+- `Toggled Covered Switch off -> on` would mean the hit-test is not gating activations at all.
+- `Activated Covered Switch through accessibility, but it is still off` with the status line now reading `status: tapped Toolbar Button` is the original bug exactly: the caller is told to scroll and retry while the toolbar's button has already been pressed. That reply is only correct when the status line has *not* changed.
 
 ```
 destroy_simulator(id: "toggle-test")

@@ -64,14 +64,13 @@ import {
   matchInTree,
   pruneTree,
   reconcileType,
-  sameElement,
   translateRemoteSubtrees,
   uniquelyLabelled,
   type AXElement,
   type RawAXElement,
   type Frame,
 } from "./ax/tree.ts";
-import { decideTapVerb, holdSeconds } from "./ax/tap.ts";
+import { decideTapVerb, hitTestReaches, holdSeconds } from "./ax/tap.ts";
 import { TYPING_GATE_KEYS, editingSecureField } from "./ax/input.ts";
 import { isNoElementError, isWedgeError, shouldRecover } from "./ax/recovery.ts";
 // `ax/orientation.ts`'s own `Orientation` is the *hint* vocabulary — the four
@@ -1684,10 +1683,15 @@ export class Simulator {
    *   caller saying where, and are taken at their word. Answers
    *   `acted: "touch"` with no `element`.
    * - `{label}` is "find this thing and operate it", and the order below is the
-   *   specification: resolve, refuse a disabled control, activate a toggle
-   *   through accessibility (falling back to a real touch when the action API
-   *   cannot reach it), refuse a hold or multi-tap aimed at a toggle, take the
-   *   centre of the frame, transform it, hit-test it, and only then touch.
+   *   specification: resolve, refuse a disabled control, refuse a hold or
+   *   multi-tap aimed at a toggle, take the centre of the frame, transform it,
+   *   **hit-test it**, and only then either activate a toggle through
+   *   accessibility (falling back to a real touch when the action API cannot
+   *   reach it) or touch.
+   *
+   *   The hit-test moved ahead of the activation for #105: it used to gate only
+   *   the touch, on the grounds that an activation does not need a reachable
+   *   point. It does. A covered activation operates whatever is on top.
    *
    * Every branch of that order exists because a tap once silently did the wrong
    * thing and reported success; the reasons are on the pieces
@@ -1714,7 +1718,8 @@ export class Simulator {
     const element = await this.findByLabel(target.label);
     if (!element) throw new ElementNotFoundError(target.label);
 
-    switch (decideTapVerb(element, opts)) {
+    const verb = decideTapVerb(element, opts);
+    switch (verb) {
       case "element-disabled":
         throw new ElementDisabledError(element);
       case "toggle-needs-plain-tap":
@@ -1725,19 +1730,21 @@ export class Simulator {
           element,
           opts?.durationSeconds !== undefined ? "hold" : "multi-tap"
         );
-      case "activation": {
-        const activated = await this.activateToggle(element, target.label);
-        // `null` means the action API could not reach this one, and a real
-        // touch is the right answer for it — see `activateToggle`.
-        if (activated) return activated;
-        break;
-      }
+      case "activation":
       case "touch":
         break;
     }
 
+    // An element with no usable frame can still be *activated* — an activation
+    // names the element, not a point — so a frameless toggle gets its one
+    // attempt before this gives up. It cannot be hit-test verified, but it
+    // cannot be mis-aimed either, and refusing it would take away a case that
+    // works today. Everything else needs somewhere to put the touch.
     const centre = centreOf(element);
     if (!centre) {
+      const activated =
+        verb === "activation" ? await this.activateToggle(element, target.label) : null;
+      if (activated) return activated;
       throw new SimGadgetError(
         "element-unusable-frame",
         `Found an element matching "${target.label}", but it has no usable frame to aim at.`
@@ -1773,8 +1780,16 @@ export class Simulator {
     // deliberate change 3), so all that is left to catch is a bridge that has
     // stopped answering, which is a typed error and the caller's real answer.
     const atPoint = await this.readPoint(point.x, point.y);
-    if (!atPoint || !sameElement(element, atPoint)) {
+    if (!hitTestReaches(element, atPoint)) {
       throw new TapObstructedError(element, atPoint, spoken);
+    }
+
+    if (verb === "activation") {
+      const activated = await this.activateToggle(element, target.label);
+      // `null` means the action API could not reach this one, and a real touch
+      // is the right answer for it — see `activateToggle`. The hit-test above
+      // has already cleared the point that touch will use.
+      if (activated) return activated;
     }
 
     await this.sendTouch(point, count, durationSeconds);
