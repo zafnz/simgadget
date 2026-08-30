@@ -1,5 +1,28 @@
 # TODO — SimGadget library, 2026-08-16
 
+- [ ] **#109 Two stale expectations in TESTING_TOOLS.md, found by running it.**
+  Full run 2026-08-30, all of Parts 1–6 against the fixture: 51 steps pass, and
+  these two differ from what the document says without a row authorising it.
+
+  1. **Step #14 hard-codes a coordinate that has moved.** It expects
+     `Tapped "Toolbar Search" (TextField) at (298, 822).`; the reply is
+     `(324, 822)`. `ToolbarField` is at `{x:252.67 w:142.33}` now, so 324 is
+     its true centre and 298 was true of an older toolbar layout. Same class as
+     [[#107]] — a number in a document that tracks layout — and the same fix:
+     say "the centre of the frame from step #12" rather than a literal. #50 was
+     rewritten that way already; #14, #46 and #49 still carry literals.
+  2. **Step #18's warning is out of date.** It says `record_video`'s
+     `output_path` description "still names `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`
+     … a known wart held deliberately until after this run — TODO #93". It does
+     not: both descriptions name `SIMGADGET_DEFAULT_OUTPUT_DIR`, which is
+     deliberate change 15 and is what the parity baseline substitutes. The note
+     should go, and #93 with it if nothing else is outstanding there.
+
+  Neither is a code defect. They are recorded because the document's own rule is
+  that a reply differing from it with no row to explain it is a finding, and
+  because a plan whose expected strings have quietly drifted is a plan people
+  stop trusting.
+
 - [x] **#105 Activating a covered control actuates whatever is underneath it,
   and answers as though it activated the named one.** Found 2026-08-30, running
   the e2e after commit 7c80498. `ui_tap {label: "Plain Switch"}` on the fixture
