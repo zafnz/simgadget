@@ -129,9 +129,9 @@ async function listedTools(sessions = registryOver(new FakeSimulator())) {
  * and validates against.
  */
 /**
- * The one authorised difference between a registration and the baseline: the
- * two output-path descriptions name `SIMGADGET_DEFAULT_OUTPUT_DIR` where the
- * old server named `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` (row 15, TODO #93).
+ * An authorised difference between a registration and the baseline: the two
+ * output-path descriptions name `SIMGADGET_DEFAULT_OUTPUT_DIR` where the old
+ * server named `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` (row 15, TODO #93).
  * `mcp.test.mts` carries the same substitution against the built server; this
  * one keeps the per-tool check honest in the millisecond suite.
  */
@@ -139,6 +139,19 @@ const OUTPUT_DIR_RENAME = {
   was: "IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR",
   now: "SIMGADGET_DEFAULT_OUTPUT_DIR",
   tools: ["screenshot", "record_video"],
+};
+
+/**
+ * The other one: `ui_view` and `screenshot` each name the other (row 18).
+ * Kept in both files for the same reason as the rename above, and spelled out
+ * in full so that changing either description again fails here rather than
+ * quietly widening the allowance.
+ */
+const CAPTURE_DESCRIPTIONS: Record<string, string> = {
+  ui_view:
+    "Look at the current simulator screen: returns a compressed screenshot inline, in the same logical point space as the accessibility tree, so a position read off it is a ui_tap coordinate. Use screenshot instead to save an image to a file.",
+  screenshot:
+    "Saves a screenshot of the iOS Simulator to a file for humans to view. To look at the screen yourself, call ui_view: it returns the image inline, in the same point space as the accessibility tree, where this one writes the raw pixel raster to disk.",
 };
 
 async function assertMatchesBaseline(name: string): Promise<void> {
@@ -161,7 +174,20 @@ async function assertMatchesBaseline(name: string): Promise<void> {
     inputSchema = JSON.parse(schema.split(OUTPUT_DIR_RENAME.was).join(OUTPUT_DIR_RENAME.now));
   }
 
-  assert.equal(actual.description, expected.description, `${name}: description`);
+  const rewritten = CAPTURE_DESCRIPTIONS[name];
+  if (rewritten !== undefined) {
+    assert.notEqual(
+      expected.description,
+      rewritten,
+      `the baseline already carries the new ${name} description — regenerated?`
+    );
+  }
+
+  assert.equal(
+    actual.description,
+    rewritten ?? expected.description,
+    `${name}: description`
+  );
   assert.deepEqual(actual.inputSchema, inputSchema, `${name}: inputSchema`);
   assert.deepEqual(actual.annotations, expected.annotations, `${name}: annotations`);
 }
@@ -179,11 +205,55 @@ function createdFake(options: Partial<ConstructorParameters<typeof FakeSimulator
 
 // ---- the instructions ------------------------------------------------------
 
-test("the handshake instructions are the baseline's, unchanged", () => {
+/**
+ * The instructions as they now stand, pinned paragraph by paragraph.
+ *
+ * Row 17 rewrote them, so the frozen baseline can no longer be the
+ * expectation — and prose with no expectation at all drifts. This is the
+ * expectation: an exact comparison, in the millisecond suite, of the only text
+ * every agent reads. `mcp.test.mts` proves the built server sends this same
+ * string down a real pipe.
+ */
+const EXPECTED_INSTRUCTIONS = [
+  "iOS Simulator MCP server. Every tool takes an `id` identifying your session, which owns one simulator. Choose a distinctive id for yourself (e.g. \"qa-login-flow\", not \"test\") and reuse it for every call — other agents may be driving their own simulators on this same server. Calling start_simulator again with the same id resumes your existing simulator. Call destroy_simulator when finished.",
+  "Do not use `xcrun simctl`, `idb`, or other shell commands to control simulators.",
+  "Navigation: if you know what you want, tap it by name — ui_tap {label} resolves the element on the simulator and operates it. ui_find {label} locates an element, or reports it absent as a normal answer. Only use ui_describe_all when you do not know what is on screen: it returns the whole tree and is several kilobytes. Labels match by case-sensitive substring, against an element's label, its visible text or its accessibility identifier, and curly quotes, apostrophes and dashes are treated as their plain equivalents — ask for what you see on screen. The first match wins, so name things precisely; ui_tap tells you which element it acted on.",
+  "Coordinates are logical screen space. ui_describe_all frames feed directly into ui_tap, ui_swipe and ui_describe_point.",
+  "Visual checks: if asked whether something looks right — layout, colour, alignment, anything about appearance — call ui_view and look at the screenshot. The accessibility tree shows what exists, not how it renders; an element can be present and correctly labelled while looking completely wrong. Do not derive tap coordinates from a saved screenshot file: those are pixel space and stop matching logical space once the device is rotated. ui_view's image is already in point space, so a position read off that one is a ui_tap coordinate.",
+  "ui_tap can refuse, and the refusal is the useful answer: it checks the touch will reach the element before sending it, so a control that is covered, scrolled out of view or disabled is reported instead of silently missed. Scroll it into view, or read its real position from ui_view and use ui_tap {x, y}. A switch is switched rather than touched, and ui_tap answers with the state it read back — so if it says the state did not change, it did not.",
+  "ui_describe_all reads the app's real view hierarchy, so it includes controls in tab bars, nav bars and toolbars, and is pruned to elements you can act on.",
+  "start_simulator does not return until the simulator answers, so you can use it immediately; it says so if it gave up waiting. If it times out, it may still be booting.",
+].join("\n");
+
+/**
+ * Row 17: the paragraphs are reordered and cut back. Clients truncate these —
+ * one was seen cutting at ~2100 characters, which under the old order dropped
+ * the coordinate space and the ui_view line, and an agent that never read them
+ * drove a whole session off `screenshot`. So the order is checked as well as
+ * the text: what an agent cannot find out any other way has to arrive inside
+ * that budget.
+ */
+test("the handshake instructions are pinned, and are no longer the baseline's", () => {
   const baseline = JSON.parse(
     readFileSync(new URL("./fixtures/tools-list.baseline.json", import.meta.url), "utf8")
   ) as { instructions: string };
-  assert.equal(SERVER_INSTRUCTIONS, baseline.instructions);
+
+  assert.equal(SERVER_INSTRUCTIONS, EXPECTED_INSTRUCTIONS);
+
+  // The baseline is still the record of what the old server said, and still
+  // must never be regenerated — which means it has to disagree.
+  assert.notEqual(SERVER_INSTRUCTIONS, baseline.instructions);
+
+  const now = SERVER_INSTRUCTIONS.split("\n");
+  const at = (prefix: string) => now.findIndex((line) => line.startsWith(prefix));
+  assert.ok(
+    at("Visual checks:") < at("ui_tap can refuse,"),
+    "the ui_view paragraph goes ahead of the ones a response explains by itself"
+  );
+  assert.ok(
+    now.slice(0, at("Visual checks:") + 1).join("\n").length < 2100,
+    "the ui_view paragraph must fit inside the truncation budget that lost it"
+  );
 });
 
 // ---- filtering -------------------------------------------------------------

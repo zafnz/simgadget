@@ -34,6 +34,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { SERVER_INSTRUCTIONS } from "../src/tools.ts";
+
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER = path.join(PACKAGE_ROOT, "build", "index.js");
 
@@ -51,10 +53,10 @@ const PACKAGE_VERSION: string = JSON.parse(
 ).version;
 
 /**
- * The two fields allowed to differ from the baseline, and nothing else.
+ * The fields allowed to differ from the baseline, and nothing else.
  *
  * Each names the row of SIMGADGET_PLAN_SERVER.md's "Deliberate behaviour
- * changes" that authorises it. A third difference — a reworded description, a
+ * changes" that authorises it. A further difference — a reworded description, a
  * dropped default, a renamed argument — is a regression until that table says
  * otherwise, and the assertion below is written so it cannot be anything else.
  */
@@ -83,6 +85,28 @@ const ALLOWED_DIFFERENCES = {
     now: "SIMGADGET_DEFAULT_OUTPUT_DIR",
     tools: ["screenshot", "record_video"],
   },
+  /**
+   * Row 17: the handshake instructions are rewritten — reordered so `ui_view`
+   * arrives inside the ~2100 characters a client was observed truncating at,
+   * and cut back everywhere a response says the same thing by itself.
+   *
+   * Their text is pinned in `tools.test.mts`, against `SERVER_INSTRUCTIONS`,
+   * because an exact comparison belongs in the suite that costs milliseconds.
+   * What this file asserts is the part only a real pipe can show: that the
+   * string the source pins is the string a client receives.
+   */
+  instructions: { pinnedIn: "tools.test.mts, against SERVER_INSTRUCTIONS" },
+  /**
+   * Row 18: `ui_view` and `screenshot` each name the other, because an agent
+   * reading either one is at the fork between looking at the screen and writing
+   * a file, and the names alone do not say which is which.
+   */
+  captureDescriptions: {
+    ui_view:
+      "Look at the current simulator screen: returns a compressed screenshot inline, in the same logical point space as the accessibility tree, so a position read off it is a ui_tap coordinate. Use screenshot instead to save an image to a file.",
+    screenshot:
+      "Saves a screenshot of the iOS Simulator to a file for humans to view. To look at the screen yourself, call ui_view: it returns the image inline, in the same point space as the accessibility tree, where this one writes the raw pixel raster to disk.",
+  },
 };
 
 /**
@@ -96,7 +120,17 @@ function expectedTools(
   tools: { name: string; description: string; inputSchema: unknown; annotations: unknown }[]
 ) {
   const { was, now, tools: affected } = ALLOWED_DIFFERENCES.outputDirVariable;
-  return tools.map((tool) => {
+  const described: Record<string, string> = ALLOWED_DIFFERENCES.captureDescriptions;
+  return tools.map((original) => {
+    const rewritten = described[original.name];
+    if (rewritten !== undefined) {
+      assert.notEqual(
+        original.description,
+        rewritten,
+        `the baseline already carries the new ${original.name} description — has the fixture been regenerated?`
+      );
+    }
+    const tool = rewritten === undefined ? original : { ...original, description: rewritten };
     if (!affected.includes(tool.name)) return tool;
     // The variable is named in the *input schema*'s `output_path` description,
     // not the tool's own — which is where an agent reads it, and where the
@@ -231,10 +265,15 @@ test("the built server", async (t) => {
     assert.equal(BASELINE.serverInfo.version, ALLOWED_DIFFERENCES.serverInfoVersion.was);
   });
 
-  await t.test("sends the same instructions, to the character", () => {
-    // Every agent that connects reads this and nothing else. It is prose, so
-    // nothing but an exact comparison can defend it.
-    assert.equal(session.instructions, BASELINE.instructions);
+  await t.test("sends the instructions the source pins, over the wire", () => {
+    // Every agent that connects reads this and nothing else. What it says is
+    // pinned character for character in tools.test.mts; what a built server on
+    // a pipe adds is that the string gets there at all.
+    assert.equal(session.instructions, SERVER_INSTRUCTIONS);
+
+    // Row 17 rewrote them. The baseline stays the record of what the old server
+    // said and must never be regenerated, so it has to disagree.
+    assert.notEqual(session.instructions, BASELINE.instructions);
   });
 
   await t.test("publishes exactly the baseline's seventeen tools", () => {
@@ -245,7 +284,7 @@ test("the built server", async (t) => {
     );
   });
 
-  await t.test("differs from the baseline in the two allowed fields and nowhere else", () => {
+  await t.test("differs from the baseline in the allowed fields and nowhere else", () => {
     // The whole surface at once, with the allowlist substituted into the
     // expectation rather than excluded from the comparison. A difference this
     // file has not authorised has nowhere to hide: not in a description, not in
@@ -271,7 +310,7 @@ test("the built server", async (t) => {
           name: ALLOWED_DIFFERENCES.serverInfoName.now,
           version: ALLOWED_DIFFERENCES.serverInfoVersion.now,
         },
-        instructions: BASELINE.instructions,
+        instructions: SERVER_INSTRUCTIONS,
         tools: byName(expectedTools(BASELINE.tools)),
       }
     );

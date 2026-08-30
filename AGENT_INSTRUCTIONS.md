@@ -100,13 +100,15 @@ ui_view { id: "qa-login-flow" }
 Use `ui_describe_all` to decide *what to do*, and `ui_view` to judge *how it
 looks*. When you report on appearance, say that you looked at a screenshot.
 
-Do not read tap coordinates off a screenshot: screenshots are in pixel space
-while taps use logical space, and the two stop agreeing once the device is
-rotated. Get coordinates from `ui_describe_all`, or avoid them entirely with
-`ui_tap { label }`.
-
 Use `screenshot { output_path }` instead when the user wants the image saved to
-a file rather than shown to you.
+a file rather than shown to you. That one writes the raw pixel raster: it is
+three times the size of the logical screen, and it stops agreeing with tap
+coordinates once the device is rotated, so do not measure anything off it. The
+image `ui_view` returns has already been resized to points and rotated to match
+the interface, which is why a position read off it is a `ui_tap` coordinate.
+
+Better still, get coordinates from `ui_describe_all`, or avoid them entirely
+with `ui_tap { label }`.
 
 ## Text entry
 

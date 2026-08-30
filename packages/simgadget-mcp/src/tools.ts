@@ -92,20 +92,40 @@ import { SimulatorNotFoundError, type ReadyResult, type TapTarget } from "simgad
  * Sent to every client at handshake, so it is the only guidance most agents
  * ever get. Kept dense: it costs tokens in every session.
  *
- * Verbatim from index.ts:680; `index.ts` passes it to the `McpServer`
- * constructor. It names tools, not library methods, which is why it lives in
- * the server and could not live in `simgadget`.
+ * From index.ts:680; `index.ts` passes it to the `McpServer` constructor. It
+ * names tools, not library methods, which is why it lives in the server and
+ * could not live in `simgadget`.
+ *
+ * ## The paragraph order is important
+ *
+ * Clients truncate this. One was observed cutting it mid-sentence at ~2100
+ * characters, which under the original order dropped the last two paragraphs —
+ * the coordinate space and the ui_view line — and an agent that never read them
+ * drove a whole session off `screenshot`, scaling every coordinate by hand.
+ *
+ * So the order is: what an agent cannot find out any other way first, what a
+ * response will tell it anyway last. A refused `ui_tap` explains itself in the
+ * refusal; a slow `ui_describe_all` is felt. That `ui_view` exists at all, and
+ * that its image is in the same space as the tree, is not discoverable from any
+ * response an agent taking the other path will see.
+ *
+ * Moving the visual-checks paragraph up is also what forced its last clause to
+ * be rewritten. "Do not derive tap coordinates from a screenshot" was written
+ * about the `screenshot` tool's file, but it sits one sentence after "call
+ * ui_view and look at the screenshot" — harmless while it was being truncated
+ * away, and a rule against the one thing ui_view is best at as soon as it was
+ * not.
  */
 export const SERVER_INSTRUCTIONS =
   "iOS Simulator MCP server. Every tool takes an `id` identifying your session, which owns one simulator. " +
-  "Choose a distinctive id for yourself (e.g. \"qa-login-flow\", not \"test\") and reuse it for every call — other agents may be driving their own simulators on this same server, and sharing an id means taking over each other's. Calling start_simulator again with the same id resumes your existing simulator. Call destroy_simulator when finished.\n" +
-  "Do not use `xcrun simctl`, `idb`, or other shell commands to control simulators; this server owns their lifecycle and cannot see changes made behind its back.\n" +
-  "Navigation: if you know what you want, tap it by name — ui_tap {label} resolves the element on the simulator and operates it, costing a few hundred bytes and no coordinate handling. ui_find {label} locates an element, or reports it absent as a normal answer. Only use ui_describe_all when you do not know what is on screen: it returns the whole tree and is several kilobytes. Labels match by case-sensitive substring, against an element's label, its visible text or its accessibility identifier, and curly quotes, apostrophes and dashes are treated as their plain equivalents — ask for what you see on screen. The first match wins, so name things precisely; ui_tap tells you which element it acted on.\n" +
-  "ui_tap can refuse, and the refusal is the useful answer: it checks the touch will reach the element before sending it, so a control that is covered, scrolled out of view or disabled is reported instead of silently missed. Scroll it into view, or read its real position from ui_view and use ui_tap {x, y}. A switch is switched rather than touched, and ui_tap answers with the state it read back — so if it says the state did not change, it did not.\n" +
-  "start_simulator does not return until the simulator answers, so you can use it immediately; it says so if it gave up waiting.\n" +
-  "ui_describe_all reads the app's real view hierarchy, so it includes controls in tab bars, nav bars and toolbars, and is pruned to elements you can act on. It and a failed ui_find each cost ~300ms, so do not poll either in a tight loop.\n" +
+  "Choose a distinctive id for yourself (e.g. \"qa-login-flow\", not \"test\") and reuse it for every call — other agents may be driving their own simulators on this same server. Calling start_simulator again with the same id resumes your existing simulator. Call destroy_simulator when finished.\n" +
+  "Do not use `xcrun simctl`, `idb`, or other shell commands to control simulators.\n" +
+  "Navigation: if you know what you want, tap it by name — ui_tap {label} resolves the element on the simulator and operates it. ui_find {label} locates an element, or reports it absent as a normal answer. Only use ui_describe_all when you do not know what is on screen: it returns the whole tree and is several kilobytes. Labels match by case-sensitive substring, against an element's label, its visible text or its accessibility identifier, and curly quotes, apostrophes and dashes are treated as their plain equivalents — ask for what you see on screen. The first match wins, so name things precisely; ui_tap tells you which element it acted on.\n" +
   "Coordinates are logical screen space. ui_describe_all frames feed directly into ui_tap, ui_swipe and ui_describe_point.\n" +
-  "Visual checks: if asked whether something looks right — layout, colour, alignment, anything about appearance — call ui_view and look at the screenshot. The accessibility tree shows what exists, not how it renders; an element can be present and correctly labelled while looking completely wrong. Do not derive tap coordinates from a screenshot: those are pixel space and stop matching logical space once the device is rotated.";
+  "Visual checks: if asked whether something looks right — layout, colour, alignment, anything about appearance — call ui_view and look at the screenshot. The accessibility tree shows what exists, not how it renders; an element can be present and correctly labelled while looking completely wrong. Do not derive tap coordinates from a saved screenshot file: those are pixel space and stop matching logical space once the device is rotated. ui_view's image is already in point space, so a position read off that one is a ui_tap coordinate.\n" +
+  "ui_tap can refuse, and the refusal is the useful answer: it checks the touch will reach the element before sending it, so a control that is covered, scrolled out of view or disabled is reported instead of silently missed. Scroll it into view, or read its real position from ui_view and use ui_tap {x, y}. A switch is switched rather than touched, and ui_tap answers with the state it read back — so if it says the state did not change, it did not.\n" +
+  "ui_describe_all reads the app's real view hierarchy, so it includes controls in tab bars, nav bars and toolbars, and is pruned to elements you can act on.\n" +
+  "start_simulator does not return until the simulator answers, so you can use it immediately; it says so if it gave up waiting. If it times out, it may still be booting.";
 
 // ---- the one schema every tool shares --------------------------------------
 
@@ -618,7 +638,7 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
   if (!isToolFiltered("ui_view")) {
     server.tool(
       "ui_view",
-      "Get the image content of a compressed screenshot of the current simulator view",
+      "Look at the current simulator screen: returns a compressed screenshot inline, in the same logical point space as the accessibility tree, so a position read off it is a ui_tap coordinate. Use screenshot instead to save an image to a file.",
       {
         id: sessionIdSchema,
       },
@@ -664,7 +684,7 @@ export function registerTools(server: McpServer, sessions: SessionRegistry): voi
   if (!isToolFiltered("screenshot")) {
     server.tool(
       "screenshot",
-      "Takes a screenshot of the iOS Simulator",
+      "Saves a screenshot of the iOS Simulator to a file for humans to view. To look at the screen yourself, call ui_view: it returns the image inline, in the same point space as the accessibility tree, where this one writes the raw pixel raster to disk.",
       {
         id: sessionIdSchema,
         output_path: z
