@@ -183,7 +183,9 @@ The toolbar's text field carries its visible text in `AXValue` and has no `AXLab
 ui_tap(id: "test-session", label: "Toolbar Search")
 ```
 
-**Expected:** `Tapped "Toolbar Search" (TextField) at (298, 822).`, and the field is focused. This is matching on value rather than label — and the reply naming a `TextField` is what confirms it matched the field and not some text saying the same thing.
+**Expected:** `Tapped "Toolbar Search" (TextField) at (x, y)`, where the coordinates are the centre of `ToolbarField`'s frame from step #10, and the field is focused. This is matching on value rather than label — and the reply naming a `TextField` is what confirms it matched the field and not some text saying the same thing.
+
+> This step said `(298, 822)` until 2026-08-30, when a run reported `(324, 822)` — correct, because the toolbar's field had moved and 298 was true of an older layout. Nothing was wrong except the number in this document. Coordinates that track layout are derived from a frame here rather than written down; see TODO #107 for the same lesson learned in the e2e.
 
 ### #15 ui_type — type into the focused field
 
@@ -228,10 +230,10 @@ record_video(id: "test-session")
 by `To stop recording, use the stop_recording command.` The path defaults under
 `~/Downloads` unless `SIMGADGET_DEFAULT_OUTPUT_DIR` is set.
 
-> The tool's own `output_path` **description** still names
-> `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`, which the shim keeps working. That is
-> a known wart held deliberately until after this run, because the description
-> is pinned by the parity baseline — TODO #93.
+The tool's own `output_path` **description** names that same variable, which is
+deliberate change 15 and what the parity baseline substitutes for the old
+spelling. It named `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR` until TODO #93 was
+closed; a reply or a schema still saying so means that change has been reverted.
 
 ### #19 ui_tap — activity while recording
 
@@ -441,13 +443,15 @@ ui_find(id: "remote-test", label: "Fill Strong Password")
 
 ### #38 ui_describe_point — the two tools must agree
 
+Using the centre of the frame step #37 reported — the same point you read off the screenshot:
+
 ```
-ui_describe_point(id: "remote-test", x: 201, y: 737)
+ui_describe_point(id: "remote-test", x: <centre_x>, y: <centre_y>)
 ```
 
 **Expected:** `Fill Strong Password`, with **the same frame `ui_find` reported**.
 
-Two distinct failures hide here. If it returns the wrong *element* — `ScrollArea`, or the login form — then the position is wrong. If it returns the right element with a frame that does not cover (201, 737), the tools disagree about one element, which is the defect [#58](../devs/TODO.md) was closed to prevent; a point read hit-tests and so is right about identity while having no ancestry to derive position from.
+Two distinct failures hide here. If it returns the wrong *element* — `ScrollArea`, or the login form — then the position is wrong. If it returns the right element with a frame that does not cover the point you asked about, the tools disagree about one element, which is the defect [#58](../devs/TODO.md) was closed to prevent; a point read hit-tests and so is right about identity while having no ancestry to derive position from.
 
 ### #39 ui_type — the sheet must refuse, not swallow the text
 
@@ -489,7 +493,9 @@ ui_tap(id: "remote-test", label: "Show Picker")
 ui_find(id: "remote-test", label: "Collections")
 ```
 
-**Expected:** The photo picker opens, and `Collections` reports a frame in the nav bar near the top — on a 402x874 device, `{x: 201, y: 86, width: 95, height: 48}`.
+**Expected:** The photo picker opens, and `Collections` reports a frame **in the nav bar, near the top of the screen** — on the 402x874 device this was written against, `{x: 201, y: 86, width: 95, height: 48}`.
+
+Unlike the coordinates elsewhere in this document, this one is quoted deliberately: what is being checked is that the frame comes back *untranslated*, and a number iOS chose is the only way to say that. Check the shape rather than the digits — a `y` in the tens, inside the nav bar — because a picker laid out differently by a later iOS is not a failure. **A `y` several hundred points down the screen is**, and that is the regression.
 
 The picker is hosted by another process exactly as the sheet is, but its window is at the screen origin, so **these coordinates are already correct and must come back unchanged**. A frame pushed down the screen here means the translation is being applied blindly to anything hosted, rather than by how far the hosting window actually sits from the origin.
 
@@ -584,7 +590,7 @@ ui_tap(id: "toggle-test", label: "Toolbar Switch")
 ui_find(id: "toggle-test", label: "status:")
 ```
 
-**Expected:** the find returns the switch; the tap answers `Tapped "Toolbar Switch" (Switch) at (201, 822).` — a *tap*, not a toggle — and the status line reads `status: toolbar toggle = on`.
+**Expected:** the find returns the switch; the tap answers `Tapped "Toolbar Switch" (Switch) at (x, y)` — at the centre of the frame the find just reported, and a *tap*, not a toggle — and the status line reads `status: toolbar toggle = on`.
 
 Two failures to watch for, and they are opposite:
 
@@ -608,12 +614,12 @@ ui_tap(id: "toggle-test", label: "Disabled Button")
 
 **Expected:** the find reports `"enabled": false`; the tap is an **error**:
 
-> `"Disabled Button" is disabled, so tapping it would do nothing. It is at {x:61 y:252 w:280 h:30}.`
+> `"Disabled Button" is disabled, so tapping it would do nothing. It is at {x:… y:… w:… h:…}.`
 
-Then check that the refusal is telling the truth rather than merely being careful — a real touch at the same place must also do nothing:
+The frame it names must be the one `ui_find` just reported. Then check that the refusal is telling the truth rather than merely being careful — a real touch at the same place must also do nothing, so aim at the centre of that frame:
 
 ```
-ui_tap(id: "toggle-test", x: 201, y: 267)
+ui_tap(id: "toggle-test", x: <centre_x>, y: <centre_y>)
 ui_find(id: "toggle-test", label: "status:")
 ```
 

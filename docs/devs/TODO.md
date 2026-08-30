@@ -1,6 +1,6 @@
 # TODO — SimGadget library, 2026-08-16
 
-- [ ] **#109 Two stale expectations in TESTING_TOOLS.md, found by running it.**
+- [x] **#109 Two stale expectations in TESTING_TOOLS.md, found by running it.**
   Full run 2026-08-30, all of Parts 1–6 against the fixture: 51 steps pass, and
   these two differ from what the document says without a row authorising it.
 
@@ -9,8 +9,7 @@
      `(324, 822)`. `ToolbarField` is at `{x:252.67 w:142.33}` now, so 324 is
      its true centre and 298 was true of an older toolbar layout. Same class as
      [[#107]] — a number in a document that tracks layout — and the same fix:
-     say "the centre of the frame from step #12" rather than a literal. #50 was
-     rewritten that way already; #14, #46 and #49 still carry literals.
+     name the frame to derive it from rather than the digits.
   2. **Step #18's warning is out of date.** It says `record_video`'s
      `output_path` description "still names `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`
      … a known wart held deliberately until after this run — TODO #93". It does
@@ -22,6 +21,30 @@
   that a reply differing from it with no row to explain it is a finding, and
   because a plan whose expected strings have quietly drifted is a plan people
   stop trusting.
+
+  **Done 2026-08-30.** Every coordinate a *tool reports* is now derived from a
+  frame an earlier step read, the way #50 already was: #14 from `ToolbarField`'s
+  frame in #10, #38 from the frame #37 reported, #48 from the frame its own
+  `ui_find` returned, and #49's follow-up touch from the frame named in the
+  refusal — which is itself quoted as a shape now rather than four numbers. #14
+  carries a note saying what the old number was and why it was wrong, so the next
+  reader knows the change was a correction rather than a loosening.
+
+  One literal is kept on purpose, and says so: #41's picker frame. The assertion
+  there is that a remote-hosted frame comes back **untranslated**, and a number
+  iOS chose is the only way to express that — so it now asks for the shape (a
+  `y` in the tens, inside the nav bar) and names what the regression looks like
+  (a `y` several hundred points down). #36 and #37 keep theirs too: the
+  screenshot is their oracle and both already say to check against it rather than
+  the digits.
+
+  #18's note is replaced by the opposite statement — the description *does* name
+  `SIMGADGET_DEFAULT_OUTPUT_DIR`, and a reply still saying otherwise means
+  deliberate change 15 has been reverted.
+
+  **Correction to this entry:** it named #46 as carrying a literal. It does not
+  — it has used `<switch_x>, <switch_y>` placeholders all along, which is the
+  pattern the others were brought into line with.
 
 - [x] **#105 Activating a covered control actuates whatever is underneath it,
   and answers as though it activated the named one.** Found 2026-08-30, running
