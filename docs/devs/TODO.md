@@ -315,38 +315,89 @@
   recovery storm if cross-process sharing is ever supported; the other two do
   not justify a lock file.
 
-- [ ] **#97 Do not bump the idb submodule past `da0f89a` yet: the newer
-  companion cannot see into remote-hosted views at all.** Measured 2026-08-30
-  against upstream `9ca15af` (501 commits on from our pin), built locally with
-  Xcode 26.6 and compared side by side with the pinned binary on the same
-  fixture and the same screens:
+- [ ] **#110 The idb submodule cannot be bumped past `da0f89a`: the newer
+  companion does not surface remote-hosted subtrees.** Measured 2026-08-30
+  against upstream `9ca15af`, 501 commits on from our pin, built locally with
+  Xcode 26.6 and compared against the pinned binary on the same fixture, the
+  same screens and the same steps — only the binary swapped.
 
-  | screen | pinned `da0f89a` | new `9ca15af` |
-  |---|---|---|
-  | strong-password sheet, AXBridge tree | 59 elements, sheet present | 38 elements, **sheet absent** |
-  | photo picker, AXBridge tree | picker contents present, type-`83` boundaries present | 88 elements, **0 boundaries**, no picker contents |
+  This is a blocker rather than a preference. The reason to take upstream is
+  everything else in those 501 commits, and we cannot have it while this holds.
 
-  Everything in TESTING_TOOLS.md Part 3 rests on seeing into those views, and
-  so does `translateRemoteSubtrees` and `ui_type`'s strong-password refusal
-  (#39). None of it fails loudly under the new binary — the elements simply are
-  not there, which reads exactly like "no sheet is up".
+  **What was measured.**
 
-  Two things found on the way that are worth keeping:
+  | screen | read | pinned `da0f89a` | new `9ca15af` |
+  |---|---|---|---|
+  | strong-password sheet | AXBridge whole tree | 59 elements, sheet present | 38 elements, **sheet absent** |
+  | strong-password sheet | AXBridge marker for `GenerateStrongPasswordButton` | `Fill Strong Password` | `the axbridge backend found no element` |
+  | photo picker | AXBridge whole tree | picker contents present, type-`83` boundaries present | 88 elements, **0 boundaries**, no picker contents |
+
+  **Why this is a visibility change and not an absent sheet.** On the new binary
+  the same run typed ten characters into the sheet-covered field and one landed
+  — the swallowing that only happens while the sheet is up. So the sheet was on
+  screen and the tree did not contain it. On the picker screen the fixture's own
+  status label read `status: showing Photo Picker`, so that had been raised too.
+  The error wording agrees: the new binary answers `the axbridge backend found
+  no element`, naming axbridge, so the backend is running and serving the
+  request rather than failing or falling back.
+
+  **What breaks.** The type-`83` boundary nodes are what
+  `translateRemoteSubtrees` keys on to rebase a hosted view's coordinates into
+  screen space. No boundary means no translation, and the elements it would have
+  translated are not there either. That takes out `ui_find`/`ui_tap` by name
+  inside any sheet or picker, all of TESTING_TOOLS.md Part 3, and `ui_type`'s
+  strong-password refusal (#39).
+
+  The failure mode is the dangerous one: nothing errors. An absent hosted
+  subtree reads exactly like "no sheet is up", so `ui_type` would go back to
+  reporting a password typed that was not typed — the bug 7c80498 was written
+  to end.
+
+  **What is not known.** No root cause: this compares behaviour between two
+  binaries, not code. The commit log makes the bridge the suspect — upstream
+  reworked it substantially in this range (shared vs exclusive lanes
+  `6b73cec`/`52bc99b`, per-simulator socket naming `8ebd97f`, a private per-user
+  socket directory `763f023`, guest ownership moving to the target `c3d764b`).
+  A guest that now attaches differently, or is scoped to the frontmost app
+  process, would explain another process's UI vanishing. Untested.
+
+  Also untested: whether some request option or backend restores it, and
+  whether coordinate taps into those views still land. One label, `Search`,
+  appeared in the new picker tree and may belong to the picker rather than the
+  app — so "sees nothing hosted" is the safe reading, not a proven one.
+
+  **Where to start when this is picked up.** `git log -p da0f89a..origin/main`
+  over the bridge and axbridge files, and a matched capture of both trees on the
+  picker screen. `npm run check:companion -- <udid> --password-sheet` is the
+  cheap regression check: it pins the backend split and the traits the typing
+  gate reads, and fails on the new binary today.
+
+  **Two things found on the way, both worth keeping.**
 
   - **`build.sh build` does not regenerate the Swift protobufs.**
     `IDBGRPCSwift/idb.pb.swift` is generated and untracked, so a submodule bump
-    leaves it stale and the build fails in `ScreenshotRequestTranslation.swift`
-    with "no member 'compressionQuality'" and a dozen similar. Run
-    `./build.sh generate-proto` after any bump, before `build`.
-  - **`axbridge-persistent` is genuinely persistent now** (upstream `c3d764b`).
-    Warm marker queries measured 268ms cold then **20ms** warm on the new
-    binary, against a flat ~270ms on the pinned one. That is the one reason to
-    want this bump: it would make the sheet check nearly free. It is not worth
-    the remote-view regression today, but it is what to re-measure when this is
-    revisited.
+    leaves it stale from the previous checkout and the build fails in
+    `ScreenshotRequestTranslation.swift` with "no member 'compressionQuality'"
+    and a dozen similar. Run `./build.sh generate-proto` after any bump, before
+    `build`. Worth noting the build still exits 0 with `** BUILD FAILED **` in
+    the log, and leaves an older `Build/Distribution-<sha>/` in place, so a
+    failed bump can look like a successful one.
+  - **`axbridge-persistent` is genuinely persistent now** (upstream `c3d764b`;
+    it previously rebuilt the transport on every read). Warm marker queries
+    measured 268ms cold then **20ms** warm on the new binary, against a flat
+    ~270ms on the pinned one. That is the prize here: it would make the sheet
+    check in #39 nearly free, and the two-stage gate that exists to avoid
+    paying ~300ms could go away. Re-measure it when this is revisited.
 
-  Nothing about the swallowed-keystrokes bug itself is fixed upstream: typing
-  ten characters into the sheet-covered field still lands exactly one.
+  **Nothing about the swallowed-keystrokes bug is fixed upstream** — typing ten
+  characters into the sheet-covered field still lands one. It is iOS's, not the
+  companion's, and reproduced by hand on the Simulator with a real keyboard.
+
+  **Do not leave a local companion build in `vendor/idb/Build/Distribution/`.**
+  `companionBinary.ts` prefers it over the pinned download, so a stray build
+  there silently switches the whole checkout onto it. The `9ca15af` build from
+  this investigation was moved to `Build/Distribution-9ca15af-no-remote-views/`
+  for that reason.
 
 - [ ] **#89 `pressButton` is in the library and not on the MCP.** The handle
   has `pressButton(name, {durationSeconds})` and the e2e drives it (`home`
