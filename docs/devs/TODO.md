@@ -31,7 +31,7 @@
   control known to be under the toolbar, and a unit test — `ax/tap.ts` already
   owns "what a hit-test verdict means", so the decision belongs beside it.
 
-- [ ] **#106 Commit 7c80498 moved the fixture 50pt down, and two e2e cases
+- [x] **#106 FIXED 2026-08-30. Commit 7c80498 moved the fixture 50pt down, and two e2e cases
   encode the old positions.** Found 2026-08-30. `npm run test:e2e` fails 2 of
   32, on iPhone 17 Pro, at `main`. Both are geometry, not behaviour:
 
@@ -58,6 +58,37 @@
   Do not "fix" this by moving the controls back: the fixture needs a control
   under the toolbar and one below the fold, which is the whole point of both
   cases.
+
+  **Fixed by a third route: the field left the main screen entirely.** It now
+  sits on the login screen, below the config line, beside the `newPassword`
+  field whose sheet it is the control case for — which is the more natural home
+  for it anyway, since the two are only meaningful read against each other.
+  `main.m`'s root view controller is byte-identical to the version before
+  7c80498, so every position the suite assumes is restored rather than merely
+  compensated for, and the main screen has its vertical room back. Appending
+  below `config` rather than inserting leaves the login screen's own three
+  controls where TESTING_TOOLS.md Part 3 expects them: `LoginEmailField` y=156,
+  `LoginPasswordField` y=206, `LoginSubmitButton` y=256, verified after the
+  move. 32/32 e2e pass.
+
+  **The second option stays open and is now #107.** Nothing here stops the next
+  fixture edit breaking these two cases the same way.
+
+- [ ] **#107 The two geometry-sensitive e2e cases still encode absolute
+  positions.** Split out of #106, which was fixed by restoring the fixture
+  rather than by making the cases robust. `operates a toggle through
+  accessibility and reads the state back` needs a control the toolbar covers,
+  and `refuses a covered control and names what is in the way` needs one whose
+  centre falls under the toolbar's search field — both true today only because
+  of where those controls happen to sit. Any future row added above them breaks
+  both again, with a failure that reads as a library bug rather than a layout
+  one: the first reports a toggle that did not take, the second a
+  `TapObstructedError` whose `obstruction` is null.
+
+  The fix is for each case to find its own geometry — read the control's frame
+  and the toolbar's, and skip or adapt if the overlap it needs is not there —
+  so the fixture can grow without the suite encoding its layout. Worth doing
+  when the fixture next needs a new row on the main screen.
 
 - [ ] **#104 Tests that assert prose character for character, where the
   expected value is a copy of the actual one.** Raised 2026-08-30, while

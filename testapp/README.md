@@ -14,7 +14,7 @@ system chrome:
 | Plain view | System chrome |
 |---|---|
 | `Plain Button` (`PlainButton`) | `Toolbar Button` (`ToolbarButton`), `Nav Button` (`NavButton`) |
-| `Plain Field` (`PlainField`), `Password Field` (`PasswordField`) | toolbar text field (`ToolbarField`) |
+| `Plain Field` (`PlainField`) | toolbar text field (`ToolbarField`) |
 
 That pairing is the point. Apple's AX translation graph has no parent→child
 edge into `Toolbar`, `Tab Bar` and `Nav bar`, so their contents are absent from
@@ -31,13 +31,22 @@ Three further details are deliberate:
   field, its visible text arrives as `AXValue` with a null `AXLabel` — the case
   `findByLabel`'s value matching exists for (TODO.md #23), which has been
   implemented but never verified against a real value-only element.
-- **`Password Field` (`PasswordField`) is `secureTextEntry` and nothing else.**
-  The login screen's `LoginPasswordField` is a `newPassword` field, so focusing
-  it raises iOS's "Use Strong Password?" sheet — which is what TESTING_TOOLS.md
-  Part 3 is for, but it means that field cannot answer "does typing into a
-  secure field work at all?". This one asks iOS for nothing, so it can. Its
-  status line reports the length as well as the text, because the field draws
-  dots and a screenshot cannot tell one character from six.
+- **The login screen carries two masked fields, and the difference between
+  them is the point.** `LoginPasswordField` is a `newPassword` field, so
+  focusing it raises iOS's "Use Strong Password?" sheet — which is what
+  TESTING_TOOLS.md Part 3 is for, and while that sheet is up the field keeps
+  only the last keystroke. `PasswordField` beside it is `secureTextEntry` and
+  nothing else, asking iOS for neither a saved credential nor a generated one,
+  so it types normally. Without the second one, "typing into a masked field is
+  broken" and "this particular sheet breaks it" look identical.
+
+  `PasswordEchoLabel` reports what landed, with the length: the field draws
+  dots, and `AXValue` reports the dots rather than the text, so that label is
+  the only place the characters themselves can be read from outside.
+
+  Both live on the login screen rather than the main one. Putting `PasswordField`
+  in the main stack pushed `PlainSwitch` under the toolbar and `PlainStepper`
+  off the bottom edge, and the e2e suite caught both.
 - **A status label reports every tap and keystroke.** It sits in the plain view
   hierarchy, so a toolbar interaction can be confirmed without reading the
   toolbar — otherwise verifying the buggy container would depend on the buggy
@@ -62,16 +71,15 @@ launch_app(id: "test-session", bundle_id: "com.example.mcptestapp")
 
 ### What to expect
 
-- `ui_describe_all` should list **all six** controls. The nav bar and toolbar
+- `ui_describe_all` should list **all five** controls. The nav bar and toolbar
   groups coming back with `"children": []` means the AXBridge read has stopped
   working and the server has silently regressed to the incomplete tree.
 - `ui_find` / `ui_tap {label: "Toolbar Button"}` should resolve — via the
   AXBridge fallback, so expect ~330 ms rather than ~13 ms.
 - `ui_tap {label: "Toolbar Search"}` exercises value-only matching.
 - After any tap, the status label reads e.g. `status: tapped Toolbar Button`;
-  after `ui_type`, `status: Plain Field = "hello"`. Typing into `Password Field`
-  reads `status: password field = "hunter2" (7)` — lower case, so the status
-  line is not itself a match for the field's own name.
+  after `ui_type`, `status: Plain Field = "hello"`. On the login screen, typing
+  into `Password Field` reads `typed: "hunter2" (7)` on `PasswordEchoLabel`.
 - `ui_describe_point` hit-tests, so it finds the chrome controls regardless —
   useful as the control case when something else disagrees.
 

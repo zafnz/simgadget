@@ -132,7 +132,7 @@ launch_app(id: "test-session", bundle_id: "com.example.mcptestapp")
 ui_view(id: "test-session")
 ```
 
-**Expected:** A screenshot showing a nav bar with **Nav Button**, a text field, a password field, **Plain Button**, a greyed-out **Disabled Button**, a status label reading `status: ready`, an orientation label reading `orientation: interface=portrait device=portrait`, **Show Login**, **Show Picker**, a Settings-shaped **Settings Switch** row and a plain **Split Switch** row, **Show In-App Modal**, **Ask Permission**, and a row of one-of-each controls (search bar, switch, slider, stepper, segmented control), and a bottom toolbar with **Toolbar Button** and a search field.
+**Expected:** A screenshot showing a nav bar with **Nav Button**, a text field, **Plain Button**, a greyed-out **Disabled Button**, a status label reading `status: ready`, an orientation label reading `orientation: interface=portrait device=portrait`, **Show Login**, **Show Picker**, a Settings-shaped **Settings Switch** row and a plain **Split Switch** row, **Show In-App Modal**, **Ask Permission**, and a row of one-of-each controls (search bar, switch, slider, stepper, segmented control), and a bottom toolbar with **Toolbar Button** and a search field.
 
 The tail of that list runs past the fold — the stepper and segmented control sit below the toolbar and are not visible without scrolling. They are in the tree, which is what the steps below need.
 
@@ -145,7 +145,7 @@ ui_describe_all(id: "test-session")
 **Expected:** Every control is present, and — the point of this step — the `NavigationBar` and `Toolbar` groups **have children**:
 
 - `NavButton`, inside the nav bar
-- `PlainField`, `PasswordField`, `PlainButton`, `DisabledButton` (with `"enabled": false`), `StatusLabel`, `OrientationLabel`, `InAppModalButton`, `SystemModalButton`, `SearchBar`, `PlainSwitch`, `PlainSlider`, `PlainStepper`, `PlainSegmented` in the plain hierarchy
+- `PlainField`, `PlainButton`, `DisabledButton` (with `"enabled": false`), `StatusLabel`, `OrientationLabel`, `InAppModalButton`, `SystemModalButton`, `SearchBar`, `PlainSwitch`, `PlainSlider`, `PlainStepper`, `PlainSegmented` in the plain hierarchy
 - `ToolbarButton` and a text field, inside the toolbar
 
 A nav bar or toolbar coming back with no children means the tree has regressed to the incomplete read, and everything below will fail.
@@ -349,7 +349,7 @@ ui_view(id: "landscape-test")
 ui_describe_all(id: "landscape-test")
 ```
 
-**Expected:** Root frame now wider than tall, the reverse of #25. All six controls still present, with frames in landscape space. Note the centre of `Toolbar Button` and of `Nav Button`.
+**Expected:** Root frame now wider than tall, the reverse of #25. All five controls still present, with frames in landscape space. Note the centre of `Toolbar Button` and of `Nav Button`.
 
 ### #30 ui_tap — tap a toolbar control by landscape coordinate
 
@@ -465,6 +465,8 @@ ui_find(id: "remote-test", label: "Login Password")
 **This is iOS's behaviour, not the companion's.** Reproduced by hand on the Simulator, typing on a real keyboard with no tooling in the loop: the field takes one character and replaces it on every subsequent keystroke. Nothing here can fix that, which is why the tools refuse and name the way out instead — an agent should not have to discover the overlay from a screenshot and dismiss it by coordinate.
 
 `hid` is the only input path the companion has, so there is no way to deliver the keystrokes past the sheet — refusing is the whole remedy.
+
+**The control case is on this same screen.** Below the config line sits `Password Field` (`PasswordField`), `secureTextEntry` and nothing else, which raises no sheet. Dismiss the sheet, tap it, `ui_type` ten characters, and `PasswordEchoLabel` must read `typed: "hunter2abc" (10)`. If that one also loses characters the problem is not the sheet, and nothing in #39 applies.
 
 The check is two stages, and step #15 is what proves the first one stays cheap. A default-backend read (~25–110 ms) asks whether a *masked* field has the keyboard; only if it does is the AXBridge lookup for the sheet (~280–340 ms) worth making, and only AXBridge can see the sheet at all. So an ordinary `ui_type` pays the small number and a password one pays both. If this step starts *failing*, check `typingBlocker()` in [packages/simgadget/src/simulator.ts](../../packages/simgadget/src/simulator.ts) and run `npm run check:companion -- <udid> --password-sheet`, which pins all three beliefs this rests on.
 

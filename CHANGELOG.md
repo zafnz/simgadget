@@ -33,9 +33,11 @@
   `AX` both answer "found no element". `npm run check:companion -- <udid>
   --password-sheet` pins all three beliefs.
 
-  The fixture gains a plain `secureTextEntry` field (`PasswordField`) so the
-  question "does typing into a secure field work at all?" has an answer that
-  does not involve the sheet — it does.
+  The fixture's login screen gains a plain `secureTextEntry` field
+  (`PasswordField`) beside the `newPassword` one, so the question "does typing
+  into a masked field work at all?" has an answer that does not involve the
+  sheet — it does — with a `PasswordEchoLabel` reporting what landed, since the
+  field draws dots and `AXValue` reports the dots rather than the text.
 
 ## 3.0.1
 

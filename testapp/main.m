@@ -67,6 +67,8 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
 @interface LoginViewController : UIViewController
 @property(nonatomic, strong) UITextField *email;
 @property(nonatomic, strong) UITextField *password;
+@property(nonatomic, strong) UITextField *plainSecure;
+@property(nonatomic, strong) UILabel *plainSecureEcho;
 @end
 
 @implementation LoginViewController
@@ -113,8 +115,51 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
                        self.password.textContentType ?: @"(nil)",
                        self.password.isSecureTextEntry ? @"YES" : @"NO"];
 
-  UIStackView *stack = [[UIStackView alloc]
-      initWithArrangedSubviews:@[ self.email, self.password, submit, config ]];
+  // The control case for the sheet, and the reason it is on *this* screen
+  // rather than the main one: it answers "does typing into a masked field work
+  // at all?", which is only worth asking next to the field where it does not.
+  //
+  // `secureTextEntry` and nothing else — no `textContentType`, so it asks iOS
+  // for neither a saved credential nor a generated one, and no sheet comes up.
+  // Everything that swallows keystrokes above is absent here, so typing ten
+  // characters must leave ten.
+  //
+  // Below `config`, deliberately: the three controls above it are what
+  // TESTING_TOOLS.md Part 3 taps by name and reads frames from, and appending
+  // rather than inserting leaves every one of their positions alone. It was
+  // added to the main screen first, which pushed `PlainSwitch` under the
+  // toolbar and `PlainStepper` off the bottom edge, and the e2e suite caught
+  // both.
+  self.plainSecure = [[UITextField alloc] init];
+  self.plainSecure.placeholder = @"Type password here";
+  self.plainSecure.borderStyle = UITextBorderStyleRoundedRect;
+  self.plainSecure.secureTextEntry = YES;
+  self.plainSecure.autocorrectionType = UITextAutocorrectionTypeNo;
+  self.plainSecure.autocapitalizationType = UITextAutocapitalizationTypeNone;
+  self.plainSecure.accessibilityLabel = @"Password Field";
+  self.plainSecure.accessibilityIdentifier = @"PasswordField";
+  [self.plainSecure addTarget:self
+                       action:@selector(plainSecureChanged:)
+             forControlEvents:UIControlEventEditingChanged];
+
+  // What actually landed. The field draws dots, so a screenshot cannot tell one
+  // character from six, and `AXValue` reports the dots rather than the text —
+  // this is the only place the characters themselves can be read from outside.
+  //
+  // Lower case, for the reason `toolbarSwitchChanged:` gives: a line reading
+  // "Password Field = ..." would itself match "Password Field", and sits below
+  // the field, so a second lookup could resolve the sentence describing it.
+  self.plainSecureEcho = [[UILabel alloc] init];
+  self.plainSecureEcho.numberOfLines = 0;
+  self.plainSecureEcho.font = [UIFont systemFontOfSize:12];
+  self.plainSecureEcho.textColor = UIColor.secondaryLabelColor;
+  self.plainSecureEcho.accessibilityIdentifier = @"PasswordEchoLabel";
+  self.plainSecureEcho.text = @"typed: (nothing)";
+
+  UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
+    self.email, self.password, submit, config, self.plainSecure,
+    self.plainSecureEcho
+  ]];
   stack.axis = UILayoutConstraintAxisVertical;
   stack.spacing = 16;
   stack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -126,6 +171,12 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
     [stack.centerXAnchor constraintEqualToAnchor:safe.centerXAnchor],
     [stack.widthAnchor constraintEqualToConstant:280],
   ]];
+}
+
+- (void)plainSecureChanged:(UITextField *)field {
+  self.plainSecureEcho.text =
+      [NSString stringWithFormat:@"typed: \"%@\" (%lu)", field.text,
+                                 (unsigned long)field.text.length];
 }
 
 @end
@@ -165,7 +216,6 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
 @property(nonatomic, strong) UILabel *status;
 @property(nonatomic, strong) UILabel *orientation;
 @property(nonatomic, strong) UITextField *plainField;
-@property(nonatomic, strong) UITextField *passwordField;
 @property(nonatomic, strong) UITextField *toolbarField;
 @property(nonatomic, strong) UISwitch *settingsSwitch;
 @end
@@ -228,18 +278,6 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
   self.plainField = [self fieldWithPlaceholder:@"Type here"
                                     identifier:@"PlainField"];
   self.plainField.accessibilityLabel = @"Plain Field";
-
-  // A secure field on the main screen, unlike `LoginPasswordField` below, which
-  // is a `newPassword` field and so raises the strong-password sheet the moment
-  // it is focused. This one asks iOS for nothing: it is `secureTextEntry` and
-  // no more, so what a typing tool does to it can be read without a sheet in
-  // the way. The status line reports the length as well as the text, because
-  // the field itself draws dots and a screenshot cannot tell one character
-  // from six.
-  self.passwordField = [self fieldWithPlaceholder:@"Type password here"
-                                       identifier:@"PasswordField"];
-  self.passwordField.accessibilityLabel = @"Password Field";
-  self.passwordField.secureTextEntry = YES;
 
   UIButton *plainButton = [UIButton buttonWithType:UIButtonTypeSystem];
   [plainButton setTitle:@"Plain Button" forState:UIControlStateNormal];
@@ -432,8 +470,7 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
     // the screens other tests start from, or are tapped directly, and a control
     // that needs scrolling to reach is a control whose test can fail for a
     // reason that is not the tool.
-    self.plainField, self.passwordField, plainButton, disabled, self.status,
-    self.orientation,
+    self.plainField, plainButton, disabled, self.status, self.orientation,
     login, picker,
     settingsRow, splitRow, inAppModal, systemModal, searchBar, toggle, slider,
     stepper, segmented
@@ -629,16 +666,6 @@ static NSString *DeviceOrientationName(UIDeviceOrientation o) {
 }
 
 - (void)fieldChanged:(UITextField *)field {
-  // Lower case, for the reason `toolbarSwitchChanged:` gives: a status line
-  // reading "Password Field = ..." is itself a match for "Password Field", and
-  // sits above the field on screen, so the next lookup of the field resolves
-  // the sentence describing it instead.
-  if (field == self.passwordField) {
-    [self report:[NSString stringWithFormat:@"password field = \"%@\" (%lu)",
-                                            field.text,
-                                            (unsigned long)field.text.length]];
-    return;
-  }
   NSString *which =
       field == self.toolbarField ? @"Toolbar Search" : @"Plain Field";
   [self report:[NSString stringWithFormat:@"%@ = \"%@\"", which, field.text]];
