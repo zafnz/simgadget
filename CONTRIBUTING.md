@@ -5,13 +5,13 @@ This is a fork of the original [joshuayoes/ios-simulator-mcp](https://github.com
 
 ## Project Philosophy
 
-This project is **intentionally simple** and follows these core principles:
+The project follows these principles:
 
-### One rule decides where code goes
+### The split rule
 
 This repository is two packages — `packages/simgadget`, the library, and
-`packages/simgadget-mcp`, the MCP server built on it — and the rule that keeps
-them apart is short:
+`packages/simgadget-mcp`, the MCP server built on it. The split rule decides
+which package a piece of state belongs in:
 
 > **State keyed by udid belongs to the library. State keyed by session id
 > belongs to the server.**
@@ -20,7 +20,7 @@ A simulator's companion connection, its orientation, its recovery bookkeeping
 are facts about a *device*: library. Session ids, the `owned` flag,
 delete-on-exit, tool filtering, transports are facts about *a server*.
 
-Two things follow from it, and both matter before you open a file:
+Two consequences:
 
 - **The server imports `"simgadget"` and never a deep path.** The library's
   `exports` map makes a deep path unresolvable, and a test asserts the import
@@ -31,7 +31,7 @@ Two things follow from it, and both matter before you open a file:
   rule survives; the rest of it is gone, and [CLAUDE.md](CLAUDE.md#architecture)
   has the current layout.
 
-### Simplicity First
+### Minimal dependencies and standard tooling
 
 - **Minimal dependencies**: We keep dependencies minimal to ensure fast installs and small footprint on user machines. The library's runtime dependencies are gRPC and protobuf, and nothing else — that is why the MCP SDK and Zod live in a separate package rather than in front of every library user
 - **Standard tooling**: We use `npm` (universally available) and `tsc` (simple, already available) for building
@@ -43,20 +43,21 @@ Two things follow from it, and both matter before you open a file:
 - The original use case: Give AI editors the ability to interact with iOS simulators like a user, similar to [playwright-mcp](https://github.com/microsoft/playwright-mcp) for browsers
 - This enables autonomous agent loops where AI can validate its own work in the iOS simulator
 
-### Every action answers with what happened
+### Actions return what happened, as data
 
-No success strings. A call that acted says what it did and what it read back;
-a call that failed throws a typed error with a `code` and a payload, and
-nothing anywhere regexes a message. "Absent" is an answer, not an error —
-`findByLabel` and `describePoint` return `null` for a clean miss.
+No success strings. A call that acted returns what it did and what it read
+back; a call that failed throws a typed error with a `code` and a payload, and
+nothing anywhere regexes a message. Lookups (`findByLabel`, `describePoint`)
+return `null` for a clean miss; actions that cannot proceed without the
+element throw.
 
-This is not style. Silent success is the bug class this codebase has spent the
-most simulator boots on: a tap delivered to a control that was covered,
+The rule exists because silent success is the bug class that has cost the most
+simulator boots to find: a tap delivered to a control that was covered,
 disabled, or scrolled out of view looks exactly like a tap that worked.
 
 ### The regression rule
 
-**A newly discovered bug requires three things:**
+**A newly discovered bug requires three changes:**
 
 1. the fix,
 2. a step added or adjusted in [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) that would
@@ -180,9 +181,9 @@ cd vendor/idb && ./build.sh build
 It takes 20–30 minutes and produces `vendor/idb/Build/Distribution/`. The output
 is **arm64 only**.
 
-The version pin is not decoration: a mismatched Swift toolchain does not give
-you a build error, it crashes the compiler with a bare stack dump and no message
-about what is wrong. If that happens, check your Xcode version first.
+A mismatched Swift toolchain does not give you a build error; it crashes the
+compiler with a bare stack dump and no message about what is wrong. If that
+happens, check your Xcode version first.
 
 ### Regenerating the client (`npm run gen`)
 
@@ -216,8 +217,8 @@ Where we currently sit, checked 2026-08-24:
 | `@types/node` | `^22.0.2` | `^22.12.0` |
 
 The two mismatched ranges resolve to versions inside the SDK's, so nothing is
-broken today; they are drift rather than a fault, and the table exists so the
-next person checking does not have to re-derive it.
+broken today. The table records the check so the next person does not have to
+re-derive it.
 
 ### Checking for Updates
 
@@ -262,13 +263,6 @@ npm ls --depth=0
    - Run through [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md), and [TESTING_SERVER.md](docs/testing/TESTING_SERVER.md) if transports or sessions are affected
    - Ensure no new TypeScript errors (`npm run typecheck`)
 
-### Why This Matters
-
-- **Compatibility**: the tools keep working with MCP clients
-- **Stability**: Reduces version conflicts and unexpected behavior
-- **Consistency**: Maintains a predictable development environment
-- **Future-proofing**: Easier to adopt new MCP SDK features and fixes
-
 ### When to Deviate
 
 Only deviate from MCP SDK dependency versions when:
@@ -284,7 +278,7 @@ In such cases, document the deviation and reasoning in the pull request.
 ### Code Style
 
 - Follow the existing TypeScript patterns in the codebase
-- **Comments explain why, never what.** Nearly every constant here is what it is because a simulator boot was spent finding out the obvious value is wrong; the comment is the evidence
+- **Comments explain why the code is the way it is, not what it does.** Many constants here have their values because the obvious value was tried and found wrong on a real simulator; the comment records that finding
 - In the server, error text comes from `render.ts` — `toError()`, `handleToolError()` and `errorWithTroubleshooting()` — and never from a tool body. It is the only pure part of the server, which is what makes it the only part that can be tested exhaustively
 - In the library, pure logic that can be unit tested belongs in `packages/simgadget/src/ax/`, which must stay free of dependencies on simulators, companions, the filesystem — and on each other
 - Library error messages never name an MCP tool, a GitHub issue URL, or any remedy that assumes a particular host. Hosts render their own guidance from `code` plus payload
@@ -301,7 +295,7 @@ If adding a new tool:
 
 1. Follow the existing pattern with `isToolFiltered()` check
 2. Use proper Zod schemas for input validation
-3. Include comprehensive error handling with troubleshooting links
+3. Route errors through `render.ts` (`handleToolError()`, `errorWithTroubleshooting()`) rather than writing error text in the tool body
 4. Use the `--` separator when passing user input to commands (security best practice)
 5. Add the tool to the README.md and AGENT_INSTRUCTIONS.md documentation, and a step to [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md)
 6. A tool's description and `SERVER_INSTRUCTIONS` are pinned by
@@ -330,8 +324,8 @@ For more security context, see the command injection resources in [CONTEXT.md](C
 
 ## Testing Requirements
 
-Three layers, and they answer different questions. Run them in cost order — a
-cheap failure is worth finding first.
+Three layers, each answering a different question. Run them in cost order,
+cheapest first.
 
 ### 1. Unit tests — `npm test`
 
@@ -349,10 +343,10 @@ and extend it whenever you change a rule in `packages/simgadget/src/ax/` or a
 string in `packages/simgadget-mcp/src/render.ts`. It needs Node ≥ 22.6, which
 runs the TypeScript directly; the published packages still support Node 18.
 
-The fake handle is **tethered to the real one by the compiler**: it is declared
-as implementing a `Pick<Simulator, …>`, so a signature change in the library
+The fake handle is **type-checked against the real one**: it is declared as
+implementing a `Pick<Simulator, …>`, so a signature change in the library
 breaks the test build instead of the server at runtime. Never widen it with
-`any` — that throws the whole guarantee away.
+`any` — that removes the guarantee.
 
 ### 2. The library end-to-end suite — `npm run test:e2e`
 
@@ -362,23 +356,24 @@ npm run test:e2e
 
 ~110 seconds, unattended, from a cold start. It creates two throwaway
 simulators against the `testapp/` fixture, deletes them in `after()` including
-on failure, and never touches a simulator it did not create. This is the layer
-that answers whether the library actually drives a device — the fake companion
-cannot tell you whether an AXBridge read really does see inside a toolbar. See
+on failure, and never touches a simulator it did not create. This layer
+verifies the library against a real device — a fake companion cannot show
+whether an AXBridge read really does see inside a toolbar. See
 [TESTING_LIBRARY.md](docs/testing/TESTING_LIBRARY.md).
 
 ### 3. The companion checks — `npm run check:companion -- <udid>`
 
-Six things this codebase believes about somebody else's binary, none of which
-upstream has promised to keep, and all of which are invisible while they hold.
+This checks six behaviours the code assumes of the `idb_companion` binary,
+none of which upstream has promised to keep. A regression in any of them
+produces wrong data rather than an error, so nothing else detects it.
 **Run it after bumping `companion.lock.json` or the submodule**, before
 trusting the new binary. See [TESTING_TOOLS.md](docs/testing/TESTING_TOOLS.md) Part 5.
 
 ### 4. Manual testing
 
-The server as an agent meets it — parity of response text, transports,
-sessions — is not covered by anything cheaper, so **manual testing is required**
-for changes that touch it:
+The server's behaviour toward an MCP client — response text, transports,
+sessions — is not covered by the layers above, so **manual testing is
+required** for changes in those areas.
 
 ### Why Manual Testing?
 
@@ -477,7 +472,7 @@ For significant changes or questions:
 
 - Be respectful and constructive in all interactions
 - Focus on real use cases and practical solutions
-- Respect the project's philosophy of intentional simplicity
+- Follow the project principles described above
 - Provide thorough testing and documentation for contributions
 
-Thank you for helping make SimGadget better! 🚀
+Thank you for contributing.
